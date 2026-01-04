@@ -344,12 +344,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 	}
 
 	// Build response in SDK format.
-	respData := map[string]interface{}{
-		"continue": result.Continue,
-	}
-	if len(result.Modify) > 0 {
-		respData["modify"] = result.Modify
-	}
+	respData := buildHookResponse(result)
 
 	return SDKControlResponse{
 		Type: "control_response",
@@ -697,12 +692,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 	}
 
 	// Build response.
-	responseData := map[string]interface{}{
-		"continue": result.Continue,
-	}
-	if len(result.Modify) > 0 {
-		responseData["modify"] = result.Modify
-	}
+	responseData := buildHookResponse(result)
 
 	return SDKControlResponse{
 		Type: "control_response",
@@ -988,4 +978,33 @@ func marshalJSON(v interface{}) []byte {
 	}
 	data, _ := json.Marshal(v)
 	return data
+}
+
+// buildHookResponse constructs the response data map for hook callbacks.
+//
+// This serializes HookResult fields into the format expected by the CLI.
+// For Stop hooks, the Decision/Reason/SystemMessage fields enable the
+// Ralph Wiggum pattern where a hook can block session exit and reinject
+// a new prompt.
+func buildHookResponse(result HookResult) map[string]interface{} {
+	resp := map[string]interface{}{
+		"continue": result.Continue,
+	}
+
+	if len(result.Modify) > 0 {
+		resp["modify"] = result.Modify
+	}
+
+	// Add Stop hook fields for Ralph Wiggum pattern.
+	if result.Decision != "" {
+		resp["decision"] = result.Decision
+	}
+	if result.Reason != "" {
+		resp["reason"] = result.Reason
+	}
+	if result.SystemMessage != "" {
+		resp["systemMessage"] = result.SystemMessage
+	}
+
+	return resp
 }
