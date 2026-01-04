@@ -24,7 +24,7 @@ jobs:
           cache: true
 
       - name: Install golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.1.6
           args: --timeout=5m
@@ -45,8 +45,8 @@ jobs:
       - name: Download dependencies
         run: go mod download
 
-      - name: Run tests
-        run: go test -v -race -count=1 ./...
+      - name: Run tests with race detector
+        run: make unit-race
 
       - name: Run tests with coverage
         run: go test -coverprofile=coverage.out -covermode=atomic ./...
