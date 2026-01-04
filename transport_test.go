@@ -450,30 +450,52 @@ func TestDiscoverCLIPath(t *testing.T) {
 	})
 }
 
+// syncBuffer is a thread-safe buffer for testing.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.String()
+}
+
 // TestSubprocessTransportStderrForwarding tests stderr handling.
 func TestSubprocessTransportStderrForwarding(t *testing.T) {
 	runner := NewMockSubprocessRunner()
 	opts := NewOptions()
 
-	// Capture stderr output
-	var stderrBuf bytes.Buffer
+	// Use a thread-safe buffer since the transport's stderr goroutine will
+	// write to it concurrently with our reads.
+	stderrBuf := &syncBuffer{}
 
 	transport := NewSubprocessTransportWithRunner(runner, opts)
-	transport.SetStderrLogger(&stderrBuf)
+	transport.SetStderrLogger(stderrBuf)
 
 	ctx := context.Background()
 	err := transport.Connect(ctx)
 	require.NoError(t, err)
 	defer transport.Close()
 
-	// Write some stderr output
+	// Write some stderr output.
 	runner.StderrPipe.WriteString("Error line 1\n")
 	runner.StderrPipe.WriteString("Error line 2\n")
 
-	// Give it time to read
-	time.Sleep(100 * time.Millisecond)
+	// Close write side to signal EOF to the scanner goroutine.
+	runner.StderrPipe.CloseWrite()
 
-	// Verify stderr was captured
+	// Give the scanner goroutine time to process the data.
+	time.Sleep(50 * time.Millisecond)
+
+	// Verify stderr was captured.
 	output := stderrBuf.String()
 	assert.Contains(t, output, "Error line 1")
 	assert.Contains(t, output, "Error line 2")
