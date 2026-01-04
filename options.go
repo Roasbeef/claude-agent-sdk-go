@@ -744,9 +744,26 @@ const (
 )
 
 // HookResult is the outcome of a hook callback.
+//
+// For most hooks, set Continue=true to allow execution to proceed.
+// For Stop hooks, use Decision/Reason/SystemMessage to control whether
+// the session exits or continues with a new prompt (Ralph Wiggum pattern).
 type HookResult struct {
 	Continue bool                   // Continue execution (false = abort)
 	Modify   map[string]interface{} // Modifications to apply
+
+	// Decision controls session exit for Stop hooks.
+	// "approve" allows the session to exit normally.
+	// "block" prevents exit and reinjects Reason as a new prompt.
+	Decision string
+
+	// Reason is the new prompt to inject when Decision="block".
+	// This allows Stop hooks to continue the conversation with a new task.
+	Reason string
+
+	// SystemMessage is displayed to Claude as context when blocking exit.
+	// Use this to provide iteration counts or other status information.
+	SystemMessage string
 }
 
 // AgentDefinition defines a specialized subagent.
