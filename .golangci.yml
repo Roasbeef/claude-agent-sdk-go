@@ -1,0 +1,62 @@
+run:
+  timeout: 5m
+  build-tags:
+    - integration
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gofmt
+    - goimports
+    - misspell
+    - unconvert
+    - gosec
+    - bodyclose
+    - noctx
+    - errorlint
+    - durationcheck
+
+linters-settings:
+  errcheck:
+    check-type-assertions: true
+    check-blank: false
+
+  govet:
+    enable-all: true
+    disable:
+      - fieldalignment
+
+  gosec:
+    excludes:
+      - G204  # Subprocess with variable - expected for CLI wrapper
+      - G402
+      - G306
+      - G601
+      - G115
+
+  misspell:
+    locale: US
+
+  goimports:
+    local-prefixes: github.com/roasbeef/claude-agent-sdk-go
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gosec
+        - errcheck
+        - dupl
+        - govet  # Shadow warnings in tests are usually fine
+
+    - path: testdata/
+      linters:
+        - all
+
+  max-issues-per-linter: 0
+  max-same-issues: 0
