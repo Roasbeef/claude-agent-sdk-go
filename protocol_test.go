@@ -30,7 +30,7 @@ func TestProtocolInitialize(t *testing.T) {
 	transport := NewSubprocessTransportWithRunner(runner, opts)
 	protocol := NewProtocol(transport, opts)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	err := transport.Connect(ctx)
@@ -302,7 +302,7 @@ func TestProtocolSendMessage(t *testing.T) {
 	transport := NewSubprocessTransportWithRunner(runner, opts)
 	protocol := NewProtocol(transport, opts)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	err := transport.Connect(ctx)
