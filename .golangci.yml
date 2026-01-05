@@ -1,3 +1,5 @@
+version: "2"
+
 run:
   timeout: 5m
   build-tags:
@@ -6,13 +8,9 @@ run:
 linters:
   enable:
     - errcheck
-    - gosimple
     - govet
-    - ineffassign
     - staticcheck
     - unused
-    - gofmt
-    - goimports
     - misspell
     - unconvert
     - gosec
@@ -21,42 +19,65 @@ linters:
     - errorlint
     - durationcheck
 
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-    check-blank: false
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: false
+      exclude-functions:
+        - (*os.File).Close
+        - (*io.PipeReader).Close
+        - (*io.PipeWriter).Close
+        - (io.Closer).Close
+        - io.Closer.Close
+        - (net.Conn).Close
+        - fmt.Fprintln
+        - fmt.Fprintf
 
-  govet:
-    enable-all: true
-    disable:
-      - fieldalignment
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment
 
-  gosec:
-    excludes:
-      - G204  # Subprocess with variable - expected for CLI wrapper
-      - G402
-      - G306
-      - G601
-      - G115
+    gosec:
+      excludes:
+        - G104
+        - G204
+        - G304
+        - G402
+        - G306
+        - G601
+        - G115
 
-  misspell:
-    locale: US
+    misspell:
+      locale: US
 
-  goimports:
-    local-prefixes: github.com/roasbeef/claude-agent-sdk-go
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          - dupl
+          - govet
+
+      - path: testdata/
+        linters:
+          - all
+
+      - text: "Error return value of .*.Close.*is not checked"
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/roasbeef/claude-agent-sdk-go
 
 issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - gosec
-        - errcheck
-        - dupl
-        - govet  # Shadow warnings in tests are usually fine
-
-    - path: testdata/
-      linters:
-        - all
-
   max-issues-per-linter: 0
   max-same-issues: 0

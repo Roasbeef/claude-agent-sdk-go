@@ -20,6 +20,11 @@ import (
 // The transport spawns the CLI with appropriate arguments, pipes stdin/stdout,
 // and provides methods for sending/receiving JSON messages. Graceful shutdown
 // is handled via context cancellation.
+// writerRef wraps an io.Writer for atomic storage.
+type writerRef struct {
+	w io.Writer
+}
+
 type SubprocessTransport struct {
 	runner    SubprocessRunner
 	stdin     io.WriteCloser
@@ -28,8 +33,8 @@ type SubprocessTransport struct {
 	scanner   *bufio.Scanner
 	closed    atomic.Bool
 	options   *Options
-	mu        sync.Mutex // Protects Write operations
-	errLogger io.Writer  // Where to send stderr output
+	mu        sync.Mutex
+	errLogger atomic.Pointer[writerRef]
 }
 
 // NewSubprocessTransport creates a new transport for the Claude CLI.
@@ -44,11 +49,12 @@ func NewSubprocessTransport(options *Options) (*SubprocessTransport, error) {
 
 	runner := NewLocalSubprocessRunner(cliPath)
 
-	return &SubprocessTransport{
-		runner:    runner,
-		options:   options,
-		errLogger: io.Discard, // Default: discard stderr
-	}, nil
+	t := &SubprocessTransport{
+		runner:  runner,
+		options: options,
+	}
+	t.errLogger.Store(&writerRef{w: io.Discard})
+	return t, nil
 }
 
 // NewSubprocessTransportWithRunner creates a transport with a custom subprocess runner.
@@ -58,18 +64,21 @@ func NewSubprocessTransportWithRunner(
 	runner SubprocessRunner,
 	options *Options,
 ) *SubprocessTransport {
-	return &SubprocessTransport{
-		runner:    runner,
-		options:   options,
-		errLogger: io.Discard,
+	t := &SubprocessTransport{
+		runner:  runner,
+		options: options,
 	}
+	t.errLogger.Store(&writerRef{w: io.Discard})
+	return t
 }
 
 // SetStderrLogger sets where to send Claude CLI stderr output.
 //
 // By default, stderr is discarded. Set to os.Stderr or a logger for debugging.
+// The provided io.Writer should be thread-safe as it will be written to from
+// a background goroutine.
 func (t *SubprocessTransport) SetStderrLogger(w io.Writer) {
-	t.errLogger = w
+	t.errLogger.Store(&writerRef{w: w})
 }
 
 // Connect spawns the Claude CLI subprocess and establishes communication.
@@ -194,12 +203,12 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	t.stderr = stderr
 	t.scanner = bufio.NewScanner(stdout)
 
-	// Forward stderr to logger
+	// Forward stderr to logger.
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
-			if t.errLogger != nil {
-				fmt.Fprintln(t.errLogger, scanner.Text())
+			if ref := t.errLogger.Load(); ref != nil && ref.w != nil {
+				fmt.Fprintln(ref.w, scanner.Text())
 			}
 		}
 	}()

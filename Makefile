@@ -13,7 +13,7 @@ GOVET=$(GOCMD) vet
 INTEGRATION_TAGS=integration
 
 # Linter
-GOLANGCI_LINT_VERSION=v1.62.2
+GOLANGCI_LINT_VERSION=v2.1.6
 GOLANGCI_LINT=$(shell which golangci-lint 2>/dev/null)
 
 # Coverage
@@ -21,11 +21,21 @@ COVERAGE_DIR=coverage
 COVERAGE_FILE=$(COVERAGE_DIR)/coverage.out
 COVERAGE_HTML=$(COVERAGE_DIR)/coverage.html
 
-# Packages
-PKG=./...
+# Packages and test filtering (supports both uppercase and lowercase).
+PKG ?= $(pkg)
+ifeq ($(PKG),)
+    PKG = ./...
+endif
+
+case ?=
+TEST_FLAGS =
+ifdef case
+    TEST_FLAGS = -run=$(case)
+endif
 
 .PHONY: all build test test-race test-integration lint lint-fix fmt vet \
-        clean deps tidy coverage coverage-html help install-linter check
+        clean deps tidy coverage coverage-html help install-linter check \
+        unit unit-race
 
 # Default target
 all: fmt lint test build
@@ -45,6 +55,18 @@ test-race:
 	@echo "Running tests with race detector..."
 	$(GOTEST) -v -race -count=1 $(PKG)
 
+# Run unit tests with optional pkg and case targeting.
+# Usage: make unit pkg=./mcp case=TestToolCall
+unit:
+	@echo "Running unit tests..."
+	$(GOTEST) -v -count=1 $(TEST_FLAGS) $(PKG)
+
+# Run unit tests with race detector and optional pkg and case targeting.
+# Usage: make unit-race pkg=. case=TestSubprocess
+unit-race:
+	@echo "Running unit tests with race detector..."
+	$(GOTEST) -v -race -count=1 $(TEST_FLAGS) $(PKG)
+
 # Run integration tests (requires CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY)
 test-integration:
 	@echo "Running integration tests..."
@@ -60,7 +82,7 @@ test-all: test-race test-integration
 install-linter:
 	@if [ -z "$(GOLANGCI_LINT)" ]; then \
 		echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)..."; \
-		go install github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION); \
+		go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION); \
 	else \
 		echo "golangci-lint already installed at $(GOLANGCI_LINT)"; \
 	fi
@@ -128,6 +150,8 @@ help:
 	@echo "  build            Build the library"
 	@echo "  test             Run unit tests"
 	@echo "  test-race        Run unit tests with race detector"
+	@echo "  unit             Run unit tests with PKG/TEST targeting"
+	@echo "  unit-race        Run unit tests with race detector and PKG/TEST targeting"
 	@echo "  test-integration Run integration tests (requires API token)"
 	@echo "  test-all         Run all tests including integration"
 	@echo "  lint             Run golangci-lint"
@@ -142,3 +166,11 @@ help:
 	@echo "  clean            Clean build artifacts"
 	@echo "  install-linter   Install golangci-lint"
 	@echo "  help             Show this help"
+	@echo ""
+	@echo "Variables:"
+	@echo "  pkg=./...        Package(s) to test (default: ./...)"
+	@echo "  case=TestName    Test name filter (passed to -run)"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make unit pkg=. case=TestSubprocessTransport"
+	@echo "  make unit-race case=TestStderr"
