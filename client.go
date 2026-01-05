@@ -266,9 +266,10 @@ func (c *Client) extractQuestionMessage(_ context.Context, msg Message) *Questio
 			// even after the original query context is cancelled.
 			return &QuestionMessage{
 				QuestionSet: QuestionSet{
-					ToolUseID: toolUseID,
-					Questions: input.Questions,
-					SessionID: c.options.SessionOptions.SessionID,
+					ToolUseID:       toolUseID,
+					Questions:       input.Questions,
+					SessionID:       c.options.SessionOptions.SessionID,
+					ParentToolUseID: assistant.ParentToolUseID,
 				},
 				responder: func(answers Answers) error {
 					return c.sendToolResult(context.Background(), toolUseID, answers)
@@ -298,9 +299,10 @@ func (c *Client) handleAskUserQuestion(ctx context.Context, msg Message) bool {
 
 			// Create QuestionSet.
 			qs := QuestionSet{
-				ToolUseID: block.ID,
-				Questions: input.Questions,
-				SessionID: c.options.SessionOptions.SessionID,
+				ToolUseID:       block.ID,
+				Questions:       input.Questions,
+				SessionID:       c.options.SessionOptions.SessionID,
+				ParentToolUseID: assistant.ParentToolUseID,
 			}
 
 			// Call the handler.
@@ -393,9 +395,10 @@ func (c *Client) Questions(ctx context.Context, prompt string) iter.Seq2[Questio
 
 							// Create QuestionSet.
 							qs := QuestionSet{
-								ToolUseID: block.ID,
-								Questions: input.Questions,
-								SessionID: c.options.SessionOptions.SessionID,
+								ToolUseID:       block.ID,
+								Questions:       input.Questions,
+								SessionID:       c.options.SessionOptions.SessionID,
+								ParentToolUseID: assistant.ParentToolUseID,
 							}
 
 							// Create answer function that sends tool result.

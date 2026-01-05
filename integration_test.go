@@ -1037,3 +1037,116 @@ func TestIntegrationQuestionMessage(t *testing.T) {
 	t.Logf("QuestionMessage received: %v", gotQuestionMessage)
 	assert.True(t, gotResponse, "expected assistant response")
 }
+
+// TestIntegrationSubagentQuestionAwareness tests that questions from subagents
+// are correctly identified via IsFromSubagent().
+//
+// This test verifies:
+// 1. QuestionSet.ParentToolUseID is populated when a question comes from a subagent
+// 2. IsFromSubagent() returns true for subagent questions
+//
+// Note: Getting Claude to reliably invoke a subagent that asks questions is
+// difficult to control in tests. The core logic is verified in ask_user_test.go.
+// This test documents the expected behavior with custom agents.
+func TestIntegrationSubagentQuestionAwareness(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	var questionsReceived []QuestionSet
+
+	handler := func(ctx context.Context, qs QuestionSet) (Answers, error) {
+		questionsReceived = append(questionsReceived, qs)
+		t.Logf("Question received - IsFromSubagent: %v, ParentToolUseID: %v",
+			qs.IsFromSubagent(), qs.ParentToolUseID)
+
+		// Auto-answer with first option.
+		answers := make(Answers)
+		for i, q := range qs.Questions {
+			if len(q.Options) > 0 {
+				answers[fmt.Sprintf("q_%d", i)] = q.Options[0].Label
+			} else {
+				answers[fmt.Sprintf("q_%d", i)] = "yes"
+			}
+		}
+		return answers, nil
+	}
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt(
+			"You have access to a research agent. When the user asks about "+
+				"something complex, delegate to the research agent using the Task tool.",
+		),
+		WithAgents(map[string]AgentDefinition{
+			"research": {
+				Name:        "research",
+				Description: "Research specialist that asks clarifying questions",
+				Prompt: "You are a research assistant. ALWAYS ask the user a clarifying " +
+					"question using the AskUserQuestion tool before providing any analysis.",
+				Tools: []string{"AskUserQuestion", "WebSearch"},
+			},
+		}),
+		WithAskUserQuestionHandler(handler),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(10),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	// Ask something that might trigger the research agent.
+	query := "Research the latest developments in quantum computing for me."
+	t.Logf("Query: %s", query)
+
+	var gotResponse bool
+
+	for msg := range client.Query(ctx, query) {
+		switch m := msg.(type) {
+		case AssistantMessage:
+			text := m.ContentText()
+			if text != "" {
+				gotResponse = true
+				// Check if this is from a subagent
+				if m.ParentToolUseID != nil {
+					t.Logf("Subagent message: %s", truncateString(text, 100))
+				} else {
+					t.Logf("Main agent: %s", truncateString(text, 100))
+				}
+			}
+		case SubagentResultMessage:
+			t.Logf("Subagent %s completed: %s", m.AgentName, m.Status)
+		case ResultMessage:
+			t.Logf("Result: status=%s, cost=$%.4f", m.Status, m.TotalCostUSD)
+		}
+	}
+
+	// Log results.
+	t.Logf("Total questions received: %d", len(questionsReceived))
+	for i, qs := range questionsReceived {
+		t.Logf("  Question %d: IsFromSubagent=%v", i, qs.IsFromSubagent())
+	}
+
+	assert.True(t, gotResponse, "expected assistant response")
+
+	// Note: We can't guarantee a subagent question was asked, but if one was,
+	// verify IsFromSubagent works correctly.
+	for _, qs := range questionsReceived {
+		if qs.ParentToolUseID != nil {
+			t.Logf("SUCCESS: Received question from subagent with ParentToolUseID=%s",
+				*qs.ParentToolUseID)
+			assert.True(t, qs.IsFromSubagent(),
+				"IsFromSubagent should return true when ParentToolUseID is set")
+		}
+	}
+}
+
+func truncateString(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}

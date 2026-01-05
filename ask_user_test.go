@@ -385,3 +385,55 @@ func TestQuestionMessageAsMessage(t *testing.T) {
 
 	assert.Equal(t, "question", msg.MessageType())
 }
+
+func TestIsFromSubagent(t *testing.T) {
+	t.Run("returns false when ParentToolUseID is nil", func(t *testing.T) {
+		qs := QuestionSet{
+			ToolUseID:       "tool_123",
+			Questions:       []QuestionItem{{Question: "Test?"}},
+			SessionID:       "session_456",
+			ParentToolUseID: nil,
+		}
+
+		assert.False(t, qs.IsFromSubagent())
+	})
+
+	t.Run("returns true when ParentToolUseID is set", func(t *testing.T) {
+		parentID := "parent_tool_789"
+		qs := QuestionSet{
+			ToolUseID:       "tool_123",
+			Questions:       []QuestionItem{{Question: "Test?"}},
+			SessionID:       "session_456",
+			ParentToolUseID: &parentID,
+		}
+
+		assert.True(t, qs.IsFromSubagent())
+	})
+
+	t.Run("works on QuestionMessage via embedding", func(t *testing.T) {
+		parentID := "task_tool_abc"
+		qm := QuestionMessage{
+			QuestionSet: QuestionSet{
+				ToolUseID:       "tool_123",
+				Questions:       []QuestionItem{{Question: "From subagent?"}},
+				ParentToolUseID: &parentID,
+			},
+		}
+
+		assert.True(t, qm.IsFromSubagent())
+		assert.Equal(t, "task_tool_abc", *qm.ParentToolUseID)
+	})
+
+	t.Run("main agent questions have nil ParentToolUseID", func(t *testing.T) {
+		qm := QuestionMessage{
+			QuestionSet: QuestionSet{
+				ToolUseID: "tool_123",
+				Questions: []QuestionItem{{Question: "From main agent?"}},
+				// ParentToolUseID not set - question from main agent
+			},
+		}
+
+		assert.False(t, qm.IsFromSubagent())
+		assert.Nil(t, qm.ParentToolUseID)
+	})
+}

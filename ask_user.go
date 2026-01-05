@@ -26,6 +26,20 @@ type QuestionSet struct {
 
 	// SessionID is the current session identifier.
 	SessionID string
+
+	// ParentToolUseID is set when the question originated from a subagent.
+	// If non-nil, this question was asked by a subagent during task delegation.
+	// Use IsFromSubagent() to check this conveniently.
+	ParentToolUseID *string
+}
+
+// IsFromSubagent returns true if this question was asked by a subagent.
+//
+// When Claude delegates work to a subagent via the Task tool, and that
+// subagent uses AskUserQuestion, the question bubbles up through the main
+// message stream with ParentToolUseID set to the Task tool invocation.
+func (qs QuestionSet) IsFromSubagent() bool {
+	return qs.ParentToolUseID != nil
 }
 
 // Answer creates an Answers map for a single question.
