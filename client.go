@@ -2,6 +2,7 @@ package claudeagent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"iter"
 	"sync"
@@ -147,19 +148,27 @@ func (c *Client) messagePump() {
 //
 // The iterator yields messages as they arrive from Claude, including:
 // - AssistantMessage: Text responses and tool requests
+// - QuestionMessage: Questions from Claude (call Respond() to answer)
 // - TodoUpdateMessage: Task tracking updates
 // - SubagentResultMessage: Subagent outcomes
 // - ResultMessage: Final completion status
+//
+// When Claude invokes the AskUserQuestion tool:
+// - If WithAskUserQuestionHandler is configured, questions are handled automatically
+// - Otherwise, a QuestionMessage is yielded. Call its Respond() method to answer.
 //
 // The iterator stops when the result message is received or the context is canceled.
 //
 // Example:
 //
-//	for msg := range client.Query(ctx, "What's the weather?") {
+//	for msg := range client.Query(ctx, "Help me configure the project") {
 //	    switch m := msg.(type) {
-//	    case *AssistantMessage:
+//	    case QuestionMessage:
+//	        fmt.Println("Claude asks:", m.Questions[0].Question)
+//	        m.Respond(m.Answer(0, "Yes"))
+//	    case AssistantMessage:
 //	        fmt.Println(m.ContentText())
-//	    case *ResultMessage:
+//	    case ResultMessage:
 //	        fmt.Printf("Done: %s\n", m.Status)
 //	    }
 //	}
@@ -199,6 +208,22 @@ func (c *Client) Query(ctx context.Context, prompt string) iter.Seq[Message] {
 					return // Channel closed.
 				}
 
+				// Check for AskUserQuestion tool calls.
+				if c.options.AskUserQuestionHandler != nil {
+					// Handler configured - use callback API.
+					if handled := c.handleAskUserQuestion(ctx, msg); handled {
+						continue
+					}
+				} else {
+					// No handler - yield QuestionMessage if present.
+					if questionMsg := c.extractQuestionMessage(ctx, msg); questionMsg != nil {
+						if !yield(*questionMsg) {
+							return
+						}
+						continue
+					}
+				}
+
 				// Yield message to consumer.
 				if !yield(msg) {
 					return
@@ -211,6 +236,246 @@ func (c *Client) Query(ctx context.Context, prompt string) iter.Seq[Message] {
 			}
 		}
 	}
+}
+
+// extractQuestionMessage checks if the message contains an AskUserQuestion tool call
+// and returns a QuestionMessage if found. Returns nil if no question is present.
+//
+// The responder uses context.Background() to ensure the answer can be sent even if
+// the original query context has been cancelled. This allows users to respond to
+// questions asynchronously without worrying about context lifecycle.
+func (c *Client) extractQuestionMessage(_ context.Context, msg Message) *QuestionMessage {
+	assistant, ok := msg.(AssistantMessage)
+	if !ok {
+		return nil
+	}
+
+	for _, block := range assistant.Message.Content {
+		if block.Type == "tool_use" && block.Name == "AskUserQuestion" {
+			// Parse the question input.
+			var input AskUserQuestionInput
+			if err := json.Unmarshal(block.Input, &input); err != nil {
+				continue
+			}
+
+			// Capture for closure.
+			toolUseID := block.ID
+
+			// Create QuestionMessage with embedded QuestionSet.
+			// Use context.Background() for responder to allow async responses
+			// even after the original query context is cancelled.
+			return &QuestionMessage{
+				QuestionSet: QuestionSet{
+					ToolUseID: toolUseID,
+					Questions: input.Questions,
+					SessionID: c.options.SessionOptions.SessionID,
+				},
+				responder: func(answers Answers) error {
+					return c.sendToolResult(context.Background(), toolUseID, answers)
+				},
+			}
+		}
+	}
+
+	return nil
+}
+
+// handleAskUserQuestion checks if the message contains an AskUserQuestion tool call
+// and handles it using the configured handler. Returns true if the message was handled.
+func (c *Client) handleAskUserQuestion(ctx context.Context, msg Message) bool {
+	assistant, ok := msg.(AssistantMessage)
+	if !ok {
+		return false
+	}
+
+	for _, block := range assistant.Message.Content {
+		if block.Type == "tool_use" && block.Name == "AskUserQuestion" {
+			// Parse the question input.
+			var input AskUserQuestionInput
+			if err := json.Unmarshal(block.Input, &input); err != nil {
+				continue
+			}
+
+			// Create QuestionSet.
+			qs := QuestionSet{
+				ToolUseID: block.ID,
+				Questions: input.Questions,
+				SessionID: c.options.SessionOptions.SessionID,
+			}
+
+			// Call the handler.
+			answers, err := c.options.AskUserQuestionHandler(ctx, qs)
+			if err != nil {
+				// Send error back to Claude so conversation doesn't hang.
+				c.sendToolError(ctx, block.ID, fmt.Sprintf("question handler error: %v", err))
+				return true
+			}
+
+			// Send the tool result.
+			if err := c.sendToolResult(ctx, block.ID, answers); err != nil {
+				// Send error back to Claude so conversation doesn't hang.
+				c.sendToolError(ctx, block.ID, fmt.Sprintf("failed to send answer: %v", err))
+				return true
+			}
+
+			return true
+		}
+	}
+
+	return false
+}
+
+// Questions returns an iterator for interactive Q&A sessions.
+//
+// This method combines message streaming with question handling. When Claude
+// invokes the AskUserQuestion tool, the iterator yields a QuestionSet and an
+// AnswerFunc. Call the AnswerFunc with your answers to continue the conversation.
+//
+// The iterator yields (QuestionSet, AnswerFunc) pairs. Regular messages are
+// processed internally but not yielded. Use Query() or Stream() if you need
+// access to all messages.
+//
+// Example:
+//
+//	for qs, answer := range client.Questions(ctx, "Help me configure the project") {
+//	    fmt.Printf("Claude asks: %s\n", qs.Questions[0].Question)
+//
+//	    // Use helper methods to construct answers
+//	    if err := answer(qs.Answer(0, "Yes")); err != nil {
+//	        log.Fatal(err)
+//	    }
+//	}
+func (c *Client) Questions(ctx context.Context, prompt string) iter.Seq2[QuestionSet, AnswerFunc] {
+	return func(yield func(QuestionSet, AnswerFunc) bool) {
+		// Ensure connected.
+		if !c.connected {
+			if err := c.Connect(ctx); err != nil {
+				return
+			}
+		}
+
+		// Send user message.
+		userMsg := UserMessage{
+			Type:      "user",
+			SessionID: c.options.SessionOptions.SessionID,
+			Message: APIUserMessage{
+				Role: "user",
+				Content: []UserContentBlock{
+					{Type: "text", Text: prompt},
+				},
+			},
+			ParentToolUseID: nil,
+		}
+
+		if err := c.protocol.SendMessage(ctx, userMsg); err != nil {
+			return
+		}
+
+		// Read messages from channel until result.
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-c.msgCh:
+				if !ok {
+					return // Channel closed.
+				}
+
+				// Check for AskUserQuestion tool calls in assistant messages.
+				if assistant, ok := msg.(AssistantMessage); ok {
+					for _, block := range assistant.Message.Content {
+						if block.Type == "tool_use" && block.Name == "AskUserQuestion" {
+							// Parse the question input.
+							var input AskUserQuestionInput
+							if err := json.Unmarshal(block.Input, &input); err != nil {
+								continue
+							}
+
+							// Create QuestionSet.
+							qs := QuestionSet{
+								ToolUseID: block.ID,
+								Questions: input.Questions,
+								SessionID: c.options.SessionOptions.SessionID,
+							}
+
+							// Create answer function that sends tool result.
+							toolUseID := block.ID
+							answerFunc := func(answers Answers) error {
+								return c.sendToolResult(ctx, toolUseID, answers)
+							}
+
+							// Yield to consumer.
+							if !yield(qs, answerFunc) {
+								return
+							}
+						}
+					}
+				}
+
+				// Stop on result message.
+				if _, ok := msg.(ResultMessage); ok {
+					return
+				}
+			}
+		}
+	}
+}
+
+// sendToolResult sends a tool result back to Claude.
+func (c *Client) sendToolResult(ctx context.Context, toolUseID string, answers Answers) error {
+	// Format answers in the expected structure.
+	result := map[string]interface{}{
+		"answers": answers,
+	}
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("failed to marshal answers: %w", err)
+	}
+
+	// Send as a user message with tool result.
+	msg := UserMessage{
+		Type:            "user",
+		SessionID:       c.options.SessionOptions.SessionID,
+		ParentToolUseID: &toolUseID,
+		ToolUseResult:   json.RawMessage(resultJSON),
+		Message: APIUserMessage{
+			Role: "user",
+			Content: []UserContentBlock{
+				{Type: "tool_result", Text: string(resultJSON)},
+			},
+		},
+	}
+
+	return c.protocol.SendMessage(ctx, msg)
+}
+
+// sendToolError sends an error result back to Claude for a tool use.
+// This prevents the conversation from hanging when question handling fails.
+func (c *Client) sendToolError(ctx context.Context, toolUseID string, errMsg string) error {
+	// Format error in the expected structure.
+	result := map[string]interface{}{
+		"error": errMsg,
+	}
+	resultJSON, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("failed to marshal error: %w", err)
+	}
+
+	// Send as a user message with tool result indicating error.
+	msg := UserMessage{
+		Type:            "user",
+		SessionID:       c.options.SessionOptions.SessionID,
+		ParentToolUseID: &toolUseID,
+		ToolUseResult:   json.RawMessage(resultJSON),
+		Message: APIUserMessage{
+			Role: "user",
+			Content: []UserContentBlock{
+				{Type: "tool_result", Text: string(resultJSON)},
+			},
+		},
+	}
+
+	return c.protocol.SendMessage(ctx, msg)
 }
 
 // Stream returns a bidirectional stream for interactive conversations.
