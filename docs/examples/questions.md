@@ -234,6 +234,56 @@ func handleQuestion(m claudeagent.QuestionMessage) {
 }
 ```
 
+## Questions from Subagents
+
+When Claude delegates work to a subagent, and that subagent uses `AskUserQuestion`,
+the question bubbles up through the main message stream. Use `IsFromSubagent()` to
+detect these:
+
+```go
+for msg := range client.Query(ctx, prompt) {
+    switch m := msg.(type) {
+    case claudeagent.QuestionMessage:
+        if m.IsFromSubagent() {
+            // Question came from a delegated subagent
+            fmt.Printf("[Subagent] %s\n", m.Questions[0].Question)
+            fmt.Printf("  Parent Task: %s\n", *m.ParentToolUseID)
+        } else {
+            // Question from main agent
+            fmt.Printf("[Main] %s\n", m.Questions[0].Question)
+        }
+
+        // Handle the same way regardless of source
+        m.Respond(m.AnswerAll(m.Q(0).SelectIndex(0)))
+    }
+}
+```
+
+The `ParentToolUseID` field contains the ID of the Task tool invocation that
+spawned the subagent. This is useful for:
+
+- **Logging**: Track which subagent asked which question
+- **Context**: Understand the delegation hierarchy
+- **UI**: Display subagent questions differently
+
+### With Callback Handler
+
+The callback handler also receives subagent information:
+
+```go
+client, _ := claudeagent.NewClient(
+    claudeagent.WithAskUserQuestionHandler(
+        func(ctx context.Context, qs claudeagent.QuestionSet) (claudeagent.Answers, error) {
+            if qs.IsFromSubagent() {
+                log.Printf("Subagent question (parent: %s): %s",
+                    *qs.ParentToolUseID, qs.Questions[0].Question)
+            }
+            return qs.AnswerAll(qs.Q(0).SelectIndex(0)), nil
+        },
+    ),
+)
+```
+
 ## Error Handling
 
 The SDK defines specific error types for question handling:

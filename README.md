@@ -177,6 +177,7 @@ For detailed guides and examples, see [docs/examples/](docs/examples/):
 - [MCP Tools](docs/examples/mcp-tools.md) - Integrate custom tools via Model Context Protocol
 - [Hooks](docs/examples/hooks.md) - Intercept and modify Claude's execution
 - [Subagents](docs/examples/subagents.md) - Define and monitor specialized agents
+- [Questions](docs/examples/questions.md) - Handle interactive questions from Claude
 - [Sessions](docs/examples/sessions.md) - Persist and resume conversations
 - [Permissions](docs/examples/permissions.md) - Control what Claude can do
 - [Streaming](docs/examples/streaming.md) - Real-time response handling
