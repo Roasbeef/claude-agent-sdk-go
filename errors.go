@@ -169,3 +169,44 @@ type ErrProtocol struct {
 func (e *ErrProtocol) Error() string {
 	return fmt.Sprintf("protocol error: %s", e.Message)
 }
+
+// ErrQuestionNotFound indicates an attempt to answer a question that doesn't
+// exist or has already been answered.
+type ErrQuestionNotFound struct {
+	ToolUseID string
+}
+
+// Error implements the error interface.
+func (e *ErrQuestionNotFound) Error() string {
+	return fmt.Sprintf("question not found: %s", e.ToolUseID)
+}
+
+// ErrQuestionTimeout indicates a question was not answered within the
+// configured timeout period.
+//
+// This error type is provided for callers to type-switch on when implementing
+// timeout handling in their question handlers. It can be returned from custom
+// handlers or checked when errors occur.
+type ErrQuestionTimeout struct {
+	ToolUseID string
+}
+
+// Error implements the error interface.
+func (e *ErrQuestionTimeout) Error() string {
+	return fmt.Sprintf("question timed out: %s", e.ToolUseID)
+}
+
+// ErrNoQuestionHandler indicates that an AskUserQuestion tool call was
+// received but no handler was configured and no Questions() iterator is active.
+//
+// This error type is provided for callers to type-switch on when handling
+// question-related errors. It indicates a configuration issue where questions
+// arrive but no handler is set up to process them.
+type ErrNoQuestionHandler struct {
+	ToolUseID string
+}
+
+// Error implements the error interface.
+func (e *ErrNoQuestionHandler) Error() string {
+	return fmt.Sprintf("no handler for question: %s (set WithAskUserQuestionHandler or use Questions())", e.ToolUseID)
+}
