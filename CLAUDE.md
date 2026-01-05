@@ -1,0 +1,51 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Build and Test Commands
+
+```bash
+go build ./...                          # Build
+go test ./...                           # Unit tests
+go test -v -run TestName ./...          # Single test
+make test-integration                   # Integration tests (needs API token)
+make test-race                          # Unit tests with race detector
+```
+
+Integration tests require `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`. Without a token, they skip (not fail). Always run `make test-integration` after changes that affect CLI communication.
+
+## Verifying Changes
+
+After modifying code:
+1. `go build ./...` - must pass
+2. `go test ./...` - unit tests must pass
+3. `make test-integration` - run if touching client.go, protocol.go, transport.go, or message handling
+
+For new features, check coverage: `make coverage`
+
+## Architecture
+
+This SDK wraps the Claude Code CLI as a subprocess, communicating via JSON over stdin/stdout. See [docs/DESIGN.md](docs/DESIGN.md) for the full architecture and [docs/cli-protocol.md](docs/cli-protocol.md) for the wire protocol.
+
+**Key files**:
+- `client.go` - `Client`, `Stream`, `Query()` using `iter.Seq[Message]`
+- `protocol.go` - Control messages, hooks, MCP routing
+- `transport.go` - Subprocess lifecycle, stdin/stdout pipes
+- `mcp.go` - In-process MCP server with generics-based tools
+- `ask_user.go` - `QuestionMessage` for interactive Q&A
+
+## Code Style
+
+- Use `go doc` to look up APIs when unsure
+- Comments are complete sentences ending with periods
+
+## Integration Test Patterns
+
+```go
+opts := append(isolatedClientOptions(t),
+    WithSystemPrompt("..."),
+    WithPermissionMode(PermissionModeBypassAll),
+)
+```
+
+Use `skipIfNoToken(t)` and `skipIfNoCLI(t)` at the start.
