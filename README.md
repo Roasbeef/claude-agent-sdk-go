@@ -1,5 +1,7 @@
 # claude-agent-sdk-go
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A pure Go SDK for Claude's agentic capabilities.
 
 ## Overview
@@ -196,4 +198,4 @@ go test ./...
 
 ## License
 
-MIT
+[MIT](LICENSE)
