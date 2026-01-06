@@ -1,11 +1,13 @@
 package claudeagent
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
 // SubprocessRunner abstracts over Claude Code CLI subprocess execution.
@@ -194,50 +196,79 @@ func (m *MockSubprocessRunner) Exit(err error) {
 }
 
 // MockPipe simulates an in-memory pipe for testing.
+//
+// Unlike io.Pipe which is synchronous (writes block until reads), MockPipe
+// uses a buffered approach where writes append to an internal buffer and
+// reads block waiting for data. This eliminates race conditions in tests
+// where strict goroutine ordering would otherwise be required.
 type MockPipe struct {
-	reader *io.PipeReader
-	writer *io.PipeWriter
+	mu     sync.Mutex
+	cond   *sync.Cond
+	buf    bytes.Buffer
+	closed bool
 }
 
-// NewMockPipe creates a mock pipe using io.Pipe.
+// NewMockPipe creates a mock pipe with buffered writes.
 func NewMockPipe() *MockPipe {
-	r, w := io.Pipe()
-	return &MockPipe{
-		reader: r,
-		writer: w,
-	}
+	p := &MockPipe{}
+	p.cond = sync.NewCond(&p.mu)
+	return p
 }
 
-// Read implements io.Reader for the read side of the pipe.
+// Read implements io.Reader. Blocks until data is available or pipe is closed.
 func (p *MockPipe) Read(data []byte) (int, error) {
-	return p.reader.Read(data)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	// Wait for data or close.
+	for p.buf.Len() == 0 && !p.closed {
+		p.cond.Wait()
+	}
+
+	// If closed and no data, return EOF.
+	if p.closed && p.buf.Len() == 0 {
+		return 0, io.EOF
+	}
+
+	return p.buf.Read(data)
 }
 
-// Write implements io.Writer for the write side of the pipe.
+// Write implements io.Writer. Writes are buffered and non-blocking.
 func (p *MockPipe) Write(data []byte) (int, error) {
-	return p.writer.Write(data)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	if p.closed {
+		return 0, io.ErrClosedPipe
+	}
+
+	n, err := p.buf.Write(data)
+	p.cond.Signal()
+	return n, err
 }
 
-// Close closes the pipe.
+// Close closes the pipe, signaling EOF to readers.
 func (p *MockPipe) Close() error {
-	p.writer.Close()
-	p.reader.Close()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.closed = true
+	p.cond.Broadcast()
 	return nil
 }
 
 // CloseWrite closes only the write side (useful for signaling EOF).
 func (p *MockPipe) CloseWrite() error {
-	return p.writer.Close()
+	return p.Close()
 }
 
 // CloseRead closes only the read side.
 func (p *MockPipe) CloseRead() error {
-	return p.reader.Close()
+	return p.Close()
 }
 
 // WriteString is a helper for writing strings to the pipe.
 func (p *MockPipe) WriteString(s string) error {
-	_, err := p.writer.Write([]byte(s))
+	_, err := p.Write([]byte(s))
 	return err
 }
 

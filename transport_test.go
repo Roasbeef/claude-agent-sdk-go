@@ -146,8 +146,11 @@ func TestSubprocessTransportContextCancellation(t *testing.T) {
 		}
 	}()
 
-	// Cancel context immediately
+	// Cancel context and close pipe to simulate subprocess termination.
+	// In real usage, context cancellation leads to subprocess termination
+	// which closes the pipes. The pipe close wakes up blocked readers.
 	cancel()
+	runner.StdoutPipe.Close()
 
 	// Wait for reader to stop
 	select {

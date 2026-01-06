@@ -79,9 +79,20 @@ func TestProtocolInitialize(t *testing.T) {
 		runner.StdoutPipe.Write(data)
 	}()
 
-	// Initialize.
-	err = protocol.Initialize(ctx)
-	require.NoError(t, err)
+	// Run Initialize in a goroutine since io.Pipe is synchronous (Write blocks
+	// until Read). This allows both sides of the pipe to run concurrently.
+	initDone := make(chan error, 1)
+	go func() {
+		initDone <- protocol.Initialize(ctx)
+	}()
+
+	// Wait for Initialize to complete.
+	select {
+	case err = <-initDone:
+		require.NoError(t, err)
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for Initialize to complete")
+	}
 
 	// Verify initialized
 	assert.True(t, protocol.initialized.Load())
@@ -311,6 +322,7 @@ func TestProtocolSendMessage(t *testing.T) {
 
 	// Use channels to coordinate goroutines.
 	readerReady := make(chan struct{})
+	responderReady := make(chan struct{})
 	initResponseSent := make(chan struct{})
 	userMsgReceived := make(chan UserMessage, 1)
 
@@ -333,6 +345,7 @@ func TestProtocolSendMessage(t *testing.T) {
 	// Mock responder - reads init request, sends response, then reads user message.
 	go func() {
 		decoder := json.NewDecoder(runner.StdinPipe)
+		close(responderReady)
 
 		// Read init request.
 		var initReq SDKControlRequest
@@ -361,15 +374,38 @@ func TestProtocolSendMessage(t *testing.T) {
 		}
 	}()
 
-	// Initialize.
-	err = protocol.Initialize(ctx)
-	require.NoError(t, err)
+	// Wait for responder to be ready before calling Initialize.
+	select {
+	case <-responderReady:
+	case <-time.After(1 * time.Second):
+		t.Fatal("timeout waiting for responder to be ready")
+	}
+
+	// Run Initialize in a goroutine since io.Pipe is synchronous (Write blocks
+	// until Read). This allows both sides of the pipe to run concurrently.
+	initDone := make(chan error, 1)
+	go func() {
+		initDone <- protocol.Initialize(ctx)
+	}()
+
+	// Wait for Initialize to complete. The reader goroutine will route the
+	// response from the mock responder to complete the initialization.
+	select {
+	case err = <-initDone:
+		require.NoError(t, err)
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for Initialize to complete")
+	}
+
+	// Wait for init response to be sent before moving to next phase.
+	select {
+	case <-initResponseSent:
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for init response sent")
+	}
 
 	// Verify initialized.
 	assert.True(t, protocol.initialized.Load())
-
-	// Wait for init response to be sent before sending user message.
-	<-initResponseSent
 
 	// Send a user message.
 	userMsg := UserMessage{
