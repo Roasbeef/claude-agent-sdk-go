@@ -8,7 +8,8 @@ discovered through implementation and testing.
 
 The CLI is invoked with flags that enable machine-readable I/O:
 
-```bash claude --output-format stream-json --input-format stream-json --verbose
+```bash
+claude --output-format stream-json --input-format stream-json --verbose
 ```
 
 The `--output-format stream-json` flag causes the CLI to emit line-delimited
