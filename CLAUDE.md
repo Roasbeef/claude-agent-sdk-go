@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 go build ./...                          # Build
 go test ./...                           # Unit tests
 go test -v -run TestName ./...          # Single test
+make lint                               # Run linter (must pass)
 make test-integration                   # Integration tests (needs API token)
 make test-race                          # Unit tests with race detector
 ```
@@ -16,10 +17,13 @@ Integration tests require `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`. With
 
 ## Verifying Changes
 
+**All changes must pass tests and lint before committing.**
+
 After modifying code:
 1. `go build ./...` - must pass
 2. `go test ./...` - unit tests must pass
-3. `make test-integration` - run if touching client.go, protocol.go, transport.go, or message handling
+3. `make lint` - linter must pass (no warnings)
+4. `make test-integration` - run if touching client.go, protocol.go, transport.go, or message handling
 
 For new features, check coverage: `make coverage`
 
@@ -38,6 +42,7 @@ This SDK wraps the Claude Code CLI as a subprocess, communicating via JSON over 
 
 - Use `go doc` to look up APIs when unsure
 - Comments are complete sentences ending with periods
+- Comments focus on the why/how instead of the plain what
 
 ## Integration Test Patterns
 

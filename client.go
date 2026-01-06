@@ -242,7 +242,7 @@ func (c *Client) Query(ctx context.Context, prompt string) iter.Seq[Message] {
 // and returns a QuestionMessage if found. Returns nil if no question is present.
 //
 // The responder uses context.Background() to ensure the answer can be sent even if
-// the original query context has been cancelled. This allows users to respond to
+// the original query context has been canceled. This allows users to respond to
 // questions asynchronously without worrying about context lifecycle.
 func (c *Client) extractQuestionMessage(_ context.Context, msg Message) *QuestionMessage {
 	assistant, ok := msg.(AssistantMessage)
@@ -263,7 +263,7 @@ func (c *Client) extractQuestionMessage(_ context.Context, msg Message) *Questio
 
 			// Create QuestionMessage with embedded QuestionSet.
 			// Use context.Background() for responder to allow async responses
-			// even after the original query context is cancelled.
+			// even after the original query context is canceled.
 			return &QuestionMessage{
 				QuestionSet: QuestionSet{
 					ToolUseID:       toolUseID,
@@ -309,14 +309,16 @@ func (c *Client) handleAskUserQuestion(ctx context.Context, msg Message) bool {
 			answers, err := c.options.AskUserQuestionHandler(ctx, qs)
 			if err != nil {
 				// Send error back to Claude so conversation doesn't hang.
-				c.sendToolError(ctx, block.ID, fmt.Sprintf("question handler error: %v", err))
+				// Ignore sendToolError result - we've already logged the original error.
+				_ = c.sendToolError(ctx, block.ID, fmt.Sprintf("question handler error: %v", err))
 				return true
 			}
 
 			// Send the tool result.
 			if err := c.sendToolResult(ctx, block.ID, answers); err != nil {
 				// Send error back to Claude so conversation doesn't hang.
-				c.sendToolError(ctx, block.ID, fmt.Sprintf("failed to send answer: %v", err))
+				// Ignore sendToolError result - best effort notification.
+				_ = c.sendToolError(ctx, block.ID, fmt.Sprintf("failed to send answer: %v", err))
 				return true
 			}
 
