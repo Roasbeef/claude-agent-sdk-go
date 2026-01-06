@@ -600,3 +600,232 @@ func TestIntegrationSDKMCPServer(t *testing.T) {
 	assert.Contains(t, responseText, "11",
 		"expected response to contain the sum 11 (7 + 4)")
 }
+
+// TestIntegrationStopHookBlock tests that Stop hooks can block session exit
+// and reinject a new prompt using the Decision/Reason/SystemMessage fields.
+//
+// This is the foundation for the Ralph Wiggum pattern.
+func TestIntegrationStopHookBlock(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// Track how many times the Stop hook is called.
+	stopCount := 0
+	maxStops := 2
+
+	stopHook := func(ctx context.Context,
+		input HookInput) (HookResult, error) {
+
+		stopCount++
+		t.Logf("Stop hook called, count=%d", stopCount)
+
+		if stopCount >= maxStops {
+			// Allow exit after max iterations.
+			t.Logf("Allowing exit after %d stops", stopCount)
+			return HookResult{
+				Continue: true,
+				Decision: "approve",
+			}, nil
+		}
+
+		// Block exit and reinject a new prompt.
+		return HookResult{
+			Continue:      false,
+			Decision:      "block",
+			Reason:        "Please say 'iteration " + fmt.Sprintf("%d", stopCount+1) + "'",
+			SystemMessage: fmt.Sprintf("Stop hook test: iteration %d of %d", stopCount, maxStops),
+		}, nil
+	}
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt(
+			"You are a helpful assistant. Follow instructions exactly.",
+		),
+		WithHooks(map[HookType][]HookConfig{
+			HookTypeStop: {
+				{Matcher: "*", Callback: stopHook},
+			},
+		}),
+		WithMaxTurns(5),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	// Start with initial prompt.
+	var responses []string
+	for msg := range client.Query(ctx, "Please say 'iteration 1'") {
+		if m, ok := msg.(AssistantMessage); ok {
+			text := m.ContentText()
+			if text != "" {
+				responses = append(responses, text)
+				t.Logf("Response: %s", text)
+			}
+		}
+	}
+
+	// Verify multiple iterations happened.
+	t.Logf("Stop count: %d, responses: %d", stopCount, len(responses))
+	assert.GreaterOrEqual(t, stopCount, 1, "expected Stop hook to be called at least once")
+}
+
+// TestIntegrationRalphLoop tests the full Ralph Wiggum loop pattern.
+//
+// This test uses a simple task that Claude can complete quickly: counting
+// from 1 to a target number and outputting a completion promise.
+func TestIntegrationRalphLoop(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	loop := NewRalphLoop(RalphConfig{
+		Task: "Count from 1 to 3, outputting each number on its own line. " +
+			"When you have counted to 3, output your completion signal.",
+		CompletionPromise: "COUNTING_DONE",
+		MaxIterations:     5,
+	})
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt(
+			"You are a helpful assistant. Follow instructions precisely. "+
+				"When you complete a task, output the completion signal "+
+				"wrapped in promise tags: <promise>SIGNAL</promise>",
+		),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(3),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	t.Logf("Starting Ralph loop with max %d iterations", loop.Config().MaxIterations)
+
+	var lastIter *Iteration
+	for iter := range loop.Run(ctx, opts...) {
+		lastIter = iter
+
+		t.Logf("Iteration %d complete", iter.Number)
+		t.Logf("  Complete: %v", iter.Complete)
+		t.Logf("  Cost: $%.4f (total: $%.4f)", iter.CostUSD, iter.TotalCostUSD)
+		t.Logf("  Messages: %d", len(iter.Messages))
+
+		if iter.Error != nil {
+			t.Logf("  Error: %v", iter.Error)
+			break
+		}
+
+		// Log assistant responses.
+		for _, msg := range iter.Messages {
+			if m, ok := msg.(AssistantMessage); ok {
+				text := m.ContentText()
+				if text != "" {
+					t.Logf("  Assistant: %s", text)
+				}
+			}
+		}
+
+		if iter.Complete {
+			t.Logf("Task completed!")
+			break
+		}
+	}
+
+	require.NotNil(t, lastIter, "expected at least one iteration")
+	t.Logf("Final iteration: %d, complete: %v", lastIter.Number, lastIter.Complete)
+	t.Logf("Total cost: $%.4f", loop.TotalCost())
+}
+
+// TestIntegrationRalphLoopWithMCP tests Ralph loop with MCP tools.
+//
+// This test combines the Ralph loop with an in-process MCP server to verify
+// that iterative tool-based workflows work correctly.
+func TestIntegrationRalphLoopWithMCP(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// Define typed args for our counter tool.
+	type IncrementArgs struct {
+		Current int `json:"current"`
+	}
+
+	// Track calls to the tool.
+	toolCalls := 0
+
+	// Create an in-process MCP server with a simple counter tool.
+	server := CreateMcpServer(McpServerOptions{
+		Name:    "counter",
+		Version: "1.0.0",
+		Tools: []ToolRegistrar{
+			ToolWithSchema("increment", "Increment a number by 1",
+				map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"current": map[string]interface{}{
+							"type":        "integer",
+							"description": "Current number to increment",
+						},
+					},
+					"required": []string{"current"},
+				},
+				func(ctx context.Context, args IncrementArgs) (ToolResult, error) {
+					toolCalls++
+					next := args.Current + 1
+					return TextResult(fmt.Sprintf("Result: %d", next)), nil
+				},
+			),
+		},
+	})
+
+	loop := NewRalphLoop(RalphConfig{
+		Task: "Use the increment tool to count from 0 to 2. " +
+			"Call increment(0), then increment(1), then increment(2). " +
+			"After you get the result 3, output your completion signal.",
+		CompletionPromise: "INCREMENTED",
+		MaxIterations:     5,
+	})
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt(
+			"You are a helpful assistant. Use the increment tool as instructed. "+
+				"When complete, output: <promise>INCREMENTED</promise>",
+		),
+		WithMcpServer("counter", server),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(10), // Allow multiple tool calls per iteration.
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	t.Logf("Starting Ralph loop with MCP tools")
+
+	var lastIter *Iteration
+	for iter := range loop.Run(ctx, opts...) {
+		lastIter = iter
+
+		t.Logf("Iteration %d: complete=%v, messages=%d, tool_calls=%d",
+			iter.Number, iter.Complete, len(iter.Messages), toolCalls)
+
+		if iter.Error != nil {
+			t.Logf("Error: %v", iter.Error)
+			break
+		}
+
+		if iter.Complete {
+			t.Logf("Task completed!")
+			break
+		}
+	}
+
+	require.NotNil(t, lastIter, "expected at least one iteration")
+	t.Logf("Tool calls made: %d", toolCalls)
+	t.Logf("Total cost: $%.4f", loop.TotalCost())
+
+	// Verify the increment tool was called at least once.
+	assert.GreaterOrEqual(t, toolCalls, 1,
+		"expected increment tool to be called at least once")
+}

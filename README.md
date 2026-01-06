@@ -142,6 +142,34 @@ client, _ := claudeagent.NewClient(
 
 See [MCP Tools](docs/examples/mcp-tools.md) for typed responses, binary servers, and more.
 
+## Ralph Wiggum Loop
+
+For complex iterative tasks, use the Ralph Wiggum loop. Claude works on a task
+repeatedly, seeing its previous work each iteration, until it outputs a
+completion signal:
+
+```go
+loop := claudeagent.NewRalphLoop(claudeagent.RalphConfig{
+    Task:              "Implement a Redis cache layer with tests",
+    CompletionPromise: "TASK COMPLETE",
+    MaxIterations:     10,
+})
+
+for iter := range loop.Run(ctx, claudeagent.WithModel("claude-sonnet-4-5-20250929")) {
+    fmt.Printf("Iteration %d\n", iter.Number)
+    if iter.Complete {
+        fmt.Println("Task completed!")
+        break
+    }
+}
+
+fmt.Printf("Total cost: $%.4f\n", loop.TotalCost())
+```
+
+The loop intercepts session exit via a Stop hook and reinjects the task prompt
+if the completion promise (`<promise>TASK COMPLETE</promise>`) hasn't been
+detected. See [Ralph Loop](docs/examples/ralph.md) for details.
+
 ## Documentation
 
 For detailed guides and examples, see [docs/examples/](docs/examples/):
@@ -153,6 +181,7 @@ For detailed guides and examples, see [docs/examples/](docs/examples/):
 - [Permissions](docs/examples/permissions.md) - Control what Claude can do
 - [Streaming](docs/examples/streaming.md) - Real-time response handling
 - [Skills](docs/examples/skills.md) - Filesystem-based capability extensions
+- [Ralph Loop](docs/examples/ralph.md) - Iterative task completion pattern
 
 For internal architecture, see [DESIGN.md](docs/DESIGN.md). For CLI protocol
 details (how this and the official Typescript SDK actually work), see
