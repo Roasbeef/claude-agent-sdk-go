@@ -139,6 +139,12 @@ type Options struct {
 	// rather than spawning separate processes.
 	// Use WithMcpServer() to add servers.
 	SDKMcpServers map[string]*McpServer
+
+	// AskUserQuestionHandler handles questions from Claude synchronously.
+	// When Claude invokes the AskUserQuestion tool, this handler is called
+	// with the question set. Return answers or an error.
+	// If nil, questions are routed to the Questions() iterator.
+	AskUserQuestionHandler AskUserQuestionHandler
 }
 
 // SystemPromptConfig represents system prompt configuration.
@@ -420,6 +426,27 @@ func WithMcpServer(name string, server *McpServer) Option {
 func WithVerbose(verbose bool) Option {
 	return func(o *Options) {
 		o.Verbose = verbose
+	}
+}
+
+// WithAskUserQuestionHandler sets a callback to handle user questions.
+//
+// When Claude invokes the AskUserQuestion tool, this handler is called
+// with the question set. The handler should return answers using the
+// QuestionSet helper methods.
+//
+// If no handler is set, questions are routed to the Questions() iterator
+// on the client.
+//
+// Example:
+//
+//	WithAskUserQuestionHandler(func(ctx context.Context, qs QuestionSet) (Answers, error) {
+//	    // Auto-select first option for first question
+//	    return qs.Answer(0, qs.Questions[0].Options[0].Label), nil
+//	})
+func WithAskUserQuestionHandler(handler AskUserQuestionHandler) Option {
+	return func(o *Options) {
+		o.AskUserQuestionHandler = handler
 	}
 }
 

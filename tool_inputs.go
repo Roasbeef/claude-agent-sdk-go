@@ -108,3 +108,37 @@ type SkillInput struct {
 	Skill string `json:"skill"`
 	Args  string `json:"args,omitempty"`
 }
+
+// AskUserQuestionInput is the input for the AskUserQuestion tool.
+//
+// This tool allows Claude to ask the user one or more questions, optionally
+// with multiple-choice options. The questions array contains 1-4 questions.
+type AskUserQuestionInput struct {
+	Questions []QuestionItem `json:"questions"`
+}
+
+// QuestionItem represents a single question in an AskUserQuestion request.
+type QuestionItem struct {
+	// Question is the full question text to display to the user.
+	Question string `json:"question"`
+
+	// Header is a short label displayed as a chip/tag (max 12 chars).
+	// Example: "Auth method", "Library", "Approach".
+	Header string `json:"header,omitempty"`
+
+	// Options are the available choices for this question.
+	// If empty, the question expects freeform text input.
+	Options []QuestionOption `json:"options,omitempty"`
+
+	// MultiSelect allows the user to select multiple options.
+	MultiSelect bool `json:"multiSelect,omitempty"`
+}
+
+// QuestionOption represents a selectable option for a question.
+type QuestionOption struct {
+	// Label is the display text for this option (1-5 words).
+	Label string `json:"label"`
+
+	// Description explains what this option means or what happens if chosen.
+	Description string `json:"description"`
+}

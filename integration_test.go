@@ -829,3 +829,324 @@ func TestIntegrationRalphLoopWithMCP(t *testing.T) {
 	assert.GreaterOrEqual(t, toolCalls, 1,
 		"expected increment tool to be called at least once")
 }
+
+// TestIntegrationAskUserQuestionCallback tests the callback-based question
+// handling. This uses a system prompt that encourages Claude to ask questions.
+func TestIntegrationAskUserQuestionCallback(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	var questionReceived bool
+	var questionText string
+
+	// Create a handler that auto-answers questions.
+	handler := func(ctx context.Context, qs QuestionSet) (Answers, error) {
+		questionReceived = true
+		if len(qs.Questions) > 0 {
+			questionText = qs.Questions[0].Question
+		}
+		t.Logf("Question received: %+v", qs)
+
+		// Auto-answer with first option if available, else "yes".
+		answers := make(Answers)
+		for i, q := range qs.Questions {
+			if len(q.Options) > 0 {
+				answers[fmt.Sprintf("q_%d", i)] = q.Options[0].Label
+			} else {
+				answers[fmt.Sprintf("q_%d", i)] = "yes"
+			}
+		}
+		return answers, nil
+	}
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt(
+			"You are a helpful assistant that ALWAYS asks clarifying questions "+
+				"before proceeding with any task. Use the AskUserQuestion tool to "+
+				"ask the user at least one question before giving your final answer. "+
+				"This is required for every interaction.",
+		),
+		WithAskUserQuestionHandler(handler),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(5),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	query := "I want to create a new project."
+	t.Logf("Query: %s", query)
+
+	var gotResponse bool
+
+	for msg := range client.Query(ctx, query) {
+		switch m := msg.(type) {
+		case AssistantMessage:
+			text := m.ContentText()
+			if text != "" {
+				gotResponse = true
+				t.Logf("Assistant: %s", text)
+			}
+		case ResultMessage:
+			t.Logf("Result: status=%s", m.Status)
+		}
+	}
+
+	// Log whether question was asked (may vary based on Claude's behavior).
+	t.Logf("Question received via callback: %v", questionReceived)
+	if questionReceived {
+		t.Logf("Question text: %s", questionText)
+	}
+
+	assert.True(t, gotResponse, "expected assistant response")
+}
+
+// TestIntegrationAskUserQuestionCallbackError tests that errors from the
+// callback handler are properly sent back to Claude so the conversation
+// doesn't hang.
+func TestIntegrationAskUserQuestionCallbackError(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	errorReturned := false
+
+	// Create a handler that returns an error.
+	handler := func(ctx context.Context, qs QuestionSet) (Answers, error) {
+		errorReturned = true
+		t.Logf("Question received, returning error")
+		return nil, fmt.Errorf("simulated handler error")
+	}
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt(
+			"You are a helpful assistant that ALWAYS asks clarifying questions "+
+				"before proceeding with any task. Use the AskUserQuestion tool to "+
+				"ask the user at least one question before giving your final answer. "+
+				"This is required for every interaction.",
+		),
+		WithAskUserQuestionHandler(handler),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(5),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	query := "I want to set up a new project."
+	t.Logf("Query: %s", query)
+
+	var gotResponse bool
+
+	// Even with a handler error, the conversation should continue
+	// (Claude receives the error and can respond appropriately).
+	for msg := range client.Query(ctx, query) {
+		switch m := msg.(type) {
+		case AssistantMessage:
+			text := m.ContentText()
+			if text != "" {
+				gotResponse = true
+				t.Logf("Assistant: %s", text)
+			}
+		case ResultMessage:
+			t.Logf("Result: status=%s", m.Status)
+		}
+	}
+
+	t.Logf("Error returned from callback: %v", errorReturned)
+	// The conversation should complete (not hang).
+	assert.True(t, gotResponse, "expected assistant response after handler error")
+}
+
+// TestIntegrationQuestionMessage tests the QuestionMessage flow in Query().
+// When no callback handler is configured, QuestionMessage should be yielded.
+func TestIntegrationQuestionMessage(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt(
+			"You are a helpful assistant that ALWAYS asks clarifying questions "+
+				"before proceeding with any task. Use the AskUserQuestion tool to "+
+				"ask the user at least one question before giving your final answer. "+
+				"This is required for every interaction.",
+		),
+		// No callback handler - QuestionMessage should be yielded.
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(5),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	query := "I want to set up a new database for my application."
+	t.Logf("Query: %s", query)
+
+	var gotQuestionMessage bool
+	var gotResponse bool
+
+	for msg := range client.Query(ctx, query) {
+		switch m := msg.(type) {
+		case QuestionMessage:
+			gotQuestionMessage = true
+			t.Logf("QuestionMessage received: %d questions", len(m.Questions))
+			for i, q := range m.Questions {
+				t.Logf("  Q%d: %s", i, q.Question)
+				for j, opt := range q.Options {
+					t.Logf("    Option %d: %s - %s", j, opt.Label, opt.Description)
+				}
+			}
+
+			// Answer using the fluent API.
+			var err error
+			if len(m.Questions[0].Options) > 0 {
+				err = m.Respond(m.AnswerAll(m.Q(0).SelectIndex(0)))
+			} else {
+				err = m.Respond(m.Answer(0, "PostgreSQL"))
+			}
+			if err != nil {
+				t.Logf("Error responding: %v", err)
+			}
+
+		case AssistantMessage:
+			text := m.ContentText()
+			if text != "" {
+				gotResponse = true
+				t.Logf("Assistant: %s", text)
+			}
+		case ResultMessage:
+			t.Logf("Result: status=%s", m.Status)
+		}
+	}
+
+	// Log whether QuestionMessage was received (may vary based on Claude's behavior).
+	t.Logf("QuestionMessage received: %v", gotQuestionMessage)
+	assert.True(t, gotResponse, "expected assistant response")
+}
+
+// TestIntegrationSubagentQuestionAwareness tests that questions from subagents
+// are correctly identified via IsFromSubagent().
+//
+// This test verifies:
+// 1. QuestionSet.ParentToolUseID is populated when a question comes from a subagent
+// 2. IsFromSubagent() returns true for subagent questions
+//
+// Note: Getting Claude to reliably invoke a subagent that asks questions is
+// difficult to control in tests. The core logic is verified in ask_user_test.go.
+// This test documents the expected behavior with custom agents.
+func TestIntegrationSubagentQuestionAwareness(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	var questionsReceived []QuestionSet
+
+	handler := func(ctx context.Context, qs QuestionSet) (Answers, error) {
+		questionsReceived = append(questionsReceived, qs)
+		t.Logf("Question received - IsFromSubagent: %v, ParentToolUseID: %v",
+			qs.IsFromSubagent(), qs.ParentToolUseID)
+
+		// Auto-answer with first option.
+		answers := make(Answers)
+		for i, q := range qs.Questions {
+			if len(q.Options) > 0 {
+				answers[fmt.Sprintf("q_%d", i)] = q.Options[0].Label
+			} else {
+				answers[fmt.Sprintf("q_%d", i)] = "yes"
+			}
+		}
+		return answers, nil
+	}
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt(
+			"You have access to a research agent. When the user asks about "+
+				"something complex, delegate to the research agent using the Task tool.",
+		),
+		WithAgents(map[string]AgentDefinition{
+			"research": {
+				Name:        "research",
+				Description: "Research specialist that asks clarifying questions",
+				Prompt: "You are a research assistant. ALWAYS ask the user a clarifying " +
+					"question using the AskUserQuestion tool before providing any analysis.",
+				Tools: []string{"AskUserQuestion", "WebSearch"},
+			},
+		}),
+		WithAskUserQuestionHandler(handler),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(10),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	// Ask something that might trigger the research agent.
+	query := "Research the latest developments in quantum computing for me."
+	t.Logf("Query: %s", query)
+
+	var gotResponse bool
+
+	for msg := range client.Query(ctx, query) {
+		switch m := msg.(type) {
+		case AssistantMessage:
+			text := m.ContentText()
+			if text != "" {
+				gotResponse = true
+				// Check if this is from a subagent
+				if m.ParentToolUseID != nil {
+					t.Logf("Subagent message: %s", truncateString(text, 100))
+				} else {
+					t.Logf("Main agent: %s", truncateString(text, 100))
+				}
+			}
+		case SubagentResultMessage:
+			t.Logf("Subagent %s completed: %s", m.AgentName, m.Status)
+		case ResultMessage:
+			t.Logf("Result: status=%s, cost=$%.4f", m.Status, m.TotalCostUSD)
+		}
+	}
+
+	// Log results.
+	t.Logf("Total questions received: %d", len(questionsReceived))
+	for i, qs := range questionsReceived {
+		t.Logf("  Question %d: IsFromSubagent=%v", i, qs.IsFromSubagent())
+	}
+
+	assert.True(t, gotResponse, "expected assistant response")
+
+	// Note: We can't guarantee a subagent question was asked, but if one was,
+	// verify IsFromSubagent works correctly.
+	for _, qs := range questionsReceived {
+		if qs.ParentToolUseID != nil {
+			t.Logf("SUCCESS: Received question from subagent with ParentToolUseID=%s",
+				*qs.ParentToolUseID)
+			assert.True(t, qs.IsFromSubagent(),
+				"IsFromSubagent should return true when ParentToolUseID is set")
+		}
+	}
+}
+
+func truncateString(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
+}
