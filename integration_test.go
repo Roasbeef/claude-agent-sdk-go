@@ -1150,3 +1150,73 @@ func truncateString(s string, n int) string {
 	}
 	return s[:n] + "..."
 }
+
+// TestIntegrationWorkingDirectory tests that the subprocess runs in the
+// specified working directory. This verifies that WithCwd actually affects
+// Claude's working directory.
+func TestIntegrationWorkingDirectory(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// Create a temp directory with a marker file.
+	tempDir := t.TempDir()
+	markerFile := filepath.Join(tempDir, "cwd_test_marker.txt")
+	markerContent := "MARKER_CONTENT_12345"
+	err := os.WriteFile(markerFile, []byte(markerContent), 0644)
+	require.NoError(t, err, "failed to create marker file")
+
+	// Create client with Cwd set to the temp directory.
+	opts := append(isolatedClientOptions(t),
+		WithCwd(tempDir),
+		WithSystemPrompt(
+			"You are a helpful assistant. When asked to read a file, use the "+
+				"Read tool to read it. Report the exact contents.",
+		),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(3),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	// Ask Claude to read the marker file using a relative path.
+	// If cwd is set correctly, Claude should be able to find it.
+	query := "Please read the file 'cwd_test_marker.txt' and tell me its contents exactly."
+	t.Logf("Query: %s", query)
+	t.Logf("Expected marker: %s", markerContent)
+
+	var gotResponse bool
+	var responseText string
+	var usedReadTool bool
+
+	for msg := range client.Query(ctx, query) {
+		switch m := msg.(type) {
+		case AssistantMessage:
+			// Check for Read tool usage in content blocks.
+			for _, block := range m.Message.Content {
+				if block.Type == "tool_use" && block.Name == "Read" {
+					usedReadTool = true
+					t.Logf("Read tool invoked with input: %s", string(block.Input))
+				}
+			}
+			text := m.ContentText()
+			if text != "" {
+				gotResponse = true
+				responseText += text
+				t.Logf("Assistant: %s", text)
+			}
+		case ResultMessage:
+			t.Logf("Result: status=%s, cost=$%.4f", m.Status, m.TotalCostUSD)
+		}
+	}
+
+	assert.True(t, gotResponse, "expected assistant response")
+	assert.True(t, usedReadTool, "expected Read tool to be used for file access")
+	assert.Contains(t, responseText, markerContent,
+		"expected response to contain the marker content, indicating cwd was set correctly")
+}

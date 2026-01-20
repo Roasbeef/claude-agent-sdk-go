@@ -638,9 +638,51 @@ func TestSubprocessTransportConnectArguments(t *testing.T) {
 	require.NoError(t, err)
 	defer transport.Close()
 
-	// Verify runner was started (we can't directly inspect args in this
-	// design, but we verify it started successfully)
+	// Verify runner was started and captured args.
 	assert.True(t, runner.started)
+	assert.Contains(t, runner.StartArgs, "--model")
+	assert.Contains(t, runner.StartArgs, "--verbose")
+}
+
+// TestSubprocessTransportWorkingDirectory tests that Cwd option is passed to runner.
+func TestSubprocessTransportWorkingDirectory(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	opts := &Options{
+		Cwd: "/custom/working/directory",
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	// Verify cwd was passed to the runner.
+	assert.True(t, runner.started)
+	assert.Equal(t, "/custom/working/directory", runner.StartCwd)
+}
+
+// TestSubprocessTransportDefaultWorkingDirectory tests that empty Cwd uses the
+// default behavior (inheriting the parent process's working directory).
+func TestSubprocessTransportDefaultWorkingDirectory(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	opts := &Options{
+		// No Cwd set - should pass empty string.
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	// Verify empty cwd was passed to the runner.
+	assert.True(t, runner.started)
+	assert.Empty(t, runner.StartCwd)
 }
 
 // TestSubprocessTransportCloseTimeout tests forced kill on close timeout.
