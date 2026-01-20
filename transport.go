@@ -192,8 +192,8 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		env = append(env, "CLAUDE_CONFIG_DIR="+t.options.ConfigDir)
 	}
 
-	// Start subprocess via runner.
-	stdin, stdout, stderr, err := t.runner.Start(ctx, args, env)
+	// Start subprocess via runner with working directory.
+	stdin, stdout, stderr, err := t.runner.Start(ctx, args, env, t.options.Cwd)
 	if err != nil {
 		return &ErrSubprocessFailed{Cause: err}
 	}

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -15,9 +16,9 @@ import (
 // This interface allows swapping implementations for testing (mock subprocess),
 // containerized execution (Docker/Kubernetes), or remote execution (SSH, gRPC).
 type SubprocessRunner interface {
-	// Start spawns the subprocess with the given arguments and environment.
-	// Returns stdin, stdout, stderr pipes.
-	Start(ctx context.Context, args []string, env []string) (
+	// Start spawns the subprocess with the given arguments, environment, and
+	// working directory. Returns stdin, stdout, stderr pipes.
+	Start(ctx context.Context, args []string, env []string, cwd string) (
 		stdin io.WriteCloser,
 		stdout io.ReadCloser,
 		stderr io.ReadCloser,
@@ -52,10 +53,12 @@ func NewLocalSubprocessRunner(cliPath string) *LocalSubprocessRunner {
 	}
 }
 
-// Start spawns the Claude CLI subprocess with the given arguments and environment.
+// Start spawns the Claude CLI subprocess with the given arguments, environment,
+// and working directory.
 //
 // Arguments should include CLI flags like "--output-format stream-json".
 // Environment should include ANTHROPIC_API_KEY and other necessary variables.
+// If cwd is non-empty, the subprocess will be started in that directory.
 //
 // Note: We use exec.Command instead of exec.CommandContext to avoid issues
 // with stdout pipe being closed prematurely. Callers should use Kill() for
@@ -64,11 +67,26 @@ func (r *LocalSubprocessRunner) Start(
 	ctx context.Context,
 	args []string,
 	env []string,
+	cwd string,
 ) (io.WriteCloser, io.ReadCloser, io.ReadCloser, error) {
 	// Create command without context - context-based lifecycle causes issues
 	// with stdout pipes. Caller is responsible for killing on context cancel.
 	r.cmd = exec.Command(r.cliPath, args...)
 	r.cmd.Env = env
+
+	// Set working directory if specified. Empty string uses the parent
+	// process's cwd.
+	if cwd != "" {
+		// Validate the directory exists and is accessible.
+		fi, err := os.Stat(cwd)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("invalid working directory: %w", err)
+		}
+		if !fi.IsDir() {
+			return nil, nil, nil, fmt.Errorf("cwd is not a directory: %s", cwd)
+		}
+		r.cmd.Dir = cwd
+	}
 
 	// Set up pipes
 	stdin, err := r.cmd.StdinPipe()
@@ -143,6 +161,11 @@ type MockSubprocessRunner struct {
 	started bool
 	exited  bool
 	exitErr error
+
+	// Captured start parameters for test inspection.
+	StartArgs []string
+	StartEnv  []string
+	StartCwd  string
 }
 
 // NewMockSubprocessRunner creates a mock runner for testing.
@@ -154,13 +177,17 @@ func NewMockSubprocessRunner() *MockSubprocessRunner {
 	}
 }
 
-// Start simulates subprocess startup.
+// Start simulates subprocess startup and captures parameters for test inspection.
 func (m *MockSubprocessRunner) Start(
 	ctx context.Context,
 	args []string,
 	env []string,
+	cwd string,
 ) (io.WriteCloser, io.ReadCloser, io.ReadCloser, error) {
 	m.started = true
+	m.StartArgs = args
+	m.StartEnv = env
+	m.StartCwd = cwd
 	return m.StdinPipe, m.StdoutPipe, m.StderrPipe, nil
 }
 
