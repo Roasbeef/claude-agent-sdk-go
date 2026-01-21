@@ -89,6 +89,8 @@ func (t *SubprocessTransport) SetStderrLogger(w io.Writer) {
 // - --system-prompt: System instructions
 // - --permission-mode: Permission mode
 // - --verbose: Debug logging (if enabled)
+// - --resume: Resume an existing session by ID (if SessionOptions.Resume is set)
+// - --fork-session: Fork to a new session ID when resuming (if SessionOptions.ForkSession is set)
 //
 // Environment variables are set for:
 // - ANTHROPIC_API_KEY: API authentication
@@ -174,6 +176,16 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	// Add no-session-persistence flag if set.
 	if t.options.NoSessionPersistence {
 		args = append(args, "--no-session-persistence")
+	}
+
+	// Add session resume flag if set.
+	if t.options.SessionOptions.Resume != "" {
+		args = append(args, "--resume", t.options.SessionOptions.Resume)
+	}
+
+	// Add fork-session flag if set (used with --resume or --continue).
+	if t.options.SessionOptions.ForkSession {
+		args = append(args, "--fork-session")
 	}
 
 	// Build environment - start with current process env, then overlay options.
