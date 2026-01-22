@@ -685,6 +685,34 @@ func TestSubprocessTransportDefaultWorkingDirectory(t *testing.T) {
 	assert.Empty(t, runner.StartCwd)
 }
 
+// TestSubprocessTransportSessionOptions tests that session options are passed correctly.
+func TestSubprocessTransportSessionOptions(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	opts := &Options{
+		SessionOptions: SessionOptions{
+			Resume:          "session-123",
+			ForkSession:     true,
+			ResumeSessionAt: "msg-uuid-456",
+		},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	// Verify session flags were passed to CLI.
+	assert.True(t, runner.started)
+	assert.Contains(t, runner.StartArgs, "--resume")
+	assert.Contains(t, runner.StartArgs, "session-123")
+	assert.Contains(t, runner.StartArgs, "--fork-session")
+	assert.Contains(t, runner.StartArgs, "--resume-session-at")
+	assert.Contains(t, runner.StartArgs, "msg-uuid-456")
+}
+
 // TestSubprocessTransportCloseTimeout tests forced kill on close timeout.
 func TestSubprocessTransportCloseTimeout(t *testing.T) {
 	runner := NewMockSubprocessRunner()
