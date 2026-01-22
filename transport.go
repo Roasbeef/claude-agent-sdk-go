@@ -201,6 +201,11 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, "--add-dir", dir)
 	}
 
+	// Add include-partial-messages flag for streaming deltas.
+	if t.options.IncludePartialMessages {
+		args = append(args, "--include-partial-messages")
+	}
+
 	// Build environment - start with current process env, then overlay options.
 	env := os.Environ()
 	for k, v := range t.options.Env {
