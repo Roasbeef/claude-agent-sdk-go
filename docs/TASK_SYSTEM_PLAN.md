@@ -708,15 +708,54 @@ The CLI supports a **shared task list** feature via `CLAUDE_CODE_TASK_LIST_ID`. 
 
 ### How It Works
 
-Tasks created via `TodoWrite` are stored at:
+Tasks are persisted as individual JSON files:
 ```
-~/.claude/tasks/{taskListId}/{taskId}.json
+~/.claude/tasks/<list-id>/
+├── 1.json
+├── 2.json
+├── 3.json
+...
+└── 22.json
 ```
 
-The task list ID is determined by (in order of precedence):
-1. `CLAUDE_CODE_TASK_LIST_ID` environment variable
-2. Session ID
+The `<list-id>` is determined by (in order of precedence):
+1. `CLAUDE_CODE_TASK_LIST_ID` environment variable (persists across sessions)
+2. Session UUID (default - tasks exist only for that session)
 3. Generated unique ID
+
+### Accessing Task Files Directly
+
+You can inspect, backup, or manually edit task files:
+
+```bash
+# View all task lists
+ls ~/.claude/tasks/
+
+# View a specific task list
+ls ~/.claude/tasks/my-project/
+
+# Read a specific task
+cat ~/.claude/tasks/my-project/1.json | jq
+
+# Backup a task list
+cp -r ~/.claude/tasks/my-project/ ~/backups/
+
+# Git track task state
+cd ~/.claude/tasks/my-project && git init && git add . && git commit -m "Initial tasks"
+```
+
+### External Tooling Opportunities
+
+The file-based storage enables powerful integrations:
+
+| Use Case | Description |
+|----------|-------------|
+| **Backup/Restore** | Copy task directories for snapshots |
+| **Git Tracking** | Version control task state changes |
+| **External Dashboards** | Read task JSON for custom UIs |
+| **Cross-Project Templates** | Copy task lists as workflow templates |
+| **CI/CD Integration** | Pre-populate tasks from build scripts |
+| **Team Sync** | Share task directories via Dropbox/Git |
 
 ### Use Case: Multi-Instance Coordination
 
@@ -789,9 +828,29 @@ See all tasks at once:
 }
 ```
 
-### Task List Schema
+### Task JSON Schema
 
-Each task in the list has this structure:
+Each task is stored as a single JSON file (e.g., `~/.claude/tasks/my-project/23.json`):
+
+```json
+{
+  "id": "23",
+  "subject": "Test metadata functionality",
+  "description": "Testing if metadata gets stored and what it does",
+  "activeForm": "Testing metadata",
+  "owner": "backend-dev",
+  "status": "pending",
+  "blocks": ["24", "25"],
+  "blockedBy": ["1", "2"],
+  "metadata": {
+    "priority": "high",
+    "estimate": "30min",
+    "tags": ["test", "experiment"]
+  }
+}
+```
+
+### Go Type Definition
 
 ```go
 // TaskListItem represents a persistent task in the shared task list.
@@ -802,9 +861,9 @@ type TaskListItem struct {
     ActiveForm  string            `json:"activeForm,omitempty"`
     Owner       string            `json:"owner,omitempty"`      // Agent ID that owns this task
     Status      TaskListStatus    `json:"status"`               // pending, in_progress, completed
-    Blocks      []string          `json:"blocks"`               // Task IDs this blocks
-    BlockedBy   []string          `json:"blockedBy"`            // Task IDs blocking this
-    Metadata    map[string]any    `json:"metadata,omitempty"`
+    Blocks      []string          `json:"blocks"`               // Task IDs this task blocks
+    BlockedBy   []string          `json:"blockedBy"`            // Task IDs blocking this task
+    Metadata    map[string]any    `json:"metadata,omitempty"`   // Custom metadata (priority, tags, etc.)
 }
 
 type TaskListStatus string
@@ -815,6 +874,13 @@ const (
     TaskListStatusCompleted  TaskListStatus = "completed"
 )
 ```
+
+**Key behaviors:**
+- Tasks start with `status: "pending"` and no owner
+- `blocks`: Task IDs that THIS task blocks (dependents)
+- `blockedBy`: Task IDs that block THIS task (dependencies)
+- Blocked tasks auto-unblock when all blocking tasks reach `completed`
+- `metadata` is free-form - use for priority, estimates, tags, external IDs, etc.
 
 ### Tool Input Types for Go SDK
 
@@ -853,15 +919,16 @@ type TaskListInput struct{}
 ### Pluggable Task Store Interface
 
 The default storage is on-disk JSON at `~/.claude/tasks/{listId}/{taskId}.json`.
-We can provide an interface for custom backends (PostgreSQL, Redis, etc.):
+We provide an interface for custom backends to enable distributed coordination:
 
 ```go
 // TaskStore is the interface for task persistence backends.
 //
 // Implementations can store tasks in various backends:
-// - FileTaskStore (default): JSON files on disk
-// - PostgresTaskStore: PostgreSQL database
-// - RedisTaskStore: Redis key-value store
+// - FileTaskStore (default): JSON files on disk, compatible with CLI
+// - PostgresTaskStore: PostgreSQL with LISTEN/NOTIFY for subscriptions
+// - RedisTaskStore: Redis with pub/sub for real-time updates
+// - EtcdTaskStore: etcd for distributed consensus
 // - MemoryTaskStore: In-memory for testing
 type TaskStore interface {
     // Create adds a new task and returns its ID.
@@ -871,6 +938,7 @@ type TaskStore interface {
     Get(ctx context.Context, listID, taskID string) (*TaskListItem, error)
 
     // Update modifies an existing task.
+    // Must handle append semantics for AddBlocks/AddBlockedBy.
     Update(ctx context.Context, listID, taskID string, update TaskUpdateInput) error
 
     // List returns all tasks in a list.
@@ -879,25 +947,135 @@ type TaskStore interface {
     // Delete removes a task.
     Delete(ctx context.Context, listID, taskID string) error
 
+    // Clear removes all tasks in a list.
+    Clear(ctx context.Context, listID string) error
+
     // Subscribe returns a channel for task change notifications.
-    // Returns nil if the backend doesn't support subscriptions.
+    // Returns nil, nil if the backend doesn't support subscriptions.
     Subscribe(ctx context.Context, listID string) (<-chan TaskEvent, error)
+}
+
+// TaskStoreWithLocking extends TaskStore with distributed locking.
+// Useful for preventing race conditions in multi-instance scenarios.
+type TaskStoreWithLocking interface {
+    TaskStore
+
+    // Lock acquires an exclusive lock on a task.
+    // Returns a release function that must be called when done.
+    Lock(ctx context.Context, listID, taskID string) (release func(), err error)
+
+    // TryLock attempts to acquire a lock without blocking.
+    // Returns false if the lock is held by another process.
+    TryLock(ctx context.Context, listID, taskID string) (release func(), acquired bool, err error)
+}
+
+// TaskStoreWithExport extends TaskStore with bulk operations.
+// Useful for backup, restore, and migration scenarios.
+type TaskStoreWithExport interface {
+    TaskStore
+
+    // Export returns all tasks as a JSON-serializable structure.
+    Export(ctx context.Context, listID string) ([]TaskListItem, error)
+
+    // Import replaces all tasks from a JSON structure.
+    // Use clear=true to delete existing tasks first.
+    Import(ctx context.Context, listID string, tasks []TaskListItem, clear bool) error
+
+    // ListIDs returns all task list IDs in the store.
+    ListIDs(ctx context.Context) ([]string, error)
 }
 
 // TaskEvent represents a change to a task.
 type TaskEvent struct {
-    Type   TaskEventType
-    TaskID string
-    Task   *TaskListItem // nil for delete events
+    Type      TaskEventType
+    ListID    string
+    TaskID    string
+    Task      *TaskListItem // nil for delete events
+    Timestamp time.Time
+    AgentID   string // which agent made the change (if known)
 }
 
 type TaskEventType string
 
 const (
-    TaskEventCreated  TaskEventType = "created"
-    TaskEventUpdated  TaskEventType = "updated"
-    TaskEventDeleted  TaskEventType = "deleted"
+    TaskEventCreated   TaskEventType = "created"
+    TaskEventUpdated   TaskEventType = "updated"
+    TaskEventDeleted   TaskEventType = "deleted"
+    TaskEventClaimed   TaskEventType = "claimed"   // owner assigned
+    TaskEventCompleted TaskEventType = "completed" // status -> completed
+    TaskEventUnblocked TaskEventType = "unblocked" // blockedBy became empty
 )
+```
+
+### Distributed Coordination Patterns
+
+The TaskStore interface enables several distributed coordination patterns:
+
+#### 1. Work Queue (Fan-out)
+```go
+// Leader creates tasks, workers claim and complete them
+func workerLoop(ctx context.Context, tm *TaskManager, agentID string) {
+    for {
+        // Find unblocked, unclaimed tasks
+        tasks, _ := tm.ListUnblocked(ctx)
+        for _, task := range tasks {
+            if task.Owner == "" {
+                // Atomically claim the task
+                if err := tm.Claim(ctx, task.ID, agentID); err == nil {
+                    // We got it - do the work
+                    doWork(task)
+                    tm.Complete(ctx, task.ID)
+                }
+                // If claim failed, another worker got it - try next
+            }
+        }
+        time.Sleep(time.Second)
+    }
+}
+```
+
+#### 2. Dependency Graph Execution
+```go
+// Execute tasks respecting blockedBy relationships
+func executeDAG(ctx context.Context, tm *TaskManager) {
+    for {
+        // Only get tasks with all dependencies completed
+        ready, _ := tm.ListUnblocked(ctx)
+        if len(ready) == 0 {
+            break // All done
+        }
+
+        // Execute ready tasks in parallel
+        var wg sync.WaitGroup
+        for _, task := range ready {
+            wg.Add(1)
+            go func(t TaskListItem) {
+                defer wg.Done()
+                execute(t)
+                tm.Complete(ctx, t.ID)
+            }(task)
+        }
+        wg.Wait()
+    }
+}
+```
+
+#### 3. Real-time Dashboard
+```go
+// Subscribe to task changes for live UI updates
+func dashboard(ctx context.Context, tm *TaskManager) {
+    events, _ := tm.Watch(ctx)
+    for event := range events {
+        switch event.Type {
+        case TaskEventCreated:
+            ui.AddTask(event.Task)
+        case TaskEventUpdated:
+            ui.UpdateTask(event.Task)
+        case TaskEventCompleted:
+            ui.MarkComplete(event.TaskID)
+        }
+    }
+}
 ```
 
 ### SDK Task Management API
