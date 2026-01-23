@@ -655,6 +655,8 @@ func TestBackgroundTask(t *testing.T) {
 ### Optional Extensions
 12. **Phase 12: PostgresTaskStore** - PostgreSQL backend (optional)
 13. **Phase 13: Task Subscriptions** - Real-time task change notifications (optional)
+14. **Phase 14: Task Archival** - Archive completed tasks to manage context size (optional)
+15. **Phase 15: Epic Management** - Hierarchical task grouping via metadata (optional)
 
 Each phase can be implemented and tested independently.
 
@@ -699,6 +701,16 @@ Each phase can be implemented and tested independently.
    - Use the same scheme?
    - Allow UUIDs or other ID formats?
    - Does the CLI care about ID format?
+
+10. **Context Size Management**: Claude receives the full task list, which consumes context:
+    - Should the SDK provide automatic archival of old completed tasks?
+    - What's the optimal task list size before context impact becomes significant?
+    - Should we support "views" that filter tasks sent to Claude?
+
+11. **Model Selection**: Tasks can specify model (haiku/sonnet/opus):
+    - Should `TaskCreateInput` include a `preferredModel` field?
+    - How do we balance cost vs. capability for different task types?
+    - Can we auto-select models based on task complexity metadata?
 
 ---
 
@@ -757,6 +769,61 @@ The file-based storage enables powerful integrations:
 | **CI/CD Integration** | Pre-populate tasks from build scripts |
 | **Team Sync** | Share task directories via Dropbox/Git |
 
+### Task Persistence Strategies
+
+#### Within a Single Session (Default)
+Tasks automatically survive **context compaction**. As conversations get long and context is summarized, task state remains intact.
+
+#### Across Sessions
+
+**Option 1: Per-terminal session (ephemeral)**
+```bash
+CLAUDE_CODE_TASK_LIST_ID="my-project-tasks" claude
+```
+Tasks persist only while terminal is open.
+
+**Option 2: Project settings (persistent)**
+
+Create `.claude/settings.json` in your project:
+```json
+{
+  "env": {
+    "CLAUDE_CODE_TASK_LIST_ID": "billion-dollar-saas"
+  }
+}
+```
+Now tasks persist between completely separate conversations.
+
+**Important**: Claude receives the full task list, so you should archive/clean up completed tasks periodically. Tasks are stored at:
+```
+~/.claude/tasks/<CLAUDE_CODE_TASK_LIST_ID>/
+```
+
+### Model Selection for Tasks
+
+When spawning agents via the Task tool, you can specify the model:
+
+```json
+{ "model": "haiku" }   // Fast, cheap - simple tasks
+{ "model": "sonnet" }  // Balanced - most coding work
+{ "model": "opus" }    // Full power - complex reasoning
+```
+
+**Rule of thumb:**
+| Model | Use Cases |
+|-------|-----------|
+| `haiku` | Running commands, simple searches, straightforward tasks |
+| `sonnet` | Moderate complexity, most implementation work |
+| `opus` | Architecture decisions, nuanced problems, multi-step reasoning |
+
+This can be codified in CLAUDE.md or Skills:
+```markdown
+## Agent Model Guidelines
+- Use haiku for Explore agents in simple codebases
+- Use opus for Explore agents in complex/large codebases
+- Use sonnet for most implementation tasks
+```
+
 ### Use Case: Multi-Instance Coordination
 
 Multiple Claude Code instances can share the same task list:
@@ -769,11 +836,20 @@ client1, _ := claudeagent.NewClient(
     }),
 )
 
-// Instance 2: Worker picks up tasks
+// Instance 2: Worker picks up tasks (using haiku for speed)
 client2, _ := claudeagent.NewClient(
     claudeagent.WithEnv(map[string]string{
         "CLAUDE_CODE_TASK_LIST_ID": "project-alpha-tasks",
     }),
+    claudeagent.WithModel("haiku"), // Fast worker
+)
+
+// Instance 3: Complex task worker (using opus for reasoning)
+client3, _ := claudeagent.NewClient(
+    claudeagent.WithEnv(map[string]string{
+        "CLAUDE_CODE_TASK_LIST_ID": "project-alpha-tasks",
+    }),
+    claudeagent.WithModel("opus"), // Heavy lifting
 )
 ```
 
@@ -1269,9 +1345,83 @@ The MCP proxy approach is more elegant and fits the existing architecture.
 
 ---
 
+## Future Potential: Epic/Sub-Epic Task Management
+
+The current task system is flat (no hierarchy), but the `metadata` field enables building higher-level abstractions:
+
+### Epic Structure via Metadata
+
+```go
+// Define an epic
+epic := TaskListItem{
+    Subject:     "User Authentication System",
+    Description: "Complete auth implementation with OAuth, MFA, sessions",
+    Status:      TaskListStatusInProgress,
+    Metadata: map[string]any{
+        "type":     "epic",
+        "priority": "P0",
+        "sprint":   "2024-Q1",
+    },
+}
+
+// Sub-tasks reference the epic
+subtask := TaskListItem{
+    Subject:     "Implement OAuth2 flow",
+    Description: "Google and GitHub OAuth providers",
+    Status:      TaskListStatusPending,
+    Metadata: map[string]any{
+        "type":      "task",
+        "epic_id":   "1",          // Reference to epic
+        "estimate":  "4h",
+        "assignee":  "backend-dev",
+    },
+}
+```
+
+### SDK Support for Hierarchies
+
+```go
+// TaskManager extensions for epic management
+func (tm *TaskManager) CreateEpic(ctx context.Context, subject, description string) (*TaskListItem, error)
+func (tm *TaskManager) ListEpics(ctx context.Context) ([]TaskListItem, error)
+func (tm *TaskManager) ListTasksInEpic(ctx context.Context, epicID string) ([]TaskListItem, error)
+func (tm *TaskManager) GetEpicProgress(ctx context.Context, epicID string) (completed, total int, err error)
+
+// Archive completed epics to reduce context size
+func (tm *TaskManager) ArchiveEpic(ctx context.Context, epicID string) error
+func (tm *TaskManager) ListArchivedEpics(ctx context.Context) ([]TaskListItem, error)
+```
+
+### Integration Opportunities
+
+| Integration | Description |
+|-------------|-------------|
+| **Git Sync** | Mirror task state to git for version control |
+| **Jira/Linear** | Sync tasks with external project management |
+| **Velocity Tracking** | Measure task completion rates over time |
+| **Sprint Planning** | Group tasks by sprint metadata |
+| **Burndown Charts** | Track epic progress visually |
+
+### Task Archival Strategy
+
+Since Claude receives the full task list, implement archival to manage context size:
+
+```go
+// Archive completed tasks older than N days
+func (tm *TaskManager) ArchiveOldCompleted(ctx context.Context, olderThan time.Duration) (int, error)
+
+// Move tasks to archive directory
+// ~/.claude/tasks/<list-id>/          -> active tasks
+// ~/.claude/tasks/<list-id>/archive/  -> archived tasks
+```
+
+---
+
 ## Compatibility Notes
 
 - Requires Claude Code CLI version with task system support
 - The `CLAUDE_CODE_ENABLE_TASKS` environment variable may need to be set for background tasks
 - `CLAUDE_CODE_TASK_LIST_ID` enables shared TodoWrite storage
 - Backward compatible - existing code that doesn't use tasks continues to work
+- Tasks survive context compaction within a session
+- Project settings (`.claude/settings.json`) enable cross-session persistence
