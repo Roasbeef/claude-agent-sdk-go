@@ -637,19 +637,32 @@ func TestBackgroundTask(t *testing.T) {
 
 ## Implementation Order
 
+### Core (Required)
 1. **Phase 1: Message Types** - Core message parsing (low risk, foundation)
-2. **Phase 2: Tool Input Types** - Type definitions (low risk)
+2. **Phase 2: Tool Input Types** - Task/TaskOutput input definitions (low risk)
 3. **Phase 3: Agent Definition** - Expand existing type (low risk)
-4. **Phase 4: High-Level API** - New file with task management (medium risk)
+4. **Phase 4: Background Task API** - TaskManager for subagent notifications (medium risk)
 5. **Phase 5: Client Integration** - Wire up notifications (medium risk)
 6. **Phase 6: Hook Enhancement** - Minor additions (low risk)
-7. **Phase 7: Task List Support** - `WithTaskListID()`, `WithEnv()` options (low risk)
+
+### Task List System (New)
+7. **Phase 7: Task CRUD Types** - TaskCreate/Update/Get/List input types (low risk)
+8. **Phase 8: TaskStore Interface** - Pluggable storage backend interface (medium risk)
+9. **Phase 9: FileTaskStore** - Default JSON file implementation (medium risk)
+10. **Phase 10: TaskManager API** - High-level task management (medium risk)
+11. **Phase 11: Client Task Integration** - `WithTaskListID()`, `WithTaskStore()` (low risk)
+
+### Optional Extensions
+12. **Phase 12: PostgresTaskStore** - PostgreSQL backend (optional)
+13. **Phase 13: Task Subscriptions** - Real-time task change notifications (optional)
 
 Each phase can be implemented and tested independently.
 
 ---
 
 ## Open Questions
+
+### Background Tasks (Subagents)
 
 1. **Environment Variable**: The TypeScript SDK has `CLAUDE_CODE_ENABLE_TASKS`. Should we expose this as a client option or assume it's always enabled in newer CLI versions?
 
@@ -659,13 +672,33 @@ Each phase can be implemented and tested independently.
 
 4. **Agent ID Generation**: When spawning agents programmatically, who generates the agent ID - the SDK or the CLI?
 
-5. **Task List vs Background Tasks**: These are two different systems:
-   - **Task List** (`CLAUDE_CODE_TASK_LIST_ID`): Persistent TodoWrite storage for tracking work items
+### Task List System
+
+5. **Naming Clarity**: Two different "task" systems exist:
    - **Background Tasks** (`run_in_background`): Subagent execution with notifications
+   - **Task List** (`CLAUDE_CODE_TASK_LIST_ID`): Persistent CRUD storage
 
-   Should we unify the naming or keep them separate?
+   Should we rename one to avoid confusion? e.g., "WorkItem" vs "Task"?
 
-6. **Task List Reading**: Should the SDK provide APIs to directly read/write the task list files, or rely on Claude invoking TodoWrite?
+6. **Custom Store Sync Strategy**: When using a custom TaskStore (e.g., Postgres):
+   - **Option A**: Sync to JSON files so CLI can read them (simple but duplicated data)
+   - **Option B**: MCP proxy that intercepts Task* tools (elegant but complex)
+   - **Option C**: Require users to use only SDK for task management (limiting)
+
+   Which approach is best?
+
+7. **Task Blocking Logic**: The CLI auto-unblocks tasks when blockers complete. Should:
+   - The SDK replicate this logic in custom stores?
+   - Or rely on the CLI to handle blocking/unblocking?
+
+8. **Concurrent Access**: Multiple Claude instances may modify the same task list.
+   - FileTaskStore uses file locking (see `proper-lockfile` in CLI)
+   - Should TaskStore interface require atomic operations?
+
+9. **Task IDs**: CLI uses incrementing integers (`1`, `2`, `3`). Should custom stores:
+   - Use the same scheme?
+   - Allow UUIDs or other ID formats?
+   - Does the CLI care about ID format?
 
 ---
 
@@ -705,6 +738,57 @@ client2, _ := claudeagent.NewClient(
 )
 ```
 
+### Task CRUD Tools
+
+Claude has four tools for task management:
+
+#### TaskCreate
+Creates a new task with metadata:
+```json
+{
+  "tool": "TaskCreate",
+  "subject": "Set up database connection",
+  "description": "Configure PostgreSQL connection pool, create users table",
+  "activeForm": "Setting up database connection",
+  "metadata": {
+    "priority": "high",
+    "estimate": "30min"
+  }
+}
+```
+Tasks start with `status: "pending"` and no owner.
+
+#### TaskUpdate
+Modify any aspect of an existing task:
+```json
+{
+  "tool": "TaskUpdate",
+  "taskId": "3",
+  "status": "in_progress",
+  "owner": "backend-dev",
+  "addBlockedBy": ["1", "2"]
+}
+```
+Note: `addBlocks` and `addBlockedBy` **append** to arrays - they don't replace them.
+Blocked tasks can only become unblocked when blocking tasks are marked `completed`.
+
+#### TaskGet
+Retrieve full details of a specific task:
+```json
+{
+  "tool": "TaskGet",
+  "taskId": "3"
+}
+```
+
+#### TaskList
+See all tasks at once:
+```json
+{
+  "tool": "TaskList"
+}
+```
+
 ### Task List Schema
 
 Each task in the list has this structure:
@@ -732,7 +816,188 @@ const (
 )
 ```
 
-### API Design for Go SDK
+### Tool Input Types for Go SDK
+
+```go
+// TaskCreateInput is the input for the TaskCreate tool.
+type TaskCreateInput struct {
+    Subject     string         `json:"subject"`
+    Description string         `json:"description"`
+    ActiveForm  string         `json:"activeForm,omitempty"`
+    Metadata    map[string]any `json:"metadata,omitempty"`
+}
+
+// TaskUpdateInput is the input for the TaskUpdate tool.
+type TaskUpdateInput struct {
+    TaskID       string         `json:"taskId"`
+    Subject      string         `json:"subject,omitempty"`
+    Description  string         `json:"description,omitempty"`
+    ActiveForm   string         `json:"activeForm,omitempty"`
+    Status       TaskListStatus `json:"status,omitempty"`
+    Owner        string         `json:"owner,omitempty"`
+    AddBlocks    []string       `json:"addBlocks,omitempty"`    // Appends to blocks
+    AddBlockedBy []string       `json:"addBlockedBy,omitempty"` // Appends to blockedBy
+    Metadata     map[string]any `json:"metadata,omitempty"`
+}
+
+// TaskGetInput is the input for the TaskGet tool.
+type TaskGetInput struct {
+    TaskID string `json:"taskId"`
+}
+
+// TaskListInput is the input for the TaskList tool.
+// Currently has no parameters but defined for consistency.
+type TaskListInput struct{}
+```
+
+### Pluggable Task Store Interface
+
+The default storage is on-disk JSON at `~/.claude/tasks/{listId}/{taskId}.json`.
+We can provide an interface for custom backends (PostgreSQL, Redis, etc.):
+
+```go
+// TaskStore is the interface for task persistence backends.
+//
+// Implementations can store tasks in various backends:
+// - FileTaskStore (default): JSON files on disk
+// - PostgresTaskStore: PostgreSQL database
+// - RedisTaskStore: Redis key-value store
+// - MemoryTaskStore: In-memory for testing
+type TaskStore interface {
+    // Create adds a new task and returns its ID.
+    Create(ctx context.Context, listID string, task TaskListItem) (string, error)
+
+    // Get retrieves a task by ID.
+    Get(ctx context.Context, listID, taskID string) (*TaskListItem, error)
+
+    // Update modifies an existing task.
+    Update(ctx context.Context, listID, taskID string, update TaskUpdateInput) error
+
+    // List returns all tasks in a list.
+    List(ctx context.Context, listID string) ([]TaskListItem, error)
+
+    // Delete removes a task.
+    Delete(ctx context.Context, listID, taskID string) error
+
+    // Subscribe returns a channel for task change notifications.
+    // Returns nil if the backend doesn't support subscriptions.
+    Subscribe(ctx context.Context, listID string) (<-chan TaskEvent, error)
+}
+
+// TaskEvent represents a change to a task.
+type TaskEvent struct {
+    Type   TaskEventType
+    TaskID string
+    Task   *TaskListItem // nil for delete events
+}
+
+type TaskEventType string
+
+const (
+    TaskEventCreated  TaskEventType = "created"
+    TaskEventUpdated  TaskEventType = "updated"
+    TaskEventDeleted  TaskEventType = "deleted"
+)
+```
+
+### SDK Task Management API
+
+Direct task management from Go code:
+
+```go
+// TaskManager provides programmatic access to the task list.
+type TaskManager struct {
+    store  TaskStore
+    listID string
+}
+
+// NewTaskManager creates a task manager with the default file store.
+func NewTaskManager(listID string) *TaskManager {
+    return &TaskManager{
+        store:  NewFileTaskStore(),
+        listID: listID,
+    }
+}
+
+// NewTaskManagerWithStore creates a task manager with a custom store.
+func NewTaskManagerWithStore(listID string, store TaskStore) *TaskManager {
+    return &TaskManager{
+        store:  store,
+        listID: listID,
+    }
+}
+
+// Create adds a new task.
+func (tm *TaskManager) Create(ctx context.Context, subject, description string, opts ...TaskOption) (*TaskListItem, error)
+
+// Get retrieves a task by ID.
+func (tm *TaskManager) Get(ctx context.Context, taskID string) (*TaskListItem, error)
+
+// Update modifies a task.
+func (tm *TaskManager) Update(ctx context.Context, taskID string, opts ...TaskUpdateOption) error
+
+// List returns all tasks.
+func (tm *TaskManager) List(ctx context.Context) ([]TaskListItem, error)
+
+// ListPending returns tasks with status "pending".
+func (tm *TaskManager) ListPending(ctx context.Context) ([]TaskListItem, error)
+
+// ListByOwner returns tasks owned by a specific agent.
+func (tm *TaskManager) ListByOwner(ctx context.Context, ownerID string) ([]TaskListItem, error)
+
+// ListUnblocked returns pending tasks that have no blockers.
+func (tm *TaskManager) ListUnblocked(ctx context.Context) ([]TaskListItem, error)
+
+// Claim assigns an owner to a pending task and sets it to in_progress.
+func (tm *TaskManager) Claim(ctx context.Context, taskID, ownerID string) error
+
+// Complete marks a task as completed (auto-unblocks dependent tasks).
+func (tm *TaskManager) Complete(ctx context.Context, taskID string) error
+
+// Watch returns a channel for task updates (if store supports it).
+func (tm *TaskManager) Watch(ctx context.Context) (<-chan TaskEvent, error)
+```
+
+### Example: PostgreSQL Task Store
+
+```go
+// PostgresTaskStore implements TaskStore using PostgreSQL.
+type PostgresTaskStore struct {
+    db *sql.DB
+}
+
+func NewPostgresTaskStore(connString string) (*PostgresTaskStore, error) {
+    db, err := sql.Open("postgres", connString)
+    if err != nil {
+        return nil, err
+    }
+    return &PostgresTaskStore{db: db}, nil
+}
+
+// Usage with SDK
+func main() {
+    pgStore, _ := NewPostgresTaskStore("postgres://localhost/tasks")
+
+    taskManager := claudeagent.NewTaskManagerWithStore("project-alpha", pgStore)
+
+    client, _ := claudeagent.NewClient(
+        claudeagent.WithTaskListID("project-alpha"),
+        claudeagent.WithTaskStore(pgStore), // SDK uses same store
+    )
+
+    // Pre-populate tasks from external system
+    taskManager.Create(ctx, "Build auth module", "Implement OAuth2 flow",
+        claudeagent.WithTaskMetadata(map[string]any{"jira": "AUTH-123"}),
+    )
+
+    // Claude can now see and work on these tasks
+    for msg := range client.Query(ctx, "Check the task list and start working") {
+        // ...
+    }
+}
+```
+
+### API Design for Go SDK Options
 
 ```go
 // WithTaskListID sets the shared task list ID.
@@ -743,6 +1008,14 @@ func WithTaskListID(id string) Option {
             o.Env = make(map[string]string)
         }
         o.Env["CLAUDE_CODE_TASK_LIST_ID"] = id
+    }
+}
+
+// WithTaskStore sets a custom task storage backend.
+// The SDK will use this store for task operations instead of the default file store.
+func WithTaskStore(store TaskStore) Option {
+    return func(o *Options) {
+        o.TaskStore = store
     }
 }
 
@@ -758,6 +1031,54 @@ func WithEnv(env map[string]string) Option {
     }
 }
 ```
+
+### Architecture: SDK ↔ CLI Task Sync
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Go Application                               │
+├─────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────┐     ┌─────────────────┐     ┌──────────────────┐  │
+│  │   Client    │────▶│  TaskManager    │────▶│   TaskStore      │  │
+│  │             │     │                 │     │   (interface)    │  │
+│  │ Query()     │     │ Create/Update   │     ├──────────────────┤  │
+│  │ Stream()    │     │ List/Claim      │     │ FileTaskStore    │  │
+│  └──────┬──────┘     └────────┬────────┘     │ PostgresStore    │  │
+│         │                     │              │ RedisStore       │  │
+│         ▼                     ▼              └────────┬─────────┘  │
+│  ┌─────────────────────────────────────────────────────┴──────┐    │
+│  │              Shared Storage (synchronized)                  │    │
+│  │     ~/.claude/tasks/{listId}/ OR custom backend            │    │
+│  └─────────────────────────────────────────────────────────────┘    │
+│         ▲                     ▲                                     │
+│         │                     │                                     │
+├─────────┼─────────────────────┼─────────────────────────────────────┤
+│         │    subprocess       │                                     │
+│         │    stdin/stdout     │                                     │
+│         ▼                     ▼                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │                    Claude Code CLI                           │   │
+│  │  ┌────────────┐  ┌────────────┐  ┌────────────┐             │   │
+│  │  │ TaskCreate │  │ TaskUpdate │  │  TaskList  │             │   │
+│  │  │ TaskGet    │  │   ...      │  │            │             │   │
+│  │  └────────────┘  └────────────┘  └────────────┘             │   │
+│  │         │              │               │                     │   │
+│  │         ▼              ▼               ▼                     │   │
+│  │  ┌─────────────────────────────────────────────────────┐    │   │
+│  │  │          CLI Task Storage (reads/writes JSON)        │    │   │
+│  │  │          ~/.claude/tasks/{listId}/                   │    │   │
+│  │  └─────────────────────────────────────────────────────┘    │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Key insight**: When using a custom TaskStore (e.g., PostgreSQL), the SDK and CLI
+need to stay synchronized. Two approaches:
+
+1. **Sync on demand**: SDK writes to custom store, syncs to JSON files that CLI reads
+2. **MCP proxy**: SDK provides an MCP server that proxies Task* tools to custom store
+
+The MCP proxy approach is more elegant and fits the existing architecture.
 
 ### Related Environment Variables
 
