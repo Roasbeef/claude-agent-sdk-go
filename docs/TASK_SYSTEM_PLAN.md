@@ -10,11 +10,13 @@ The Task system enables Claude to spawn specialized subagents for delegating wor
 2. **Background Task Execution** - Run tasks asynchronously with status notifications
 3. **Task Output Retrieval** - Poll or block for background task results
 4. **Agent Lifecycle Hooks** - Intercept subagent start/stop events
+5. **Shared Task Lists** - Multiple instances share TodoWrite storage via `CLAUDE_CODE_TASK_LIST_ID`
 
 The Go SDK already has partial support (agent definitions, subagent hooks), but lacks:
 - `TaskNotificationMessage` for background task completion
 - `TaskOutput` tool input types for retrieving results
 - High-level APIs for task management
+- Task list sharing via environment variables
 
 ---
 
@@ -641,6 +643,7 @@ func TestBackgroundTask(t *testing.T) {
 4. **Phase 4: High-Level API** - New file with task management (medium risk)
 5. **Phase 5: Client Integration** - Wire up notifications (medium risk)
 6. **Phase 6: Hook Enhancement** - Minor additions (low risk)
+7. **Phase 7: Task List Support** - `WithTaskListID()`, `WithEnv()` options (low risk)
 
 Each phase can be implemented and tested independently.
 
@@ -656,10 +659,120 @@ Each phase can be implemented and tested independently.
 
 4. **Agent ID Generation**: When spawning agents programmatically, who generates the agent ID - the SDK or the CLI?
 
+5. **Task List vs Background Tasks**: These are two different systems:
+   - **Task List** (`CLAUDE_CODE_TASK_LIST_ID`): Persistent TodoWrite storage for tracking work items
+   - **Background Tasks** (`run_in_background`): Subagent execution with notifications
+
+   Should we unify the naming or keep them separate?
+
+6. **Task List Reading**: Should the SDK provide APIs to directly read/write the task list files, or rely on Claude invoking TodoWrite?
+
+---
+
+## Shared Task Lists (CLAUDE_CODE_TASK_LIST_ID)
+
+The CLI supports a **shared task list** feature via `CLAUDE_CODE_TASK_LIST_ID`. This is separate from background tasks (subagents) - it's the persistent storage for the `TodoWrite` tool.
+
+### How It Works
+
+Tasks created via `TodoWrite` are stored at:
+```
+~/.claude/tasks/{taskListId}/{taskId}.json
+```
+
+The task list ID is determined by (in order of precedence):
+1. `CLAUDE_CODE_TASK_LIST_ID` environment variable
+2. Session ID
+3. Generated unique ID
+
+### Use Case: Multi-Instance Coordination
+
+Multiple Claude Code instances can share the same task list:
+
+```go
+// Instance 1: Team leader creates tasks
+client1, _ := claudeagent.NewClient(
+    claudeagent.WithEnv(map[string]string{
+        "CLAUDE_CODE_TASK_LIST_ID": "project-alpha-tasks",
+    }),
+)
+
+// Instance 2: Worker picks up tasks
+client2, _ := claudeagent.NewClient(
+    claudeagent.WithEnv(map[string]string{
+        "CLAUDE_CODE_TASK_LIST_ID": "project-alpha-tasks",
+    }),
+)
+```
+
+### Task List Schema
+
+Each task in the list has this structure:
+
+```go
+// TaskListItem represents a persistent task in the shared task list.
+type TaskListItem struct {
+    ID          string            `json:"id"`
+    Subject     string            `json:"subject"`
+    Description string            `json:"description"`
+    ActiveForm  string            `json:"activeForm,omitempty"`
+    Owner       string            `json:"owner,omitempty"`      // Agent ID that owns this task
+    Status      TaskListStatus    `json:"status"`               // pending, in_progress, completed
+    Blocks      []string          `json:"blocks"`               // Task IDs this blocks
+    BlockedBy   []string          `json:"blockedBy"`            // Task IDs blocking this
+    Metadata    map[string]any    `json:"metadata,omitempty"`
+}
+
+type TaskListStatus string
+
+const (
+    TaskListStatusPending    TaskListStatus = "pending"
+    TaskListStatusInProgress TaskListStatus = "in_progress"
+    TaskListStatusCompleted  TaskListStatus = "completed"
+)
+```
+
+### API Design for Go SDK
+
+```go
+// WithTaskListID sets the shared task list ID.
+// Multiple instances with the same ID share the same task list.
+func WithTaskListID(id string) Option {
+    return func(o *Options) {
+        if o.Env == nil {
+            o.Env = make(map[string]string)
+        }
+        o.Env["CLAUDE_CODE_TASK_LIST_ID"] = id
+    }
+}
+
+// Convenience method combining common env vars
+func WithEnv(env map[string]string) Option {
+    return func(o *Options) {
+        if o.Env == nil {
+            o.Env = make(map[string]string)
+        }
+        for k, v := range env {
+            o.Env[k] = v
+        }
+    }
+}
+```
+
+### Related Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `CLAUDE_CODE_TASK_LIST_ID` | Shared task list identifier |
+| `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS` | Disable background task execution |
+| `CLAUDE_CODE_AGENT_ID` | Override the agent ID |
+| `CLAUDE_CODE_TEAM_NAME` | Team context for task assignment |
+
 ---
 
 ## Compatibility Notes
 
 - Requires Claude Code CLI version with task system support
-- The `CLAUDE_CODE_ENABLE_TASKS` environment variable may need to be set
+- The `CLAUDE_CODE_ENABLE_TASKS` environment variable may need to be set for background tasks
+- `CLAUDE_CODE_TASK_LIST_ID` enables shared TodoWrite storage
 - Backward compatible - existing code that doesn't use tasks continues to work
