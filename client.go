@@ -609,6 +609,29 @@ func (c *Client) ValidateSkill(path string) error {
 	return loader.ValidateSKILLMd(path)
 }
 
+// TaskManager returns a TaskManager for the configured task list.
+//
+// If TaskListID is not set, an empty string is used as the list ID.
+// If TaskStore is configured, that store is used; otherwise a new
+// FileTaskStore is created.
+//
+// The returned TaskManager can be used to create, update, and query
+// tasks that are shared with the Claude CLI subprocess.
+//
+// Example:
+//
+//	client, _ := claudeagent.NewClient(
+//	    claudeagent.WithTaskListID("my-project"),
+//	)
+//	tm, _ := client.TaskManager()
+//	task, _ := tm.Create(ctx, "Build auth", "Implement OAuth2")
+func (c *Client) TaskManager() (*TaskManager, error) {
+	if c.options.TaskStore != nil {
+		return NewTaskManagerWithStore(c.options.TaskListID, c.options.TaskStore), nil
+	}
+	return NewTaskManager(c.options.TaskListID)
+}
+
 // Stream represents a bidirectional conversation stream.
 //
 // Streams maintain session state and allow multiple rounds of interaction.
