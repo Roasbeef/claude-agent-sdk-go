@@ -185,6 +185,7 @@ For detailed guides and examples, see [docs/examples/](docs/examples/):
 - [Streaming](docs/examples/streaming.md) - Real-time response handling
 - [Skills](docs/examples/skills.md) - Filesystem-based capability extensions
 - [Ralph Loop](docs/examples/ralph.md) - Iterative task completion pattern
+- [Task Lists](docs/TASKS.md) - Multi-agent task coordination system
 
 For internal architecture, see [DESIGN.md](docs/DESIGN.md). For CLI protocol
 details (how this and the official Typescript SDK actually work), see
