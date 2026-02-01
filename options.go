@@ -145,6 +145,16 @@ type Options struct {
 	// with the question set. Return answers or an error.
 	// If nil, questions are routed to the Questions() iterator.
 	AskUserQuestionHandler AskUserQuestionHandler
+
+	// TaskStore is a custom task storage backend for the task list system.
+	// If nil, the default FileTaskStore is used when TaskManager is accessed.
+	TaskStore TaskStore
+
+	// TaskListID is the shared task list identifier.
+	// When set, CLAUDE_CODE_TASK_LIST_ID is passed to the CLI subprocess,
+	// enabling multiple instances to share the same task list.
+	// Tasks persist at ~/.claude/tasks/{TaskListID}/.
+	TaskListID string
 }
 
 // SystemPromptConfig represents system prompt configuration.
@@ -1036,6 +1046,50 @@ func WithConfigDir(dir string) Option {
 func WithStrictMCPConfig(strict bool) Option {
 	return func(o *Options) {
 		o.StrictMCPConfig = strict
+	}
+}
+
+// WithTaskListID sets the shared task list ID.
+//
+// Multiple Claude instances with the same ID share the same task list.
+// Tasks persist at ~/.claude/tasks/{id}/. The CLAUDE_CODE_TASK_LIST_ID
+// environment variable is automatically set for the CLI subprocess.
+//
+// Example:
+//
+//	client, _ := claudeagent.NewClient(
+//	    claudeagent.WithTaskListID("my-project"),
+//	)
+func WithTaskListID(id string) Option {
+	return func(o *Options) {
+		o.TaskListID = id
+		if o.Env == nil {
+			o.Env = make(map[string]string)
+		}
+		o.Env["CLAUDE_CODE_TASK_LIST_ID"] = id
+	}
+}
+
+// WithTaskStore sets a custom task storage backend.
+//
+// Use this to provide alternative storage implementations such as:
+//   - MemoryTaskStore for testing
+//   - PostgresTaskStore for distributed coordination
+//   - RedisTaskStore for real-time updates
+//
+// When using a custom store, the SDK accesses tasks through this store
+// while the CLI continues using its default file-based storage. For full
+// synchronization, consider implementing an MCP proxy pattern.
+//
+// Example:
+//
+//	store := claudeagent.NewMemoryTaskStore()
+//	client, _ := claudeagent.NewClient(
+//	    claudeagent.WithTaskStore(store),
+//	)
+func WithTaskStore(store TaskStore) Option {
+	return func(o *Options) {
+		o.TaskStore = store
 	}
 }
 
