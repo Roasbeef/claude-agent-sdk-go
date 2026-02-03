@@ -1,10 +1,16 @@
 # Claude Code Task Tools
 
+> Based on Claude Code CLI v2.1.30 / SDK v0.2.30
+
 This document describes the task management tools available to Claude Code during conversations. These tools enable Claude to track progress, organize multi-step work, and coordinate with other agents.
 
 ## Overview
 
-Claude Code has access to four task tools that persist tasks to `~/.claude/tasks/{listID}/`:
+Claude Code provides two categories of task-related tools:
+
+### Task Management Tools
+
+These tools persist tasks to `~/.claude/tasks/{listID}/` for tracking work items:
 
 | Tool | Purpose |
 |------|---------|
@@ -13,7 +19,23 @@ Claude Code has access to four task tools that persist tasks to `~/.claude/tasks
 | `TaskUpdate` | Update task status, add dependencies, or modify fields |
 | `TaskList` | List all tasks with summary information |
 
-## Tool Reference
+### Background Task Tools
+
+These tools manage background agent/subprocess execution:
+
+| Tool | Purpose |
+|------|---------|
+| `Task` (Agent) | Spawn a subagent to perform delegated work |
+| `TaskOutput` | Retrieve output from a running or completed background task |
+| `TaskStop` | Stop a running background task |
+
+### Legacy Tool
+
+| Tool | Purpose |
+|------|---------|
+| `TodoWrite` | Simple flat todo list (no IDs, dependencies, or metadata). Superseded by `TaskCreate`/`TaskUpdate`/`TaskList` for new usage. |
+
+## Task Management Tool Reference
 
 ### TaskCreate
 
@@ -92,6 +114,108 @@ Lists all tasks with summary information.
 - `owner`: Assigned agent (if any)
 - `blockedBy`: List of blocking task IDs
 
+## Background Task Tool Reference
+
+### Task (Agent Spawning)
+
+Spawns a specialized subagent to perform delegated work. The agent type determines which agent definition to use.
+
+**Parameters:**
+- `description` (required): Short (3-5 word) summary of the task
+- `prompt` (required): Detailed task for the agent to perform
+- `subagent_type` (required): Which agent definition to use
+- `model` (optional): Model override - `"sonnet"`, `"opus"`, or `"haiku"`. Inherits from parent if omitted.
+- `resume` (optional): Agent ID to resume from a previous execution
+- `run_in_background` (optional): Set `true` for async execution. Returns immediately with `task_id` and `output_file`.
+- `max_turns` (optional): Maximum API round-trips before stopping
+- `name` (optional): Name for the spawned agent (for tracking/identification)
+- `team_name` (optional): Team context for spawning. Uses current team context if omitted.
+- `mode` (optional): Permission mode for the spawned agent
+
+**Permission Mode Values (for `mode`):**
+| Mode | Description |
+|------|-------------|
+| `"default"` | Standard behavior, prompts for dangerous operations |
+| `"acceptEdits"` | Auto-accept file edit operations |
+| `"bypassPermissions"` | Bypass all permission checks |
+| `"plan"` | Planning mode, requires plan approval before execution |
+| `"delegate"` | Delegate permission decisions to parent |
+| `"dontAsk"` | Don't prompt for permissions, deny if not pre-approved |
+
+**Example:**
+```json
+{
+  "description": "Review auth module",
+  "prompt": "Review the authentication module for security issues...",
+  "subagent_type": "code-reviewer",
+  "model": "sonnet",
+  "run_in_background": true,
+  "name": "auth-reviewer",
+  "mode": "plan"
+}
+```
+
+### TaskOutput
+
+Retrieves output from a running or completed background task (agent or shell).
+
+**Parameters:**
+- `task_id` (required): The task ID to get output from
+- `block` (required): Whether to wait for task completion (`true`) or return immediately (`false`)
+- `timeout` (required): Maximum wait time in milliseconds
+
+**Example:**
+```json
+{
+  "task_id": "abc123",
+  "block": true,
+  "timeout": 30000
+}
+```
+
+### TaskStop
+
+Stops a running background task.
+
+**Parameters:**
+- `task_id` (optional): The ID of the background task to stop
+- `shell_id` (optional, deprecated): Use `task_id` instead
+
+## Task Notification Messages
+
+When a background task completes, the CLI emits a `SDKTaskNotificationMessage`:
+
+```typescript
+type SDKTaskNotificationMessage = {
+    type: 'system';
+    subtype: 'task_notification';
+    task_id: string;
+    status: 'completed' | 'failed' | 'stopped';
+    output_file: string;
+    summary: string;
+    uuid: string;
+    session_id: string;
+};
+```
+
+The Go SDK surfaces this as `TaskNotificationMessage` in the message stream.
+
+## TodoWrite vs TaskCreate
+
+Claude Code has two task tracking mechanisms:
+
+| Feature | `TodoWrite` (Legacy) | `TaskCreate`/`TaskUpdate`/`TaskList` |
+|---------|---------------------|--------------------------------------|
+| Task IDs | No (index-based) | Yes (auto-generated) |
+| Dependencies | No | Yes (`blocks`/`blockedBy`) |
+| Metadata | No | Yes (arbitrary key-value) |
+| Owner | No | Yes |
+| Persistence | In-memory | File-based (`~/.claude/tasks/`) |
+| Multi-agent | No | Yes (shared task lists) |
+| Schema | `{ content, status, activeForm }` | Full task object |
+
+The `TodoWrite` tool takes a flat array of `{ content, status, activeForm }` objects and replaces the entire list. It is suitable for simple checklists but lacks the structure needed for multi-agent coordination. New usage should prefer `TaskCreate`/`TaskUpdate`/`TaskList`.
+
 ## Task Lifecycle
 
 ```
@@ -164,6 +288,15 @@ Task tools are available in all Claude Code contexts:
 - Subagents spawned via the Task tool
 - GitHub Actions workflows (via claude-code-action)
 
+### Relevant Hook Events
+
+| Hook Event | When Fired | Relevance |
+|------------|------------|-----------|
+| `SubagentStart` | Agent spawned via Task tool | Intercept agent creation |
+| `SubagentStop` | Agent completes or is stopped | React to agent completion |
+| `PermissionRequest` | Tool needs permission approval | Control tool access for agents |
+| `Setup` | Session initialization | Configure task environment |
+
 ## Storage
 
 Tasks are persisted as JSON files at:
@@ -208,6 +341,23 @@ Multiple Claude instances can coordinate via shared task lists:
 4. **Agent B** completes work and marks task `completed`
 5. Blocked tasks are automatically unblocked
 
+### Spawning Named Agents
+
+As of v0.2.30, the Task (Agent) tool supports `name` and `team_name` fields for agent identification:
+
+```json
+{
+  "description": "Run tests",
+  "prompt": "Run the full test suite and report results",
+  "subagent_type": "test-runner",
+  "name": "test-agent-1",
+  "team_name": "qa-team",
+  "run_in_background": true
+}
+```
+
+This enables better tracking when multiple agents are running concurrently.
+
 ### Claiming Tasks
 
 To prevent conflicts, agents should "claim" tasks by setting the owner:
@@ -251,6 +401,23 @@ Claude:
 10. TaskUpdate: task 3 -> in_progress (now unblocked)
 11. [Writes tests]
 12. TaskUpdate: task 3 -> completed
+```
+
+### Background Agent Workflow
+
+```
+User: "Analyze these three modules in parallel"
+
+Claude:
+1. Task (Agent): spawn "analyzer" for module A (run_in_background: true) -> task_id: "t1"
+2. Task (Agent): spawn "analyzer" for module B (run_in_background: true) -> task_id: "t2"
+3. Task (Agent): spawn "analyzer" for module C (run_in_background: true) -> task_id: "t3"
+
+4. TaskOutput: { task_id: "t1", block: true, timeout: 60000 } -> results
+5. TaskOutput: { task_id: "t2", block: true, timeout: 60000 } -> results
+6. TaskOutput: { task_id: "t3", block: true, timeout: 60000 } -> results
+
+7. Synthesize results from all three agents
 ```
 
 ## Metadata Conventions
