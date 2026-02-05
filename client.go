@@ -94,6 +94,15 @@ func (c *Client) Connect(ctx context.Context) error {
 	}
 	c.transport = transport
 
+	// Wire stderr callback to transport if configured. The Options.Stderr
+	// callback receives each line as a string, while the transport expects
+	// an io.Writer. The adapter bridges the two interfaces.
+	if c.options.Stderr != nil {
+		transport.SetStderrLogger(&stderrCallbackWriter{
+			callback: c.options.Stderr,
+		})
+	}
+
 	// Connect transport.
 	if err := transport.Connect(ctx); err != nil {
 		return err
@@ -936,6 +945,20 @@ func (s *Stream) Close() error {
 		close(s.closeCh)
 	})
 	return nil
+}
+
+// stderrCallbackWriter adapts a func(string) callback to the io.Writer
+// interface so it can be passed to SubprocessTransport.SetStderrLogger.
+// Each Write call invokes the callback with the written data as a string.
+type stderrCallbackWriter struct {
+	callback func(data string)
+}
+
+// Write implements io.Writer. It passes the data to the callback as a string
+// and reports all bytes as written.
+func (w *stderrCallbackWriter) Write(p []byte) (n int, err error) {
+	w.callback(string(p))
+	return len(p), nil
 }
 
 // validateOptions validates client configuration.

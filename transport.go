@@ -194,6 +194,13 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, "--resume-session-at", t.options.SessionOptions.ResumeSessionAt)
 	}
 
+	// Add additional directories for tool access (e.g., /tmp for
+	// temp file writes). Each directory is passed as a separate
+	// --add-dir flag.
+	for _, dir := range t.options.AdditionalDirectories {
+		args = append(args, "--add-dir", dir)
+	}
+
 	// Build environment - start with current process env, then overlay options.
 	env := os.Environ()
 	for k, v := range t.options.Env {
@@ -220,6 +227,12 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	t.stdout = stdout
 	t.stderr = stderr
 	t.scanner = bufio.NewScanner(stdout)
+
+	// Increase the scanner buffer to handle large tool outputs. The default
+	// bufio.MaxScanTokenSize is 64KB, but tool results (e.g., git diff)
+	// can produce JSON lines far exceeding that limit.
+	const maxLineSize = 10 * 1024 * 1024 // 10MB.
+	t.scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
 
 	// Forward stderr to logger.
 	go func() {

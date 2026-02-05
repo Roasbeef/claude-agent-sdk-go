@@ -745,3 +745,205 @@ func TestSubprocessTransportCloseTimeout(t *testing.T) {
 	// Verify transport is closed
 	assert.True(t, transport.closed.Load())
 }
+
+// TestSubprocessTransportAdditionalDirectories tests that --add-dir flags are
+// passed to the CLI for each configured additional directory.
+func TestSubprocessTransportAdditionalDirectories(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	opts := &Options{
+		AdditionalDirectories: []string{"/tmp", "/var/data", "/home/user/docs"},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	// Verify each directory is passed as --add-dir flag.
+	assert.True(t, runner.started)
+	for _, dir := range opts.AdditionalDirectories {
+		// Find --add-dir followed by the directory in the args.
+		found := false
+		for i, arg := range runner.StartArgs {
+			if arg == "--add-dir" && i+1 < len(runner.StartArgs) && runner.StartArgs[i+1] == dir {
+				found = true
+				break
+			}
+		}
+		assert.True(t, found, "expected --add-dir %s in args: %v", dir, runner.StartArgs)
+	}
+}
+
+// TestSubprocessTransportAdditionalDirectoriesEmpty tests that no --add-dir
+// flags are passed when AdditionalDirectories is empty.
+func TestSubprocessTransportAdditionalDirectoriesEmpty(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	// Verify no --add-dir flag is present.
+	for _, arg := range runner.StartArgs {
+		assert.NotEqual(t, "--add-dir", arg, "unexpected --add-dir in args: %v", runner.StartArgs)
+	}
+}
+
+// TestSubprocessTransportLargeMessageExceeds64KB tests that messages larger
+// than the default bufio.MaxScanTokenSize (64KB) are handled correctly after
+// the scanner buffer increase.
+func TestSubprocessTransportLargeMessageExceeds64KB(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	// Create a message exceeding the old 64KB scanner limit. The text
+	// content is ~200KB which, once JSON-encoded, produces a single line
+	// well above 64KB.
+	largeText := strings.Repeat("A", 200*1024)
+
+	go func() {
+		msg := AssistantMessage{
+			Type: "assistant",
+			Message: struct {
+				Role    string         `json:"role"`
+				Content []ContentBlock `json:"content"`
+			}{
+				Role: "assistant",
+				Content: []ContentBlock{
+					{Type: "text", Text: largeText},
+				},
+			},
+		}
+		data, _ := json.Marshal(msg)
+		data = append(data, '\n')
+		runner.StdoutPipe.Write(data)
+		runner.StdoutPipe.CloseWrite()
+	}()
+
+	// Read the large message — this would fail with the old 64KB buffer.
+	var received Message
+	for m, err := range transport.ReadMessages(ctx) {
+		require.NoError(t, err)
+		received = m
+		break
+	}
+
+	require.NotNil(t, received)
+	assistantMsg, ok := received.(AssistantMessage)
+	require.True(t, ok)
+	assert.Equal(t, largeText, assistantMsg.ContentText())
+}
+
+// TestStderrCallbackWriter tests that the stderrCallbackWriter adapter
+// correctly bridges io.Writer to a func(string) callback.
+func TestStderrCallbackWriter(t *testing.T) {
+	var captured []string
+	var mu sync.Mutex
+
+	writer := &stderrCallbackWriter{
+		callback: func(data string) {
+			mu.Lock()
+			defer mu.Unlock()
+			captured = append(captured, data)
+		},
+	}
+
+	// Write some data.
+	n, err := writer.Write([]byte("hello"))
+	require.NoError(t, err)
+	assert.Equal(t, 5, n)
+
+	n, err = writer.Write([]byte("world"))
+	require.NoError(t, err)
+	assert.Equal(t, 5, n)
+
+	// Verify callbacks were invoked with correct data.
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, captured, 2)
+	assert.Equal(t, "hello", captured[0])
+	assert.Equal(t, "world", captured[1])
+}
+
+// TestStderrCallbackWriterEmpty tests that empty writes still invoke the
+// callback and report zero bytes written.
+func TestStderrCallbackWriterEmpty(t *testing.T) {
+	callCount := 0
+	writer := &stderrCallbackWriter{
+		callback: func(data string) {
+			callCount++
+			assert.Equal(t, "", data)
+		},
+	}
+
+	n, err := writer.Write([]byte{})
+	require.NoError(t, err)
+	assert.Equal(t, 0, n)
+	assert.Equal(t, 1, callCount)
+}
+
+// TestSubprocessTransportStderrCallbackWiring tests that when Options.Stderr
+// is set, Connect wires it to the transport via stderrCallbackWriter so that
+// stderr output from the CLI subprocess reaches the callback.
+func TestSubprocessTransportStderrCallbackWiring(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	var captured []string
+	var mu sync.Mutex
+
+	opts := &Options{
+		Stderr: func(data string) {
+			mu.Lock()
+			defer mu.Unlock()
+			captured = append(captured, data)
+		},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	// Simulate what Client.Connect does: wire the stderr callback.
+	transport.SetStderrLogger(&stderrCallbackWriter{
+		callback: opts.Stderr,
+	})
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	// Write stderr output from the "CLI".
+	runner.StderrPipe.WriteString("debug: loading config\n")
+	runner.StderrPipe.WriteString("warn: deprecated option\n")
+	runner.StderrPipe.CloseWrite()
+
+	// Give the stderr goroutine time to process.
+	time.Sleep(100 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// The transport's stderr goroutine uses bufio.Scanner which strips
+	// newlines and then fmt.Fprintln adds them back. The callback receives
+	// the full line including the trailing newline from Fprintln.
+	require.GreaterOrEqual(t, len(captured), 2)
+
+	joined := strings.Join(captured, "")
+	assert.Contains(t, joined, "debug: loading config")
+	assert.Contains(t, joined, "warn: deprecated option")
+}
