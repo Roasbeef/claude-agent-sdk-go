@@ -542,11 +542,19 @@ func (p *Protocol) handleSDKPermissionRequest(ctx context.Context, req SDKContro
 		result = p.options.CanUseTool(ctx, permReq)
 	}
 
-	// Build response.
+	// Build response. The CLI expects:
+	//   allow: {"behavior": "allow", "updatedInput": <original input>}
+	//   deny:  {"behavior": "deny", "message": "<reason>"}
+	// The updatedInput field is required for allow responses — it
+	// contains the (possibly modified) tool input. For a simple
+	// allow, pass the original input through unchanged.
 	responseData := map[string]interface{}{
 		"behavior": "allow",
 	}
-	if !result.IsAllow() {
+	if result.IsAllow() {
+		// Pass the original tool input through unchanged.
+		responseData["updatedInput"] = arguments
+	} else {
 		responseData["behavior"] = "deny"
 		if deny, ok := result.(PermissionDeny); ok {
 			responseData["message"] = deny.Reason
