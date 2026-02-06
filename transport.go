@@ -234,12 +234,19 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	const maxLineSize = 10 * 1024 * 1024 // 10MB.
 	t.scanner.Buffer(make([]byte, 0, 64*1024), maxLineSize)
 
-	// Forward stderr to logger.
+	// Forward stderr to logger. We must check scanner.Err() after the
+	// loop exits to avoid silently swallowing I/O errors (e.g., EISDIR
+	// from pipe cleanup during multi-process lock contention).
 	go func() {
 		scanner := bufio.NewScanner(stderr)
 		for scanner.Scan() {
 			if ref := t.errLogger.Load(); ref != nil && ref.w != nil {
 				fmt.Fprintln(ref.w, scanner.Text())
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			if ref := t.errLogger.Load(); ref != nil && ref.w != nil {
+				fmt.Fprintf(ref.w, "stderr scanner error: %v\n", err)
 			}
 		}
 	}()
