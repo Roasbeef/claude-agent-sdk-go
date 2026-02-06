@@ -224,13 +224,23 @@ func (r *RalphLoop) Run(ctx context.Context, clientOpts ...Option) iter.Seq[*Ite
 				r.totalCost = rm.TotalCostUSD
 				r.mu.Unlock()
 
-				// Check for error status in result.
+				// Check for error status in result. Filter out
+				// NON-FATAL errors (e.g., lock contention in
+				// multi-process scenarios) so they don't kill
+				// the loop.
 				if rm.Status == "error" || strings.HasPrefix(rm.Subtype, "error") {
-					if len(rm.Errors) > 0 {
-						iterError = fmt.Errorf("claude error: %s", strings.Join(rm.Errors, "; "))
-					} else {
+					var fatalErrors []string
+					for _, e := range rm.Errors {
+						if !strings.Contains(e, "NON-FATAL") {
+							fatalErrors = append(fatalErrors, e)
+						}
+					}
+					if len(fatalErrors) > 0 {
+						iterError = fmt.Errorf("claude error: %s", strings.Join(fatalErrors, "; "))
+					} else if len(rm.Errors) == 0 {
 						iterError = fmt.Errorf("claude error: %s", rm.Subtype)
 					}
+					// All errors NON-FATAL: treat as success.
 				}
 			}
 		}
