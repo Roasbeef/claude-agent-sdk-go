@@ -814,3 +814,99 @@ func TestProtocolSDKMCPMessage(t *testing.T) {
 		}
 	})
 }
+
+// TestBuildHookResponse_StopHookOmitsContinue verifies that when a Stop
+// hook returns Decision="block", the serialized response does NOT include
+// a "continue" field. Shell-based stop hooks output {"decision":"block",
+// "reason":"..."} without "continue", and including "continue":false
+// causes the CLI to short-circuit and terminate the session before
+// honoring the block decision.
+func TestBuildHookResponse_StopHookOmitsContinue(t *testing.T) {
+	t.Run("block decision omits continue", func(t *testing.T) {
+		result := HookResult{
+			Decision:      "block",
+			Reason:        "Re-review feedback from author",
+			SystemMessage: "You have 1 unread message",
+		}
+
+		resp := buildHookResponse(result)
+
+		// Must have decision, reason, systemMessage.
+		assert.Equal(t, "block", resp["decision"])
+		assert.Equal(t,
+			"Re-review feedback from author", resp["reason"],
+		)
+		assert.Equal(t,
+			"You have 1 unread message",
+			resp["systemMessage"],
+		)
+
+		// Must NOT have "continue" — shell hooks never emit it
+		// for stop hooks, and including it causes the CLI to
+		// terminate before processing the injected prompt.
+		_, hasContinue := resp["continue"]
+		assert.False(t, hasContinue,
+			"stop hook block response must not include "+
+				"'continue' field",
+		)
+	})
+
+	t.Run("approve decision omits continue", func(t *testing.T) {
+		result := HookResult{
+			Decision: "approve",
+		}
+
+		resp := buildHookResponse(result)
+
+		assert.Equal(t, "approve", resp["decision"])
+
+		_, hasContinue := resp["continue"]
+		assert.False(t, hasContinue,
+			"stop hook approve response must not include "+
+				"'continue' field",
+		)
+	})
+
+	t.Run("non-stop hook includes continue", func(t *testing.T) {
+		// PreToolUse hooks use Continue, not Decision.
+		result := HookResult{
+			Continue: true,
+		}
+
+		resp := buildHookResponse(result)
+
+		assert.Equal(t, true, resp["continue"])
+
+		// Must NOT have decision fields.
+		_, hasDecision := resp["decision"]
+		assert.False(t, hasDecision,
+			"non-stop hook should not include decision",
+		)
+	})
+
+	t.Run("block with modify", func(t *testing.T) {
+		result := HookResult{
+			Decision: "block",
+			Reason:   "New task",
+			Modify: map[string]interface{}{
+				"key": "value",
+			},
+		}
+
+		resp := buildHookResponse(result)
+
+		assert.Equal(t, "block", resp["decision"])
+		assert.Equal(t, "New task", resp["reason"])
+
+		// Modify should still be included.
+		modify, ok := resp["modify"]
+		assert.True(t, ok)
+		assert.Equal(t,
+			map[string]interface{}{"key": "value"}, modify,
+		)
+
+		// Continue must still be omitted.
+		_, hasContinue := resp["continue"]
+		assert.False(t, hasContinue)
+	})
+}

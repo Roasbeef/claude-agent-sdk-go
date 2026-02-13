@@ -170,14 +170,19 @@ func TestBuildHookResponse(t *testing.T) {
 
 	t.Run("with Stop hook fields", func(t *testing.T) {
 		result := HookResult{
-			Continue:      false,
 			Decision:      "block",
 			Reason:        "New prompt here",
 			SystemMessage: "Status message",
 		}
 		resp := buildHookResponse(result)
 
-		assert.Equal(t, false, resp["continue"])
+		// When Decision is set, continue must be omitted to
+		// match shell hook behavior. Shell hooks only output
+		// {"decision":"block","reason":"..."} without continue.
+		_, hasContinue := resp["continue"]
+		assert.False(t, hasContinue,
+			"stop hook must not include continue field",
+		)
 		assert.Equal(t, "block", resp["decision"])
 		assert.Equal(t, "New prompt here", resp["reason"])
 		assert.Equal(t, "Status message", resp["systemMessage"])

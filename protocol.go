@@ -994,24 +994,34 @@ func marshalJSON(v interface{}) []byte {
 // For Stop hooks, the Decision/Reason/SystemMessage fields enable the
 // Ralph Wiggum pattern where a hook can block session exit and reinject
 // a new prompt.
+//
+// When the Decision field is set (Stop/SubagentStop hooks), the continue
+// field is omitted to match the format that shell-based hooks produce.
+// Shell hooks output {"decision":"block","reason":"..."} without a
+// continue field. Including "continue":false alongside "decision":"block"
+// causes the CLI to short-circuit and terminate the session before
+// honoring the block decision.
 func buildHookResponse(result HookResult) map[string]interface{} {
-	resp := map[string]interface{}{
-		"continue": result.Continue,
+	resp := make(map[string]interface{})
+
+	// Stop hook path: decision/reason/systemMessage only, no continue.
+	if result.Decision != "" {
+		resp["decision"] = result.Decision
+
+		if result.Reason != "" {
+			resp["reason"] = result.Reason
+		}
+		if result.SystemMessage != "" {
+			resp["systemMessage"] = result.SystemMessage
+		}
+	} else {
+		// For non-Stop hooks (PreToolUse, PostToolUse, etc.),
+		// emit the continue field as before.
+		resp["continue"] = result.Continue
 	}
 
 	if len(result.Modify) > 0 {
 		resp["modify"] = result.Modify
-	}
-
-	// Add Stop hook fields for Ralph Wiggum pattern.
-	if result.Decision != "" {
-		resp["decision"] = result.Decision
-	}
-	if result.Reason != "" {
-		resp["reason"] = result.Reason
-	}
-	if result.SystemMessage != "" {
-		resp["systemMessage"] = result.SystemMessage
 	}
 
 	return resp
