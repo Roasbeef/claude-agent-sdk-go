@@ -148,7 +148,7 @@ func TestHookResultStopFields(t *testing.T) {
 func TestBuildHookResponse(t *testing.T) {
 	t.Run("basic continue", func(t *testing.T) {
 		result := HookResult{Continue: true}
-		resp := buildHookResponse(result)
+		resp := buildHookResponse("PostToolUse", result)
 
 		assert.Equal(t, true, resp["continue"])
 		_, hasDecision := resp["decision"]
@@ -160,7 +160,7 @@ func TestBuildHookResponse(t *testing.T) {
 			Continue: true,
 			Modify:   map[string]interface{}{"key": "value"},
 		}
-		resp := buildHookResponse(result)
+		resp := buildHookResponse("PostToolUse", result)
 
 		assert.Equal(t, true, resp["continue"])
 		modify, ok := resp["modify"].(map[string]interface{})
@@ -174,7 +174,7 @@ func TestBuildHookResponse(t *testing.T) {
 			Reason:        "New prompt here",
 			SystemMessage: "Status message",
 		}
-		resp := buildHookResponse(result)
+		resp := buildHookResponse("Stop", result)
 
 		// When Decision is set, continue must be omitted to
 		// match shell hook behavior. Shell hooks only output
@@ -193,7 +193,7 @@ func TestBuildHookResponse(t *testing.T) {
 			Continue: true,
 			Decision: "", // Empty - should not be included.
 		}
-		resp := buildHookResponse(result)
+		resp := buildHookResponse("PostToolUse", result)
 
 		_, hasDecision := resp["decision"]
 		assert.False(t, hasDecision)

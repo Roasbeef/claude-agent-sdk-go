@@ -785,6 +785,10 @@ const (
 // For most hooks, set Continue=true to allow execution to proceed.
 // For Stop hooks, use Decision/Reason/SystemMessage to control whether
 // the session exits or continues with a new prompt (Ralph Wiggum pattern).
+//
+// For PreToolUse hooks, Modify is automatically translated into the
+// hookSpecificOutput.updatedInput format expected by the CLI. Set
+// HookSpecificOutput directly for finer control over the response.
 type HookResult struct {
 	Continue bool                   // Continue execution (false = abort)
 	Modify   map[string]interface{} // Modifications to apply
@@ -801,6 +805,12 @@ type HookResult struct {
 	// SystemMessage is displayed to Claude as context when blocking exit.
 	// Use this to provide iteration counts or other status information.
 	SystemMessage string
+
+	// HookSpecificOutput provides raw hookSpecificOutput for the CLI
+	// response. When set, this takes precedence over auto-translation
+	// of Modify. Use this for finer control over permissionDecision,
+	// additionalContext, or other hook-specific fields.
+	HookSpecificOutput map[string]interface{}
 }
 
 // AgentDefinition defines a specialized subagent.

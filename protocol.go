@@ -344,7 +344,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 	}
 
 	// Build response in SDK format.
-	respData := buildHookResponse(result)
+	respData := buildHookResponse(hookType, result)
 
 	return SDKControlResponse{
 		Type: "control_response",
@@ -700,7 +700,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 	}
 
 	// Build response.
-	responseData := buildHookResponse(result)
+	responseData := buildHookResponse(hookEventName, result)
 
 	return SDKControlResponse{
 		Type: "control_response",
@@ -990,7 +990,11 @@ func marshalJSON(v interface{}) []byte {
 
 // buildHookResponse constructs the response data map for hook callbacks.
 //
-// This serializes HookResult fields into the format expected by the CLI.
+// The hookType parameter identifies the hook event being responded to,
+// which determines how tool input modifications are serialized. For
+// PreToolUse hooks, the CLI expects modifications via
+// hookSpecificOutput.updatedInput rather than a top-level modify field.
+//
 // For Stop hooks, the Decision/Reason/SystemMessage fields enable the
 // Ralph Wiggum pattern where a hook can block session exit and reinject
 // a new prompt.
@@ -1001,7 +1005,7 @@ func marshalJSON(v interface{}) []byte {
 // continue field. Including "continue":false alongside "decision":"block"
 // causes the CLI to short-circuit and terminate the session before
 // honoring the block decision.
-func buildHookResponse(result HookResult) map[string]interface{} {
+func buildHookResponse(hookType string, result HookResult) map[string]interface{} {
 	resp := make(map[string]interface{})
 
 	// Stop hook path: decision/reason/systemMessage only, no continue.
@@ -1020,8 +1024,37 @@ func buildHookResponse(result HookResult) map[string]interface{} {
 		resp["continue"] = result.Continue
 	}
 
-	if len(result.Modify) > 0 {
-		resp["modify"] = result.Modify
+	// If HookSpecificOutput is set explicitly, use it directly.
+	// This gives callbacks full control over the hookSpecificOutput
+	// envelope when auto-translation of Modify is insufficient.
+	if result.HookSpecificOutput != nil {
+		resp["hookSpecificOutput"] = result.HookSpecificOutput
+	} else if len(result.Modify) > 0 {
+		// Auto-translate Modify into the hookSpecificOutput format
+		// expected by the CLI. PreToolUse and PermissionRequest hooks
+		// use hookSpecificOutput.updatedInput for tool input
+		// modifications. Other hook types fall back to the legacy
+		// modify field.
+		switch hookType {
+		case "PreToolUse":
+			resp["hookSpecificOutput"] = map[string]interface{}{
+				"hookEventName":      "PreToolUse",
+				"permissionDecision": "allow",
+				"updatedInput":       result.Modify,
+			}
+
+		case "PermissionRequest":
+			resp["hookSpecificOutput"] = map[string]interface{}{
+				"hookEventName": "PermissionRequest",
+				"decision": map[string]interface{}{
+					"behavior":     "allow",
+					"updatedInput": result.Modify,
+				},
+			}
+
+		default:
+			resp["modify"] = result.Modify
+		}
 	}
 
 	return resp

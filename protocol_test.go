@@ -829,7 +829,7 @@ func TestBuildHookResponse_StopHookOmitsContinue(t *testing.T) {
 			SystemMessage: "You have 1 unread message",
 		}
 
-		resp := buildHookResponse(result)
+		resp := buildHookResponse("Stop", result)
 
 		// Must have decision, reason, systemMessage.
 		assert.Equal(t, "block", resp["decision"])
@@ -856,7 +856,7 @@ func TestBuildHookResponse_StopHookOmitsContinue(t *testing.T) {
 			Decision: "approve",
 		}
 
-		resp := buildHookResponse(result)
+		resp := buildHookResponse("Stop", result)
 
 		assert.Equal(t, "approve", resp["decision"])
 
@@ -873,7 +873,7 @@ func TestBuildHookResponse_StopHookOmitsContinue(t *testing.T) {
 			Continue: true,
 		}
 
-		resp := buildHookResponse(result)
+		resp := buildHookResponse("PreToolUse", result)
 
 		assert.Equal(t, true, resp["continue"])
 
@@ -884,7 +884,9 @@ func TestBuildHookResponse_StopHookOmitsContinue(t *testing.T) {
 		)
 	})
 
-	t.Run("block with modify", func(t *testing.T) {
+	t.Run("block with modify uses legacy format", func(t *testing.T) {
+		// Stop hooks with Modify should use the legacy modify
+		// field since Stop is not PreToolUse or PermissionRequest.
 		result := HookResult{
 			Decision: "block",
 			Reason:   "New task",
@@ -893,12 +895,12 @@ func TestBuildHookResponse_StopHookOmitsContinue(t *testing.T) {
 			},
 		}
 
-		resp := buildHookResponse(result)
+		resp := buildHookResponse("Stop", result)
 
 		assert.Equal(t, "block", resp["decision"])
 		assert.Equal(t, "New task", resp["reason"])
 
-		// Modify should still be included.
+		// Modify should still be included as legacy format.
 		modify, ok := resp["modify"]
 		assert.True(t, ok)
 		assert.Equal(t,
