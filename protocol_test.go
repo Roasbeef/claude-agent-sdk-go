@@ -912,3 +912,592 @@ func TestBuildHookResponse_StopHookOmitsContinue(t *testing.T) {
 		assert.False(t, hasContinue)
 	})
 }
+
+// TestHandleHookCallback_PreToolUseModify exercises the full
+// handleHookCallback path for a PreToolUse hook that returns Modify.
+// This verifies the hookType is correctly extracted from the legacy
+// control request payload and threaded through to buildHookResponse,
+// producing hookSpecificOutput.updatedInput on the wire.
+func TestHandleHookCallback_PreToolUseModify(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+
+	opts.Hooks = map[HookType][]HookConfig{
+		HookTypePreToolUse: {
+			{
+				Matcher: "*",
+				Callback: func(ctx context.Context, input HookInput) (HookResult, error) {
+					ptu, ok := input.(PreToolUseInput)
+					require.True(t, ok)
+					assert.Equal(t, "Bash", ptu.ToolName)
+
+					return HookResult{
+						Continue: true,
+						Modify: map[string]interface{}{
+							"command": "cd /worktree && " + "git status",
+						},
+					}, nil
+				},
+			},
+		},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	protocol := NewProtocol(transport, opts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	// Register hook callback (normally done during Initialize).
+	protocol.hookCallbacks["hook_ptu_0"] = opts.Hooks[HookTypePreToolUse][0].Callback
+
+	// Read the response that handleControlRequest writes to the transport.
+	respCh := make(chan SDKControlResponse, 1)
+	go func() {
+		decoder := json.NewDecoder(runner.StdinPipe)
+		var resp SDKControlResponse
+		if err := decoder.Decode(&resp); err == nil {
+			respCh <- resp
+		}
+	}()
+
+	// Simulate a PreToolUse hook callback from the CLI (legacy format).
+	req := ControlRequest{
+		Type:      "control",
+		Subtype:   "hook_callback",
+		RequestID: "req_ptu_modify",
+		Payload: map[string]interface{}{
+			"callback_id": "hook_ptu_0",
+			"input": map[string]interface{}{
+				"hook_event": "PreToolUse",
+				"tool_name":  "Bash",
+				"tool_input": map[string]interface{}{
+					"command": "git status",
+				},
+				"session_id": "sess_1",
+			},
+		},
+	}
+
+	err = protocol.handleControlRequest(ctx, req)
+	require.NoError(t, err)
+
+	select {
+	case resp := <-respCh:
+		assert.Equal(t, "control_response", resp.Type)
+		assert.Equal(t, "success", resp.Response.Subtype)
+		assert.Equal(t, "req_ptu_modify", resp.Response.RequestID)
+
+		// Wire format must use hookSpecificOutput, not legacy modify.
+		_, hasModify := resp.Response.Response["modify"]
+		assert.False(t, hasModify,
+			"PreToolUse response must not use legacy modify field",
+		)
+
+		hso, ok := resp.Response.Response["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok, "response must include hookSpecificOutput")
+		assert.Equal(t, "PreToolUse", hso["hookEventName"])
+		assert.Equal(t, "allow", hso["permissionDecision"])
+
+		updatedInput, ok := hso["updatedInput"].(map[string]interface{})
+		require.True(t, ok, "hookSpecificOutput must include updatedInput")
+		assert.Equal(t, "cd /worktree && git status", updatedInput["command"])
+
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Timeout waiting for response")
+	}
+}
+
+// TestHandleSDKHookCallback_PreToolUseModify exercises the SDK-format
+// handleSDKHookCallback path for a PreToolUse hook that returns Modify.
+// The SDK format uses hook_event_name (not hook_event) in the Input map,
+// and the response must use hookSpecificOutput.updatedInput.
+func TestHandleSDKHookCallback_PreToolUseModify(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+
+	opts.Hooks = map[HookType][]HookConfig{
+		HookTypePreToolUse: {
+			{
+				Matcher: "*",
+				Callback: func(ctx context.Context, input HookInput) (HookResult, error) {
+					ptu := input.(PreToolUseInput)
+					return HookResult{
+						Continue: true,
+						Modify: map[string]interface{}{
+							"file_path": "/worktree/" + ptu.ToolName,
+						},
+					}, nil
+				},
+			},
+		},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	protocol := NewProtocol(transport, opts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	protocol.hookCallbacks["sdk_hook_ptu"] = opts.Hooks[HookTypePreToolUse][0].Callback
+
+	// Read the response written to the transport.
+	respCh := make(chan SDKControlResponse, 1)
+	go func() {
+		decoder := json.NewDecoder(runner.StdinPipe)
+		var resp SDKControlResponse
+		if err := decoder.Decode(&resp); err == nil {
+			respCh <- resp
+		}
+	}()
+
+	// Simulate a PreToolUse hook callback in SDK format.
+	req := SDKControlRequest{
+		Type:      "control_request",
+		RequestID: "sdk_ptu_modify",
+		Request: SDKControlRequestBody{
+			Subtype:    "hook_callback",
+			CallbackID: "sdk_hook_ptu",
+			Input: map[string]interface{}{
+				"hook_event_name": "PreToolUse",
+				"tool_name":       "Read",
+				"tool_input": map[string]interface{}{
+					"file_path": "/old/path.go",
+				},
+				"session_id": "sess_sdk_1",
+			},
+		},
+	}
+
+	err = protocol.handleSDKControlRequest(ctx, req)
+	require.NoError(t, err)
+
+	select {
+	case resp := <-respCh:
+		assert.Equal(t, "control_response", resp.Type)
+		assert.Equal(t, "success", resp.Response.Subtype)
+		assert.Equal(t, "sdk_ptu_modify", resp.Response.RequestID)
+
+		_, hasModify := resp.Response.Response["modify"]
+		assert.False(t, hasModify,
+			"SDK PreToolUse response must not use legacy modify",
+		)
+
+		hso, ok := resp.Response.Response["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok, "response must include hookSpecificOutput")
+		assert.Equal(t, "PreToolUse", hso["hookEventName"])
+		assert.Equal(t, "allow", hso["permissionDecision"])
+
+		updatedInput, ok := hso["updatedInput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "/worktree/Read", updatedInput["file_path"])
+
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Timeout waiting for response")
+	}
+}
+
+// TestHandleSDKHookCallback_PermissionRequestModify verifies the SDK
+// format path for PermissionRequest hooks with Modify, which uses a
+// nested decision.updatedInput structure.
+func TestHandleSDKHookCallback_PermissionRequestModify(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+
+	opts.Hooks = map[HookType][]HookConfig{
+		HookTypePermissionRequest: {
+			{
+				Matcher: "*",
+				Callback: func(ctx context.Context, input HookInput) (HookResult, error) {
+					return HookResult{
+						Continue: true,
+						Modify: map[string]interface{}{
+							"command": "safe-command --flag",
+						},
+					}, nil
+				},
+			},
+		},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	protocol := NewProtocol(transport, opts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	protocol.hookCallbacks["sdk_hook_pr"] = opts.Hooks[HookTypePermissionRequest][0].Callback
+
+	respCh := make(chan SDKControlResponse, 1)
+	go func() {
+		decoder := json.NewDecoder(runner.StdinPipe)
+		var resp SDKControlResponse
+		if err := decoder.Decode(&resp); err == nil {
+			respCh <- resp
+		}
+	}()
+
+	req := SDKControlRequest{
+		Type:      "control_request",
+		RequestID: "sdk_pr_modify",
+		Request: SDKControlRequestBody{
+			Subtype:    "hook_callback",
+			CallbackID: "sdk_hook_pr",
+			Input: map[string]interface{}{
+				"hook_event_name": "PermissionRequest",
+				"tool_name":       "Bash",
+				"tool_input": map[string]interface{}{
+					"command": "rm -rf /",
+				},
+				"session_id": "sess_sdk_2",
+			},
+		},
+	}
+
+	err = protocol.handleSDKControlRequest(ctx, req)
+	require.NoError(t, err)
+
+	select {
+	case resp := <-respCh:
+		assert.Equal(t, "success", resp.Response.Subtype)
+
+		_, hasModify := resp.Response.Response["modify"]
+		assert.False(t, hasModify)
+
+		hso, ok := resp.Response.Response["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "PermissionRequest", hso["hookEventName"])
+
+		decision, ok := hso["decision"].(map[string]interface{})
+		require.True(t, ok, "PermissionRequest must use nested decision")
+		assert.Equal(t, "allow", decision["behavior"])
+
+		updatedInput, ok := decision["updatedInput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "safe-command --flag", updatedInput["command"])
+
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Timeout waiting for response")
+	}
+}
+
+// TestHandleHookCallback_EmptyHookType verifies that when a hook callback
+// arrives without a hook_event field (empty string hookType), Modify falls
+// through to the legacy format rather than producing hookSpecificOutput.
+func TestHandleHookCallback_EmptyHookType(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+
+	// Use a UserPromptSubmit hook but simulate a missing hook_event field.
+	// The callback registered under a generic ID will fire, and
+	// buildHookResponse will receive hookType="" which should fall to default.
+	opts.Hooks = map[HookType][]HookConfig{
+		HookTypeUserPromptSubmit: {
+			{
+				Matcher: "*",
+				Callback: func(ctx context.Context, input HookInput) (HookResult, error) {
+					// Without a recognized hook_event, handleHookCallback
+					// falls to default and returns an error. So this won't
+					// be called. We test the error path instead.
+					return HookResult{Continue: true}, nil
+				},
+			},
+		},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	protocol := NewProtocol(transport, opts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	protocol.hookCallbacks["hook_empty"] = opts.Hooks[HookTypeUserPromptSubmit][0].Callback
+
+	respCh := make(chan SDKControlResponse, 1)
+	go func() {
+		decoder := json.NewDecoder(runner.StdinPipe)
+		var resp SDKControlResponse
+		if err := decoder.Decode(&resp); err == nil {
+			respCh <- resp
+		}
+	}()
+
+	// Send a hook callback with NO hook_event field in the input.
+	req := ControlRequest{
+		Type:      "control",
+		Subtype:   "hook_callback",
+		RequestID: "req_empty_type",
+		Payload: map[string]interface{}{
+			"callback_id": "hook_empty",
+			"input": map[string]interface{}{
+				// hook_event intentionally omitted.
+				"session_id": "sess_empty",
+			},
+		},
+	}
+
+	err = protocol.handleControlRequest(ctx, req)
+	require.NoError(t, err)
+
+	select {
+	case resp := <-respCh:
+		// With an empty/missing hook_event, the switch in
+		// handleHookCallback falls to default, returning an error
+		// about an unknown hook type.
+		assert.Equal(t, "error", resp.Response.Subtype)
+		assert.Contains(t, resp.Response.Error, "unknown hook type")
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Timeout waiting for response")
+	}
+}
+
+// TestHandleHookCallback_HookSpecificOutputPassthrough verifies that a
+// hook returning HookSpecificOutput directly passes it through the full
+// handleHookCallback → buildHookResponse → wire path unchanged.
+func TestHandleHookCallback_HookSpecificOutputPassthrough(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+
+	opts.Hooks = map[HookType][]HookConfig{
+		HookTypePreToolUse: {
+			{
+				Matcher: "*",
+				Callback: func(ctx context.Context, input HookInput) (HookResult, error) {
+					return HookResult{
+						Continue: true,
+						HookSpecificOutput: map[string]interface{}{
+							"hookEventName":            "PreToolUse",
+							"permissionDecision":       "deny",
+							"permissionDecisionReason": "blocked by policy",
+						},
+					}, nil
+				},
+			},
+		},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	protocol := NewProtocol(transport, opts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	protocol.hookCallbacks["hook_hso"] = opts.Hooks[HookTypePreToolUse][0].Callback
+
+	respCh := make(chan SDKControlResponse, 1)
+	go func() {
+		decoder := json.NewDecoder(runner.StdinPipe)
+		var resp SDKControlResponse
+		if err := decoder.Decode(&resp); err == nil {
+			respCh <- resp
+		}
+	}()
+
+	req := ControlRequest{
+		Type:      "control",
+		Subtype:   "hook_callback",
+		RequestID: "req_hso_pass",
+		Payload: map[string]interface{}{
+			"callback_id": "hook_hso",
+			"input": map[string]interface{}{
+				"hook_event": "PreToolUse",
+				"tool_name":  "Bash",
+				"tool_input": map[string]interface{}{
+					"command": "rm -rf /",
+				},
+			},
+		},
+	}
+
+	err = protocol.handleControlRequest(ctx, req)
+	require.NoError(t, err)
+
+	select {
+	case resp := <-respCh:
+		assert.Equal(t, "success", resp.Response.Subtype)
+
+		hso, ok := resp.Response.Response["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Equal(t, "blocked by policy", hso["permissionDecisionReason"])
+
+		// No legacy modify field should be present.
+		_, hasModify := resp.Response.Response["modify"]
+		assert.False(t, hasModify)
+
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("Timeout waiting for response")
+	}
+}
+
+// TestBuildHookResponse_PreToolUseUpdatedInput verifies that PreToolUse
+// hooks with Modify produce hookSpecificOutput.updatedInput instead of
+// the legacy modify field. The CLI ignores the modify field; only
+// hookSpecificOutput.updatedInput actually rewrites tool inputs.
+func TestBuildHookResponse_PreToolUseUpdatedInput(t *testing.T) {
+	t.Run("modify translates to updatedInput", func(t *testing.T) {
+		result := HookResult{
+			Continue: true,
+			Modify: map[string]interface{}{
+				"command": "cd /tmp/worktree && git status",
+			},
+		}
+
+		resp := buildHookResponse("PreToolUse", result)
+
+		// Must have continue=true.
+		assert.Equal(t, true, resp["continue"])
+
+		// Must NOT have legacy modify field.
+		_, hasModify := resp["modify"]
+		assert.False(t, hasModify,
+			"PreToolUse should not use legacy modify field",
+		)
+
+		// Must have hookSpecificOutput with updatedInput.
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok, "hookSpecificOutput should be a map")
+		assert.Equal(t, "PreToolUse", hso["hookEventName"])
+		assert.Equal(t, "allow", hso["permissionDecision"])
+
+		updatedInput, ok := hso["updatedInput"].(map[string]interface{})
+		require.True(t, ok, "updatedInput should be a map")
+		assert.Equal(t,
+			"cd /tmp/worktree && git status",
+			updatedInput["command"],
+		)
+	})
+
+	t.Run("file_path modification", func(t *testing.T) {
+		result := HookResult{
+			Continue: true,
+			Modify: map[string]interface{}{
+				"file_path": "/tmp/worktree/src/main.go",
+			},
+		}
+
+		resp := buildHookResponse("PreToolUse", result)
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+
+		updatedInput, ok := hso["updatedInput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t,
+			"/tmp/worktree/src/main.go",
+			updatedInput["file_path"],
+		)
+	})
+
+	t.Run("no modify produces no hookSpecificOutput", func(t *testing.T) {
+		result := HookResult{
+			Continue: true,
+		}
+
+		resp := buildHookResponse("PreToolUse", result)
+
+		assert.Equal(t, true, resp["continue"])
+
+		_, hasHSO := resp["hookSpecificOutput"]
+		assert.False(t, hasHSO,
+			"no modify should produce no hookSpecificOutput",
+		)
+
+		_, hasModify := resp["modify"]
+		assert.False(t, hasModify)
+	})
+
+	t.Run("PermissionRequest uses nested decision format", func(t *testing.T) {
+		result := HookResult{
+			Continue: true,
+			Modify: map[string]interface{}{
+				"command": "ls /tmp",
+			},
+		}
+
+		resp := buildHookResponse("PermissionRequest", result)
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "PermissionRequest", hso["hookEventName"])
+
+		decision, ok := hso["decision"].(map[string]interface{})
+		require.True(t, ok, "decision should be a map")
+		assert.Equal(t, "allow", decision["behavior"])
+
+		updatedInput, ok := decision["updatedInput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "ls /tmp", updatedInput["command"])
+	})
+
+	t.Run("PostToolUse falls through to legacy modify", func(t *testing.T) {
+		result := HookResult{
+			Continue: true,
+			Modify: map[string]interface{}{
+				"key": "value",
+			},
+		}
+
+		resp := buildHookResponse("PostToolUse", result)
+
+		// Should use legacy modify field for non-PreToolUse hooks.
+		modify, ok := resp["modify"].(map[string]interface{})
+		require.True(t, ok, "PostToolUse should use legacy modify")
+		assert.Equal(t, "value", modify["key"])
+
+		_, hasHSO := resp["hookSpecificOutput"]
+		assert.False(t, hasHSO,
+			"PostToolUse should not use hookSpecificOutput",
+		)
+	})
+
+	t.Run("explicit HookSpecificOutput takes precedence", func(t *testing.T) {
+		result := HookResult{
+			Continue: true,
+			Modify: map[string]interface{}{
+				"command": "should be ignored",
+			},
+			HookSpecificOutput: map[string]interface{}{
+				"hookEventName":      "PreToolUse",
+				"permissionDecision": "deny",
+				"permissionDecisionReason": "blocked by " +
+					"policy",
+			},
+		}
+
+		resp := buildHookResponse("PreToolUse", result)
+
+		// HookSpecificOutput should be used as-is.
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "deny", hso["permissionDecision"])
+		assert.Equal(t,
+			"blocked by policy",
+			hso["permissionDecisionReason"],
+		)
+
+		// Legacy modify should NOT be present.
+		_, hasModify := resp["modify"]
+		assert.False(t, hasModify)
+	})
+}
