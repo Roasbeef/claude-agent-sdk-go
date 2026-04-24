@@ -125,6 +125,36 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, "--permission-mode", string(t.options.PermissionMode))
 	}
 
+	if t.options.Thinking != nil {
+		switch t.options.Thinking.Type {
+		case "enabled":
+			if t.options.Thinking.BudgetTokens == nil {
+				args = append(args, "--thinking", "adaptive")
+			} else {
+				args = append(args, "--max-thinking-tokens",
+					fmt.Sprintf("%d", *t.options.Thinking.BudgetTokens))
+			}
+		case "disabled":
+			args = append(args, "--thinking", "disabled")
+		case "adaptive":
+			args = append(args, "--thinking", "adaptive")
+		}
+		if t.options.Thinking.Type != "disabled" && t.options.Thinking.Display != "" {
+			args = append(args, "--thinking-display", string(t.options.Thinking.Display))
+		}
+	} else if t.options.MaxThinkingTokens != nil {
+		if *t.options.MaxThinkingTokens == 0 {
+			args = append(args, "--thinking", "disabled")
+		} else {
+			args = append(args, "--max-thinking-tokens",
+				fmt.Sprintf("%d", *t.options.MaxThinkingTokens))
+		}
+	}
+
+	if t.options.Effort != "" {
+		args = append(args, "--effort", string(t.options.Effort))
+	}
+
 	// Add permission bypass flags if configured.
 	if t.options.AllowDangerouslySkipPermissions {
 		args = append(args, "--dangerously-skip-permissions")

@@ -106,10 +106,19 @@ type Options struct {
 	// Can be a list of tool names or use preset "claude_code".
 	Tools *ToolsConfig
 
+	// Thinking controls Claude's thinking/reasoning behavior.
+	// When set, takes precedence over MaxThinkingTokens.
+	Thinking *ThinkingConfig
+
+	// Effort controls how much effort Claude puts into its response.
+	Effort EffortLevel
+
 	// MaxBudgetUsd is the maximum budget in USD for the query.
 	MaxBudgetUsd *float64
 
 	// MaxThinkingTokens is the maximum tokens for thinking process.
+	//
+	// Deprecated: Use Thinking instead.
 	MaxThinkingTokens *int
 
 	// MaxTurns is the maximum conversation turns.
@@ -251,6 +260,61 @@ type ToolsConfig struct {
 	// Tools is a list of specific tool names.
 	Tools []string
 }
+
+// ThinkingConfig controls Claude's thinking/reasoning behavior.
+//
+// Type is one of "adaptive", "enabled", or "disabled". BudgetTokens applies only
+// when Type is "enabled"; if nil, the CLI is told to use adaptive thinking. Display
+// applies when Type is "adaptive" or "enabled" and is one of "summarized" or "omitted".
+type ThinkingConfig struct {
+	Type         string          `json:"type"`
+	BudgetTokens *int            `json:"budgetTokens,omitempty"`
+	Display      ThinkingDisplay `json:"display,omitempty"`
+}
+
+// ThinkingDisplay controls how thinking blocks are surfaced to the client.
+type ThinkingDisplay string
+
+const (
+	// ThinkingDisplaySummarized emits a short summary in place of raw thinking.
+	ThinkingDisplaySummarized ThinkingDisplay = "summarized"
+	// ThinkingDisplayOmitted suppresses thinking blocks entirely.
+	ThinkingDisplayOmitted ThinkingDisplay = "omitted"
+)
+
+// ThinkingAdaptive lets Claude decide when and how much to think.
+func ThinkingAdaptive() *ThinkingConfig {
+	return &ThinkingConfig{Type: "adaptive"}
+}
+
+// ThinkingEnabled enables thinking with a fixed token budget.
+func ThinkingEnabled(budget int) *ThinkingConfig {
+	return &ThinkingConfig{
+		Type:         "enabled",
+		BudgetTokens: &budget,
+	}
+}
+
+// ThinkingDisabled disables extended thinking.
+func ThinkingDisabled() *ThinkingConfig {
+	return &ThinkingConfig{Type: "disabled"}
+}
+
+// EffortLevel controls how much thinking/reasoning Claude applies.
+type EffortLevel string
+
+const (
+	// EffortLow applies minimal thinking for fastest responses.
+	EffortLow EffortLevel = "low"
+	// EffortMedium applies moderate thinking.
+	EffortMedium EffortLevel = "medium"
+	// EffortHigh applies deep reasoning.
+	EffortHigh EffortLevel = "high"
+	// EffortXHigh applies deeper reasoning than high.
+	EffortXHigh EffortLevel = "xhigh"
+	// EffortMax applies maximum effort.
+	EffortMax EffortLevel = "max"
+)
 
 // NewOptions creates a new Options with sensible defaults.
 //
@@ -1009,6 +1073,20 @@ func WithDisallowedTools(tools []string) Option {
 func WithTools(config *ToolsConfig) Option {
 	return func(o *Options) {
 		o.Tools = config
+	}
+}
+
+// WithThinking controls Claude's thinking/reasoning behavior.
+func WithThinking(thinking *ThinkingConfig) Option {
+	return func(o *Options) {
+		o.Thinking = thinking
+	}
+}
+
+// WithEffort controls how much effort Claude puts into its response.
+func WithEffort(effort EffortLevel) Option {
+	return func(o *Options) {
+		o.Effort = effort
 	}
 }
 
