@@ -206,6 +206,21 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, "--include-partial-messages")
 	}
 
+	// Add beta headers. The CLI accepts --betas as a variadic flag; we
+	// pass a single comma-separated value to match the Python SDK and keep
+	// parsing unambiguous when additional flags follow.
+	if len(t.options.Betas) > 0 {
+		args = append(args, "--betas", strings.Join(t.options.Betas, ","))
+	}
+
+	// Move per-machine system prompt sections (cwd, env, memory, git status)
+	// into the first user message. Stabilizes the system prompt prefix for
+	// cross-invocation prompt-cache reuse. The CLI ignores this flag when
+	// --system-prompt is set.
+	if t.options.ExcludeDynamicSystemPromptSections {
+		args = append(args, "--exclude-dynamic-system-prompt-sections")
+	}
+
 	// Build environment - start with current process env, then overlay options.
 	env := os.Environ()
 	for k, v := range t.options.Env {

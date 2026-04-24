@@ -76,8 +76,18 @@ type Options struct {
 	Sandbox *SandboxSettings
 
 	// Betas enables beta features.
-	// Example: []string{"context-1m-2025-08-07"}
+	// Each beta header is passed to the CLI via --betas as a comma-separated
+	// list. Example: []string{"context-1m-2025-08-07"}.
 	Betas []string
+
+	// ExcludeDynamicSystemPromptSections moves per-machine sections (cwd,
+	// env info, memory paths, git status) from the system prompt into the
+	// first user message. This improves cross-invocation prompt-cache reuse
+	// by keeping the system prompt prefix stable across runs.
+	//
+	// The CLI only honors this flag with the default system prompt — it is
+	// ignored when SystemPrompt is set to a custom string.
+	ExcludeDynamicSystemPromptSections bool
 
 	// Plugins loads custom plugins from local paths.
 	Plugins []PluginConfig
@@ -939,9 +949,30 @@ func WithSandbox(sandbox *SandboxSettings) Option {
 }
 
 // WithBetas enables beta features.
+//
+// Each value is an API beta header name. They are joined and passed to the
+// CLI as --betas a,b,c.
+//
+// Example:
+//
+//	WithBetas([]string{"context-1m-2025-08-07"})
 func WithBetas(betas []string) Option {
 	return func(o *Options) {
 		o.Betas = betas
+	}
+}
+
+// WithExcludeDynamicSystemPromptSections moves per-machine sections (cwd,
+// env info, memory paths, git status) out of the system prompt and into the
+// first user message.
+//
+// Enable this when cross-invocation prompt-cache reuse matters more than
+// maximally authoritative environment context in the system prompt. The CLI
+// only honors this flag with the default system prompt; it is ignored if
+// WithSystemPrompt is used to set a custom string.
+func WithExcludeDynamicSystemPromptSections(enable bool) Option {
+	return func(o *Options) {
+		o.ExcludeDynamicSystemPromptSections = enable
 	}
 }
 

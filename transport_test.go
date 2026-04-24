@@ -777,6 +777,98 @@ func TestSubprocessTransportAdditionalDirectories(t *testing.T) {
 	}
 }
 
+// TestSubprocessTransportBetas tests that Betas are passed to the CLI as a
+// single --betas flag with a comma-separated value.
+func TestSubprocessTransportBetas(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	opts := &Options{
+		Betas: []string{"context-1m-2025-08-07", "some-other-beta"},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	// Find --betas followed by the comma-joined value.
+	assert.True(t, runner.started)
+	found := false
+	for i, arg := range runner.StartArgs {
+		if arg == "--betas" && i+1 < len(runner.StartArgs) {
+			assert.Equal(t,
+				"context-1m-2025-08-07,some-other-beta",
+				runner.StartArgs[i+1],
+				"betas should be comma-joined",
+			)
+			found = true
+			break
+		}
+	}
+	assert.True(t, found, "expected --betas in args: %v", runner.StartArgs)
+}
+
+// TestSubprocessTransportBetasEmpty verifies no --betas flag is emitted when
+// Betas is empty.
+func TestSubprocessTransportBetasEmpty(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	for _, arg := range runner.StartArgs {
+		assert.NotEqual(t, "--betas", arg,
+			"unexpected --betas in args: %v", runner.StartArgs)
+	}
+}
+
+// TestSubprocessTransportExcludeDynamicSystemPromptSections tests the flag is
+// passed when the option is enabled.
+func TestSubprocessTransportExcludeDynamicSystemPromptSections(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	opts := &Options{
+		ExcludeDynamicSystemPromptSections: true,
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	assert.True(t, runner.started)
+	assert.Contains(t, runner.StartArgs,
+		"--exclude-dynamic-system-prompt-sections")
+}
+
+// TestSubprocessTransportExcludeDynamicSystemPromptSectionsDefault verifies
+// the flag is absent by default.
+func TestSubprocessTransportExcludeDynamicSystemPromptSectionsDefault(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	for _, arg := range runner.StartArgs {
+		assert.NotEqual(t, "--exclude-dynamic-system-prompt-sections", arg,
+			"unexpected flag in args: %v", runner.StartArgs)
+	}
+}
+
 // TestSubprocessTransportAdditionalDirectoriesEmpty tests that no --add-dir
 // flags are passed when AdditionalDirectories is empty.
 func TestSubprocessTransportAdditionalDirectoriesEmpty(t *testing.T) {
