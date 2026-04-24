@@ -8,6 +8,7 @@ import (
 	"io"
 	"iter"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -259,6 +260,21 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	// --system-prompt is set.
 	if t.options.ExcludeDynamicSystemPromptSections {
 		args = append(args, "--exclude-dynamic-system-prompt-sections")
+	}
+
+	if len(t.options.ExtraArgs) > 0 {
+		keys := make([]string, 0, len(t.options.ExtraArgs))
+		for key := range t.options.ExtraArgs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+
+		for _, key := range keys {
+			args = append(args, "--"+key)
+			if value := t.options.ExtraArgs[key]; value != nil {
+				args = append(args, *value)
+			}
+		}
 	}
 
 	// Build environment - start with current process env, then overlay options.
