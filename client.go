@@ -977,6 +977,8 @@ func validateOptions(opts *Options) error {
 		PermissionModePlan:        true,
 		PermissionModeAcceptEdits: true,
 		PermissionModeBypassAll:   true,
+		PermissionModeAuto:        true,
+		PermissionModeDontAsk:     true,
 	}
 	if opts.PermissionMode != "" && !validModes[opts.PermissionMode] {
 		return &ErrInvalidConfiguration{
