@@ -84,6 +84,13 @@ type Options struct {
 	// list. Example: []string{"context-1m-2025-08-07"}.
 	Betas []string
 
+	// Debug enables debug logging from the CLI.
+	Debug bool
+
+	// DebugFile writes debug logs to the specified file.
+	// When set, the CLI implicitly enables debug logging.
+	DebugFile string
+
 	// ExcludeDynamicSystemPromptSections moves per-machine sections (cwd,
 	// env info, memory paths, git status) from the system prompt into the
 	// first user message. This improves cross-invocation prompt-cache reuse
@@ -1048,6 +1055,20 @@ func WithSandbox(sandbox *SandboxSettings) Option {
 func WithBetas(betas []string) Option {
 	return func(o *Options) {
 		o.Betas = betas
+	}
+}
+
+// WithDebug enables debug logging from the CLI.
+func WithDebug(debug bool) Option {
+	return func(o *Options) {
+		o.Debug = debug
+	}
+}
+
+// WithDebugFile writes debug logs to the specified file.
+func WithDebugFile(path string) Option {
+	return func(o *Options) {
+		o.DebugFile = path
 	}
 }
 
