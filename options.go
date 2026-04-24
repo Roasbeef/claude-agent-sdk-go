@@ -29,6 +29,10 @@ type Options struct {
 	// If empty, the CLI will be discovered from PATH.
 	CLIPath string
 
+	// ExtraArgs are arbitrary Claude CLI flags appended after SDK-managed flags.
+	// A nil value emits a bare flag.
+	ExtraArgs map[string]*string
+
 	// Cwd is the current working directory for the agent.
 	// Default: process.cwd() equivalent
 	Cwd string
@@ -368,6 +372,13 @@ func WithModel(model string) Option {
 func WithCLIPath(path string) Option {
 	return func(o *Options) {
 		o.CLIPath = path
+	}
+}
+
+// WithExtraArgs sets arbitrary Claude CLI flags appended after SDK-managed flags.
+func WithExtraArgs(args map[string]*string) Option {
+	return func(o *Options) {
+		o.ExtraArgs = args
 	}
 }
 

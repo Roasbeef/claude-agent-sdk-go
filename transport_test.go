@@ -33,6 +33,10 @@ func assertArgAbsent(t *testing.T, args []string, flag string) {
 	assert.NotContains(t, args, flag)
 }
 
+func stringPtr(s string) *string {
+	return &s
+}
+
 // TestSubprocessTransportBasicCommunication tests stdin/stdout communication.
 func TestSubprocessTransportBasicCommunication(t *testing.T) {
 	// Create mock subprocess
@@ -662,6 +666,62 @@ func TestSubprocessTransportConnectArguments(t *testing.T) {
 	assert.True(t, runner.started)
 	assert.Contains(t, runner.StartArgs, "--model")
 	assert.Contains(t, runner.StartArgs, "--verbose")
+}
+
+func TestSubprocessTransportExtraArgs(t *testing.T) {
+	tests := []struct {
+		name      string
+		extraArgs map[string]*string
+		wantTail  []string
+	}{
+		{
+			name:      "nil",
+			extraArgs: nil,
+			wantTail:  nil,
+		},
+		{
+			name:      "empty",
+			extraArgs: map[string]*string{},
+			wantTail:  nil,
+		},
+		{
+			name:      "bare flag",
+			extraArgs: map[string]*string{"debug": nil},
+			wantTail:  []string{"--debug"},
+		},
+		{
+			name: "valued flags sorted",
+			extraArgs: map[string]*string{
+				"foo": stringPtr("bar"),
+				"baz": stringPtr("qux"),
+			},
+			wantTail: []string{"--baz", "qux", "--foo", "bar"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+			opts := NewOptions()
+			opts.ExtraArgs = tt.extraArgs
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+
+			err := transport.Connect(context.Background())
+			require.NoError(t, err)
+			defer transport.Close()
+
+			if len(tt.wantTail) == 0 {
+				assertArgAbsent(t, runner.StartArgs, "--debug")
+				assertArgAbsent(t, runner.StartArgs, "--baz")
+				assertArgAbsent(t, runner.StartArgs, "--foo")
+				return
+			}
+
+			require.GreaterOrEqual(t, len(runner.StartArgs), len(tt.wantTail))
+			assert.Equal(t, tt.wantTail, runner.StartArgs[len(runner.StartArgs)-len(tt.wantTail):])
+		})
+	}
 }
 
 func TestSubprocessTransportThinkingArguments(t *testing.T) {
