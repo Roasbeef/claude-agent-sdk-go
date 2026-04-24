@@ -118,6 +118,10 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, "--model", t.options.Model)
 	}
 
+	if t.options.MainAgent != "" {
+		args = append(args, "--agent", t.options.MainAgent)
+	}
+
 	if t.options.SystemPrompt != "" {
 		args = append(args, "--system-prompt", t.options.SystemPrompt)
 	}
