@@ -254,6 +254,12 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, "--betas", strings.Join(t.options.Betas, ","))
 	}
 
+	if t.options.DebugFile != "" {
+		args = append(args, "--debug-file", t.options.DebugFile)
+	} else if t.options.Debug {
+		args = append(args, "--debug")
+	}
+
 	// Move per-machine system prompt sections (cwd, env, memory, git status)
 	// into the first user message. Stabilizes the system prompt prefix for
 	// cross-invocation prompt-cache reuse. The CLI ignores this flag when

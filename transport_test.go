@@ -1197,6 +1197,67 @@ func TestSubprocessTransportBetasEmpty(t *testing.T) {
 	}
 }
 
+func TestSubprocessTransportDebugOptions(t *testing.T) {
+	tests := []struct {
+		name               string
+		debug              bool
+		debugFile          string
+		wantDebug          bool
+		wantDebugFile      bool
+		wantDebugFileValue string
+	}{
+		{
+			name: "disabled",
+		},
+		{
+			name:      "debug enabled",
+			debug:     true,
+			wantDebug: true,
+		},
+		{
+			name:               "debug file enables debug",
+			debugFile:          "/tmp/x.log",
+			wantDebugFile:      true,
+			wantDebugFileValue: "/tmp/x.log",
+		},
+		{
+			name:               "debug file wins over debug",
+			debug:              true,
+			debugFile:          "/tmp/x.log",
+			wantDebugFile:      true,
+			wantDebugFileValue: "/tmp/x.log",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+			opts := &Options{
+				Debug:     tt.debug,
+				DebugFile: tt.debugFile,
+			}
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+
+			err := transport.Connect(context.Background())
+			require.NoError(t, err)
+			defer transport.Close()
+
+			if tt.wantDebug {
+				assert.Contains(t, runner.StartArgs, "--debug")
+			} else {
+				assertArgAbsent(t, runner.StartArgs, "--debug")
+			}
+
+			if tt.wantDebugFile {
+				assertArgValue(t, runner.StartArgs, "--debug-file", tt.wantDebugFileValue)
+			} else {
+				assertArgAbsent(t, runner.StartArgs, "--debug-file")
+			}
+		})
+	}
+}
+
 // TestSubprocessTransportExcludeDynamicSystemPromptSections tests the flag is
 // passed when the option is enabled.
 func TestSubprocessTransportExcludeDynamicSystemPromptSections(t *testing.T) {
