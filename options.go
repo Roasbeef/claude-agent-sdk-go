@@ -549,6 +549,12 @@ const (
 
 	// PermissionModeBypassAll skips all permission checks.
 	PermissionModeBypassAll PermissionMode = "bypassPermissions"
+
+	// PermissionModeAuto lets Claude automatically decide permission handling.
+	PermissionModeAuto PermissionMode = "auto"
+
+	// PermissionModeDontAsk runs without asking for permission prompts.
+	PermissionModeDontAsk PermissionMode = "dontAsk"
 )
 
 // CanUseToolFunc is a callback invoked before tool execution.

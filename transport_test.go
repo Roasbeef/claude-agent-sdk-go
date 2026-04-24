@@ -1310,3 +1310,49 @@ func TestSubprocessTransportStderrCallbackWiring(t *testing.T) {
 	assert.Contains(t, joined, "debug: loading config")
 	assert.Contains(t, joined, "warn: deprecated option")
 }
+
+func TestPermissionModeStringValues(t *testing.T) {
+	assert.Equal(t, "auto", string(PermissionModeAuto))
+	assert.Equal(t, "dontAsk", string(PermissionModeDontAsk))
+}
+
+func TestSubprocessTransportPermissionModeArguments(t *testing.T) {
+	tests := []struct {
+		name string
+		mode PermissionMode
+		want string
+	}{
+		{name: "default", mode: PermissionModeDefault, want: "default"},
+		{name: "plan", mode: PermissionModePlan, want: "plan"},
+		{name: "accept edits", mode: PermissionModeAcceptEdits, want: "acceptEdits"},
+		{name: "bypass all", mode: PermissionModeBypassAll, want: "bypassPermissions"},
+		{name: "dont ask", mode: PermissionModeDontAsk, want: "dontAsk"},
+		{name: "auto", mode: PermissionModeAuto, want: "auto"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+			opts := &Options{
+				PermissionMode: tt.mode,
+			}
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+
+			ctx := context.Background()
+			err := transport.Connect(ctx)
+			require.NoError(t, err)
+			defer transport.Close()
+
+			found := false
+			for i, arg := range runner.StartArgs {
+				if arg == "--permission-mode" && i+1 < len(runner.StartArgs) {
+					assert.Equal(t, tt.want, runner.StartArgs[i+1])
+					found = true
+					break
+				}
+			}
+			assert.True(t, found, "expected --permission-mode %s in args: %v", tt.want, runner.StartArgs)
+		})
+	}
+}
