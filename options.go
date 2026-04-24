@@ -1098,6 +1098,8 @@ func WithMaxBudgetUsd(budget float64) Option {
 }
 
 // WithMaxThinkingTokens sets the maximum tokens for thinking process.
+//
+// Deprecated: Use WithThinking instead.
 func WithMaxThinkingTokens(tokens int) Option {
 	return func(o *Options) {
 		o.MaxThinkingTokens = &tokens

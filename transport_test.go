@@ -687,6 +687,13 @@ func TestSubprocessTransportThinkingArguments(t *testing.T) {
 			absentFlag: "--thinking",
 		},
 		{
+			name:       "enabled without budget uses adaptive",
+			thinking:   &ThinkingConfig{Type: "enabled"},
+			wantFlag:   "--thinking",
+			wantValue:  "adaptive",
+			absentFlag: "--max-thinking-tokens",
+		},
+		{
 			name:       "disabled",
 			thinking:   ThinkingDisabled(),
 			wantFlag:   "--thinking",
@@ -855,6 +862,23 @@ func TestSubprocessTransportMaxThinkingTokensZeroDisablesThinking(t *testing.T) 
 	tokens := 0
 	runner := NewMockSubprocessRunner()
 	opts := NewOptions()
+	opts.MaxThinkingTokens = &tokens
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	assertArgValue(t, runner.StartArgs, "--thinking", "disabled")
+	assertArgAbsent(t, runner.StartArgs, "--max-thinking-tokens")
+}
+
+func TestSubprocessTransportThinkingPrecedesMaxThinkingTokens(t *testing.T) {
+	tokens := 2048
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	opts.Thinking = ThinkingDisabled()
 	opts.MaxThinkingTokens = &tokens
 
 	transport := NewSubprocessTransportWithRunner(runner, opts)
