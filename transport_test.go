@@ -713,6 +713,30 @@ func TestSubprocessTransportSessionOptions(t *testing.T) {
 	assert.Contains(t, runner.StartArgs, "msg-uuid-456")
 }
 
+// TestSubprocessTransportForkFrom verifies that WithForkSession emits
+// --resume <parentID> --fork-session so the CLI branches a new session.
+func TestSubprocessTransportForkFrom(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	opts := &Options{
+		SessionOptions: SessionOptions{
+			ForkFrom: "parent-session-abc",
+		},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	assert.True(t, runner.started)
+	assert.Contains(t, runner.StartArgs, "--resume")
+	assert.Contains(t, runner.StartArgs, "parent-session-abc")
+	assert.Contains(t, runner.StartArgs, "--fork-session")
+}
+
 // TestSubprocessTransportCloseTimeout tests forced kill on close timeout.
 func TestSubprocessTransportCloseTimeout(t *testing.T) {
 	runner := NewMockSubprocessRunner()
