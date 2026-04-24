@@ -22,6 +22,9 @@ type Options struct {
 	// Default: "claude-sonnet-4-5-20250929"
 	Model string
 
+	// MainAgent names the agent to apply to the main thread.
+	MainAgent string
+
 	// FallbackModel is the model to use if primary fails.
 	FallbackModel string
 
@@ -370,6 +373,13 @@ func WithSystemPrompt(prompt string) Option {
 func WithModel(model string) Option {
 	return func(o *Options) {
 		o.Model = model
+	}
+}
+
+// WithMainAgent sets the agent to apply to the main thread.
+func WithMainAgent(name string) Option {
+	return func(o *Options) {
+		o.MainAgent = name
 	}
 }
 

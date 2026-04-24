@@ -724,6 +724,53 @@ func TestSubprocessTransportExtraArgs(t *testing.T) {
 	}
 }
 
+func TestSubprocessTransportMainAgentArguments(t *testing.T) {
+	tests := []struct {
+		name      string
+		mainAgent string
+		want      bool
+	}{
+		{
+			name:      "empty",
+			mainAgent: "",
+			want:      false,
+		},
+		{
+			name:      "reviewer",
+			mainAgent: "reviewer",
+			want:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+			opts := NewOptions()
+			opts.MainAgent = tt.mainAgent
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+
+			err := transport.Connect(context.Background())
+			require.NoError(t, err)
+			defer transport.Close()
+
+			if tt.want {
+				assertArgValue(t, runner.StartArgs, "--agent", tt.mainAgent)
+			} else {
+				assertArgAbsent(t, runner.StartArgs, "--agent")
+			}
+		})
+	}
+}
+
+func TestWithMainAgent(t *testing.T) {
+	opts := NewOptions()
+
+	WithMainAgent("reviewer")(opts)
+
+	assert.Equal(t, "reviewer", opts.MainAgent)
+}
+
 func TestSubprocessTransportThinkingArguments(t *testing.T) {
 	tests := []struct {
 		name       string
