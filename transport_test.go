@@ -13,6 +13,26 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func assertArgValue(t *testing.T, args []string, flag, value string) {
+	t.Helper()
+
+	for i, arg := range args {
+		if arg == flag {
+			require.Less(t, i+1, len(args), "flag %s missing value", flag)
+			assert.Equal(t, value, args[i+1])
+			return
+		}
+	}
+
+	require.Failf(t, "flag not found", "expected %s %s in args %v", flag, value, args)
+}
+
+func assertArgAbsent(t *testing.T, args []string, flag string) {
+	t.Helper()
+
+	assert.NotContains(t, args, flag)
+}
+
 // TestSubprocessTransportBasicCommunication tests stdin/stdout communication.
 func TestSubprocessTransportBasicCommunication(t *testing.T) {
 	// Create mock subprocess
@@ -642,6 +662,233 @@ func TestSubprocessTransportConnectArguments(t *testing.T) {
 	assert.True(t, runner.started)
 	assert.Contains(t, runner.StartArgs, "--model")
 	assert.Contains(t, runner.StartArgs, "--verbose")
+}
+
+func TestSubprocessTransportThinkingArguments(t *testing.T) {
+	tests := []struct {
+		name       string
+		thinking   *ThinkingConfig
+		wantFlag   string
+		wantValue  string
+		absentFlag string
+	}{
+		{
+			name:       "adaptive",
+			thinking:   ThinkingAdaptive(),
+			wantFlag:   "--thinking",
+			wantValue:  "adaptive",
+			absentFlag: "--max-thinking-tokens",
+		},
+		{
+			name:       "enabled",
+			thinking:   ThinkingEnabled(4096),
+			wantFlag:   "--max-thinking-tokens",
+			wantValue:  "4096",
+			absentFlag: "--thinking",
+		},
+		{
+			name:       "enabled without budget uses adaptive",
+			thinking:   &ThinkingConfig{Type: "enabled"},
+			wantFlag:   "--thinking",
+			wantValue:  "adaptive",
+			absentFlag: "--max-thinking-tokens",
+		},
+		{
+			name:       "disabled",
+			thinking:   ThinkingDisabled(),
+			wantFlag:   "--thinking",
+			wantValue:  "disabled",
+			absentFlag: "--max-thinking-tokens",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+			opts := NewOptions()
+			opts.Thinking = tt.thinking
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+
+			err := transport.Connect(context.Background())
+			require.NoError(t, err)
+			defer transport.Close()
+
+			assertArgValue(t, runner.StartArgs, tt.wantFlag, tt.wantValue)
+			assertArgAbsent(t, runner.StartArgs, tt.absentFlag)
+		})
+	}
+}
+
+func TestSubprocessTransportThinkingNilOmitsFlags(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	opts.Thinking = nil
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	assertArgAbsent(t, runner.StartArgs, "--thinking")
+	assertArgAbsent(t, runner.StartArgs, "--max-thinking-tokens")
+}
+
+func TestSubprocessTransportThinkingDisplay(t *testing.T) {
+	tests := []struct {
+		name    string
+		build   func() *ThinkingConfig
+		present bool
+		value   string
+	}{
+		{
+			name: "adaptive with summarized",
+			build: func() *ThinkingConfig {
+				c := ThinkingAdaptive()
+				c.Display = ThinkingDisplaySummarized
+				return c
+			},
+			present: true,
+			value:   "summarized",
+		},
+		{
+			name: "enabled with omitted",
+			build: func() *ThinkingConfig {
+				c := ThinkingEnabled(1024)
+				c.Display = ThinkingDisplayOmitted
+				return c
+			},
+			present: true,
+			value:   "omitted",
+		},
+		{
+			name: "disabled ignores display",
+			build: func() *ThinkingConfig {
+				c := ThinkingDisabled()
+				c.Display = ThinkingDisplaySummarized
+				return c
+			},
+			present: false,
+		},
+		{
+			name:    "adaptive without display omits flag",
+			build:   ThinkingAdaptive,
+			present: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+			opts := NewOptions()
+			opts.Thinking = tt.build()
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+
+			err := transport.Connect(context.Background())
+			require.NoError(t, err)
+			defer transport.Close()
+
+			if tt.present {
+				assertArgValue(t, runner.StartArgs, "--thinking-display", tt.value)
+			} else {
+				assertArgAbsent(t, runner.StartArgs, "--thinking-display")
+			}
+		})
+	}
+}
+
+func TestSubprocessTransportEffortArguments(t *testing.T) {
+	tests := []struct {
+		name   string
+		effort EffortLevel
+	}{
+		{name: "low", effort: EffortLow},
+		{name: "medium", effort: EffortMedium},
+		{name: "high", effort: EffortHigh},
+		{name: "xhigh", effort: EffortXHigh},
+		{name: "max", effort: EffortMax},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+			opts := NewOptions()
+			opts.Effort = tt.effort
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+
+			err := transport.Connect(context.Background())
+			require.NoError(t, err)
+			defer transport.Close()
+
+			assertArgValue(t, runner.StartArgs, "--effort", string(tt.effort))
+		})
+	}
+}
+
+func TestSubprocessTransportEffortEmptyOmitsFlag(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	opts.Effort = ""
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	assertArgAbsent(t, runner.StartArgs, "--effort")
+}
+
+func TestSubprocessTransportMaxThinkingTokensStillWorks(t *testing.T) {
+	tokens := 2048
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	opts.MaxThinkingTokens = &tokens
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	assertArgValue(t, runner.StartArgs, "--max-thinking-tokens", "2048")
+	assertArgAbsent(t, runner.StartArgs, "--thinking")
+}
+
+func TestSubprocessTransportMaxThinkingTokensZeroDisablesThinking(t *testing.T) {
+	tokens := 0
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	opts.MaxThinkingTokens = &tokens
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	assertArgValue(t, runner.StartArgs, "--thinking", "disabled")
+	assertArgAbsent(t, runner.StartArgs, "--max-thinking-tokens")
+}
+
+func TestSubprocessTransportThinkingPrecedesMaxThinkingTokens(t *testing.T) {
+	tokens := 2048
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	opts.Thinking = ThinkingDisabled()
+	opts.MaxThinkingTokens = &tokens
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	assertArgValue(t, runner.StartArgs, "--thinking", "disabled")
+	assertArgAbsent(t, runner.StartArgs, "--max-thinking-tokens")
 }
 
 // TestSubprocessTransportWorkingDirectory tests that Cwd option is passed to runner.
