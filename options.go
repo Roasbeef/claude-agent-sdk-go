@@ -116,6 +116,9 @@ type Options struct {
 	// MaxBudgetUsd is the maximum budget in USD for the query.
 	MaxBudgetUsd *float64
 
+	// TaskBudget is the maximum task budget for the query.
+	TaskBudget *TaskBudget
+
 	// MaxThinkingTokens is the maximum tokens for thinking process.
 	//
 	// Deprecated: Use Thinking instead.
@@ -249,6 +252,11 @@ type OutputFormat struct {
 	Type string
 	// Schema is the JSON schema for output validation.
 	Schema interface{}
+}
+
+// TaskBudget configures the maximum task budget.
+type TaskBudget struct {
+	Total int `json:"total"`
 }
 
 // ToolsConfig configures available tools.
@@ -1100,6 +1108,13 @@ func WithEffort(effort EffortLevel) Option {
 func WithMaxBudgetUsd(budget float64) Option {
 	return func(o *Options) {
 		o.MaxBudgetUsd = &budget
+	}
+}
+
+// WithTaskBudget sets the maximum task budget for the query.
+func WithTaskBudget(total int) Option {
+	return func(o *Options) {
+		o.TaskBudget = &TaskBudget{Total: total}
 	}
 }
 

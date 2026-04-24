@@ -155,6 +155,10 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, "--effort", string(t.options.Effort))
 	}
 
+	if t.options.TaskBudget != nil {
+		args = append(args, "--task-budget", fmt.Sprintf("%d", t.options.TaskBudget.Total))
+	}
+
 	// Add permission bypass flags if configured.
 	if t.options.AllowDangerouslySkipPermissions {
 		args = append(args, "--dangerously-skip-permissions")

@@ -842,6 +842,43 @@ func TestSubprocessTransportEffortEmptyOmitsFlag(t *testing.T) {
 	assertArgAbsent(t, runner.StartArgs, "--effort")
 }
 
+func TestSubprocessTransportTaskBudgetArguments(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	opts.TaskBudget = &TaskBudget{Total: 1000}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	assertArgValue(t, runner.StartArgs, "--task-budget", "1000")
+}
+
+func TestWithTaskBudgetSetsFreshBudget(t *testing.T) {
+	opts := NewOptions()
+
+	WithTaskBudget(1000)(opts)
+
+	require.NotNil(t, opts.TaskBudget)
+	assert.Equal(t, 1000, opts.TaskBudget.Total)
+}
+
+func TestSubprocessTransportTaskBudgetNilOmitsFlag(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	opts.TaskBudget = nil
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	assertArgAbsent(t, runner.StartArgs, "--task-budget")
+}
+
 func TestSubprocessTransportMaxThinkingTokensStillWorks(t *testing.T) {
 	tokens := 2048
 	runner := NewMockSubprocessRunner()
