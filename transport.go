@@ -184,6 +184,12 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, "--resume", t.options.SessionOptions.Resume)
 	}
 
+	// Fork from a parent session: resume the parent then branch to a new ID.
+	if t.options.SessionOptions.ForkFrom != "" {
+		args = append(args, "--resume", t.options.SessionOptions.ForkFrom,
+			"--fork-session")
+	}
+
 	// Add fork-session flag if set (used with --resume or --continue).
 	if t.options.SessionOptions.ForkSession {
 		args = append(args, "--fork-session")
