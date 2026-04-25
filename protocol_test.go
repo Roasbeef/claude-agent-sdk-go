@@ -137,6 +137,32 @@ func TestProtocolInitializeOptions(t *testing.T) {
 			},
 			unexpected: []string{"excludeDynamicSections"},
 		},
+		{
+			name: "agents wired through",
+			configure: func(opts *Options) {
+				WithAgents(map[string]AgentDefinition{
+					"reviewer": {
+						Description: "Reviews Go changes",
+						Prompt:      "Review carefully",
+						Tools:       []string{"Read", "Grep"},
+					},
+				})(opts)
+			},
+			expected: map[string]interface{}{
+				"agents": map[string]interface{}{
+					"reviewer": map[string]interface{}{
+						"description": "Reviews Go changes",
+						"prompt":      "Review carefully",
+						"tools":       []interface{}{"Read", "Grep"},
+					},
+				},
+			},
+		},
+		{
+			name:       "no agents omits key",
+			configure:  func(opts *Options) {},
+			unexpected: []string{"agents"},
+		},
 	}
 
 	for _, tt := range tests {
