@@ -1130,6 +1130,11 @@ func (s *AgentMCPServerSpec) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
+	// json.RawMessage preserves leading whitespace, so skip it before
+	// dispatching on the first significant byte.
+	for len(raw) > 0 && (raw[0] == ' ' || raw[0] == '\t' || raw[0] == '\n' || raw[0] == '\r') {
+		raw = raw[1:]
+	}
 	if len(raw) == 0 || string(raw) == "null" {
 		*s = AgentMCPServerSpec{}
 		return nil

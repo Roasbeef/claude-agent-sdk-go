@@ -174,6 +174,17 @@ func TestAgentMCPServerSpecJSON(t *testing.T) {
 		assert.Equal(t, "gh", decoded.Inline["github"].Command)
 		assert.Empty(t, decoded.Name)
 	})
+
+	t.Run("leading whitespace", func(t *testing.T) {
+		var named AgentMCPServerSpec
+		require.NoError(t, json.Unmarshal([]byte("  \n\t\"github\""), &named))
+		assert.Equal(t, "github", named.Name)
+
+		var inline AgentMCPServerSpec
+		require.NoError(t, json.Unmarshal([]byte("\n {\"github\":{\"type\":\"stdio\",\"command\":\"gh\"}}"), &inline))
+		require.Contains(t, inline.Inline, "github")
+		assert.Equal(t, "stdio", inline.Inline["github"].Type)
+	})
 }
 
 func TestAgentEffortJSON(t *testing.T) {
