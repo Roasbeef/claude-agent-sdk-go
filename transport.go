@@ -185,14 +185,33 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	// Add MCP server configurations.
 	// The CLI uses --mcp-config which takes JSON configuration.
 	for name, config := range t.options.MCPServers {
+		serverType := config.Type
+		if serverType == "" {
+			serverType = "stdio"
+		}
+
 		mcpConfig := map[string]interface{}{
-			"command": config.Command,
+			"type": serverType,
 		}
-		if len(config.Args) > 0 {
-			mcpConfig["args"] = config.Args
-		}
-		if len(config.Env) > 0 {
-			mcpConfig["env"] = config.Env
+		switch serverType {
+		case "stdio":
+			mcpConfig["command"] = config.Command
+			if len(config.Args) > 0 {
+				mcpConfig["args"] = config.Args
+			}
+			if len(config.Env) > 0 {
+				mcpConfig["env"] = config.Env
+			}
+		case "http", "sse":
+			mcpConfig["url"] = config.URL
+			if len(config.Headers) > 0 {
+				mcpConfig["headers"] = config.Headers
+			}
+			if len(config.Tools) > 0 {
+				mcpConfig["tools"] = config.Tools
+			}
+		case "socket":
+			mcpConfig["address"] = config.Address
 		}
 
 		// Wrap in outer object with server name as key.

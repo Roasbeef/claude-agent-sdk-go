@@ -33,6 +33,29 @@ func assertArgAbsent(t *testing.T, args []string, flag string) {
 	assert.NotContains(t, args, flag)
 }
 
+func decodeMCPConfigArgs(t *testing.T, args []string) map[string]map[string]interface{} {
+	t.Helper()
+
+	configs := make(map[string]map[string]interface{})
+	for i, arg := range args {
+		if arg != "--mcp-config" {
+			continue
+		}
+		require.Less(t, i+1, len(args), "flag --mcp-config missing value")
+
+		var wrapper struct {
+			MCPServers map[string]map[string]interface{} `json:"mcpServers"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(args[i+1]), &wrapper))
+		require.Len(t, wrapper.MCPServers, 1)
+		for name, config := range wrapper.MCPServers {
+			configs[name] = config
+		}
+	}
+
+	return configs
+}
+
 func stringPtr(s string) *string {
 	return &s
 }
@@ -904,6 +927,181 @@ func TestSubprocessTransportThinkingDisplay(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSubprocessTransportMCPConfigEncoding(t *testing.T) {
+	tests := []struct {
+		name       string
+		serverName string
+		config     MCPServerConfig
+		want       map[string]interface{}
+		absentKeys []string
+	}{
+		{
+			name:       "stdio explicit type",
+			serverName: "local",
+			config: MCPServerConfig{
+				Type:    "stdio",
+				Command: "x",
+				Args:    []string{"y"},
+			},
+			want: map[string]interface{}{
+				"type":    "stdio",
+				"command": "x",
+				"args":    []interface{}{"y"},
+			},
+		},
+		{
+			name:       "stdio implicit type",
+			serverName: "local",
+			config: MCPServerConfig{
+				Command: "x",
+			},
+			want: map[string]interface{}{
+				"type":    "stdio",
+				"command": "x",
+			},
+		},
+		{
+			name:       "http minimal",
+			serverName: "remote",
+			config: MCPServerConfig{
+				Type: "http",
+				URL:  "https://example.com/mcp",
+			},
+			want: map[string]interface{}{
+				"type": "http",
+				"url":  "https://example.com/mcp",
+			},
+			absentKeys: []string{"command", "headers", "tools"},
+		},
+		{
+			name:       "http with headers and tools",
+			serverName: "remote",
+			config: MCPServerConfig{
+				Type: "http",
+				URL:  "https://example.com/mcp",
+				Headers: map[string]string{
+					"Authorization": "Bearer token",
+				},
+				Tools: []MCPServerToolPolicy{
+					{Name: "foo", PermissionPolicy: MCPToolPolicyAllowAlways},
+					{Name: "bar", PermissionPolicy: MCPToolPolicyAskAlways},
+				},
+			},
+			want: map[string]interface{}{
+				"type": "http",
+				"url":  "https://example.com/mcp",
+				"headers": map[string]interface{}{
+					"Authorization": "Bearer token",
+				},
+				"tools": []interface{}{
+					map[string]interface{}{
+						"name":              "foo",
+						"permission_policy": "always_allow",
+					},
+					map[string]interface{}{
+						"name":              "bar",
+						"permission_policy": "always_ask",
+					},
+				},
+			},
+		},
+		{
+			name:       "sse with headers",
+			serverName: "events",
+			config: MCPServerConfig{
+				Type: "sse",
+				URL:  "https://example.com/sse",
+				Headers: map[string]string{
+					"X-API-Key": "secret",
+				},
+			},
+			want: map[string]interface{}{
+				"type": "sse",
+				"url":  "https://example.com/sse",
+				"headers": map[string]interface{}{
+					"X-API-Key": "secret",
+				},
+			},
+		},
+		{
+			name:       "http omits empty headers and tools",
+			serverName: "remote",
+			config: MCPServerConfig{
+				Type:    "http",
+				URL:     "https://example.com/mcp",
+				Headers: map[string]string{},
+				Tools:   []MCPServerToolPolicy{},
+			},
+			want: map[string]interface{}{
+				"type": "http",
+				"url":  "https://example.com/mcp",
+			},
+			absentKeys: []string{"headers", "tools"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+			opts := NewOptions()
+			opts.MCPServers = map[string]MCPServerConfig{
+				tt.serverName: tt.config,
+			}
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+			err := transport.Connect(context.Background())
+			require.NoError(t, err)
+			defer transport.Close()
+
+			configs := decodeMCPConfigArgs(t, runner.StartArgs)
+			require.Len(t, configs, 1)
+			require.Contains(t, configs, tt.serverName)
+			assert.Equal(t, tt.want, configs[tt.serverName])
+			for _, key := range tt.absentKeys {
+				assert.NotContains(t, configs[tt.serverName], key)
+			}
+		})
+	}
+}
+
+func TestSubprocessTransportMCPConfigMultipleServers(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	opts.MCPServers = map[string]MCPServerConfig{
+		"local": {
+			Command: "local-mcp",
+		},
+		"remote": {
+			Type: "http",
+			URL:  "https://example.com/mcp",
+		},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	configs := decodeMCPConfigArgs(t, runner.StartArgs)
+	require.Len(t, configs, 2)
+	assert.Equal(t, map[string]interface{}{
+		"type":    "stdio",
+		"command": "local-mcp",
+	}, configs["local"])
+	assert.Equal(t, map[string]interface{}{
+		"type": "http",
+		"url":  "https://example.com/mcp",
+	}, configs["remote"])
+
+	var flagCount int
+	for _, arg := range runner.StartArgs {
+		if arg == "--mcp-config" {
+			flagCount++
+		}
+	}
+	assert.Equal(t, 2, flagCount)
 }
 
 func TestSubprocessTransportEffortArguments(t *testing.T) {
