@@ -376,9 +376,9 @@ const (
 	RateLimitOverageDisabledReasonOutOfCredits            RateLimitOverageDisabledReason = "out_of_credits"
 	RateLimitOverageDisabledReasonSeatTierLevelDisabled   RateLimitOverageDisabledReason = "seat_tier_level_disabled"
 	RateLimitOverageDisabledReasonMemberLevelDisabled     RateLimitOverageDisabledReason = "member_level_disabled"
-	RateLimitOverageDisabledReasonSeatTierZeroCreditLimit RateLimitOverageDisabledReason = "seat_tier_zero_credit_limit"
-	RateLimitOverageDisabledReasonGroupZeroCreditLimit    RateLimitOverageDisabledReason = "group_zero_credit_limit"
-	RateLimitOverageDisabledReasonMemberZeroCreditLimit   RateLimitOverageDisabledReason = "member_zero_credit_limit"
+	RateLimitOverageDisabledReasonSeatTierZeroCreditLimit RateLimitOverageDisabledReason = "seat_tier_zero_credit_limit" //nolint:gosec // G101: upstream enum literal, not a credential
+	RateLimitOverageDisabledReasonGroupZeroCreditLimit    RateLimitOverageDisabledReason = "group_zero_credit_limit"     //nolint:gosec // G101: upstream enum literal, not a credential
+	RateLimitOverageDisabledReasonMemberZeroCreditLimit   RateLimitOverageDisabledReason = "member_zero_credit_limit"    //nolint:gosec // G101: upstream enum literal, not a credential
 	RateLimitOverageDisabledReasonOrgServiceLevelDisabled RateLimitOverageDisabledReason = "org_service_level_disabled"
 	RateLimitOverageDisabledReasonNoLimitsConfigured      RateLimitOverageDisabledReason = "no_limits_configured"
 	RateLimitOverageDisabledReasonFetchError              RateLimitOverageDisabledReason = "fetch_error"
