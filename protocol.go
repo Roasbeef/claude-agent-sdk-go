@@ -1351,7 +1351,11 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 	// This gives callbacks full control over the hookSpecificOutput
 	// envelope when auto-translation of Modify is insufficient.
 	if result.HookSpecificOutput != nil {
-		resp["hookSpecificOutput"] = result.HookSpecificOutput
+		hookSpecificOutput := make(map[string]interface{}, len(result.HookSpecificOutput))
+		for key, value := range result.HookSpecificOutput {
+			hookSpecificOutput[key] = value
+		}
+		resp["hookSpecificOutput"] = hookSpecificOutput
 	} else if len(result.Modify) > 0 {
 		// Auto-translate Modify into the hookSpecificOutput format
 		// expected by the CLI. PreToolUse and PermissionRequest hooks
@@ -1380,5 +1384,28 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 		}
 	}
 
+	if len(result.WatchPaths) > 0 && isWatchPathsHook(hookType) {
+		hookSpecificOutput, _ := resp["hookSpecificOutput"].(map[string]interface{})
+		if hookSpecificOutput == nil {
+			hookSpecificOutput = map[string]interface{}{
+				"hookEventName": hookType,
+			}
+		}
+		hookSpecificOutput["watchPaths"] = result.WatchPaths
+		resp["hookSpecificOutput"] = hookSpecificOutput
+	}
+
 	return resp
+}
+
+func isWatchPathsHook(hookType string) bool {
+	switch hookType {
+	case string(HookTypeSessionStart),
+		string(HookTypeWorktreeCreate),
+		string(HookTypeCwdChanged),
+		string(HookTypeFileChanged):
+		return true
+	default:
+		return false
+	}
 }

@@ -1292,6 +1292,12 @@ type HookResult struct {
 	Continue bool                   // Continue execution (false = abort)
 	Modify   map[string]interface{} // Modifications to apply
 
+	// WatchPaths registers filesystem paths the CLI should watch and
+	// re-fire the hook on changes. Honored by SessionStart,
+	// WorktreeCreate, CwdChanged, and FileChanged hooks. Empty slice or
+	// nil omits the field on the wire.
+	WatchPaths []string
+
 	// Decision controls session exit for Stop hooks.
 	// "approve" allows the session to exit normally.
 	// "block" prevents exit and reinjects Reason as a new prompt.

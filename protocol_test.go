@@ -1790,6 +1790,75 @@ func TestBuildHookResponse_PreToolUseUpdatedInput(t *testing.T) {
 	})
 }
 
+func TestBuildHookResponse_WatchPaths(t *testing.T) {
+	t.Run("CwdChanged emits watchPaths", func(t *testing.T) {
+		resp := buildHookResponse("CwdChanged", HookResult{
+			Continue:   true,
+			WatchPaths: []string{"/foo", "/bar"},
+		})
+
+		assert.Equal(t, true, resp["continue"])
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "CwdChanged", hso["hookEventName"])
+		assert.Equal(t, []string{"/foo", "/bar"}, hso["watchPaths"])
+	})
+
+	t.Run("WorktreeCreate preserves explicit output", func(t *testing.T) {
+		result := HookResult{
+			Continue:   true,
+			WatchPaths: []string{"/x"},
+			HookSpecificOutput: map[string]interface{}{
+				"hookEventName": "WorktreeCreate",
+				"worktreePath":  "/x",
+			},
+		}
+
+		resp := buildHookResponse("WorktreeCreate", result)
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "WorktreeCreate", hso["hookEventName"])
+		assert.Equal(t, "/x", hso["worktreePath"])
+		assert.Equal(t, []string{"/x"}, hso["watchPaths"])
+
+		_, mutated := result.HookSpecificOutput["watchPaths"]
+		assert.False(t, mutated)
+	})
+
+	t.Run("FileChanged empty WatchPaths omits hookSpecificOutput", func(t *testing.T) {
+		resp := buildHookResponse("FileChanged", HookResult{
+			Continue: true,
+		})
+
+		_, hasHSO := resp["hookSpecificOutput"]
+		assert.False(t, hasHSO)
+	})
+
+	t.Run("PreToolUse does not emit watchPaths", func(t *testing.T) {
+		resp := buildHookResponse("PreToolUse", HookResult{
+			Continue:   true,
+			WatchPaths: []string{"/never"},
+		})
+
+		_, hasHSO := resp["hookSpecificOutput"]
+		assert.False(t, hasHSO)
+	})
+
+	t.Run("SessionStart emits watchPaths with continue", func(t *testing.T) {
+		resp := buildHookResponse("SessionStart", HookResult{
+			Continue:   true,
+			WatchPaths: []string{"/cfg"},
+		})
+
+		assert.Equal(t, true, resp["continue"])
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "SessionStart", hso["hookEventName"])
+		assert.Equal(t, []string{"/cfg"}, hso["watchPaths"])
+	})
+}
+
 // TestHandleHookCallback_ShapeCompatibleEvents covers the 12 v0.2.119 events
 // added in PR 8b. Each subtest exercises one event end-to-end through one of
 // the two dispatch paths and asserts every event-specific field on the parsed
