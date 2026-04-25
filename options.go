@@ -1316,20 +1316,55 @@ type HookJSONOutput struct {
 }
 
 // PermissionUpdate represents an operation for updating permissions.
+// Field usage depends on Type; zero-valued fields are omitted from the wire.
 type PermissionUpdate struct {
-	Type        string             // "addRules", "replaceRules", "removeRules", "setMode", "addDirectories", "removeDirectories"
-	Rules       []PermissionRule   // For rule operations
-	Behavior    PermissionBehavior // "allow", "deny", "ask"
-	Destination string             // "userSettings", "projectSettings", "localSettings", "session"
-	Mode        PermissionMode     // For setMode
-	Directories []string           // For directory operations
+	Type        PermissionUpdateType        `json:"type"`
+	Rules       []PermissionRule            `json:"rules,omitempty"`    // addRules / replaceRules / removeRules
+	Behavior    PermissionBehavior          `json:"behavior,omitempty"` // addRules / replaceRules / removeRules
+	Destination PermissionUpdateDestination `json:"destination"`
+	Mode        PermissionMode              `json:"mode,omitempty"`        // setMode
+	Directories []string                    `json:"directories,omitempty"` // addDirectories / removeDirectories
 }
 
 // PermissionRule represents a permission rule value.
 type PermissionRule struct {
-	ToolName    string
-	RuleContent string
+	ToolName    string `json:"toolName"`
+	RuleContent string `json:"ruleContent,omitempty"`
 }
+
+// PermissionUpdateType identifies which PermissionUpdate variant a value represents.
+type PermissionUpdateType string
+
+const (
+	// PermissionUpdateTypeAddRules appends rules to the destination.
+	PermissionUpdateTypeAddRules PermissionUpdateType = "addRules"
+	// PermissionUpdateTypeReplaceRules replaces rules in the destination.
+	PermissionUpdateTypeReplaceRules PermissionUpdateType = "replaceRules"
+	// PermissionUpdateTypeRemoveRules removes rules from the destination.
+	PermissionUpdateTypeRemoveRules PermissionUpdateType = "removeRules"
+	// PermissionUpdateTypeSetMode updates the permission mode.
+	PermissionUpdateTypeSetMode PermissionUpdateType = "setMode"
+	// PermissionUpdateTypeAddDirectories appends directories to the destination.
+	PermissionUpdateTypeAddDirectories PermissionUpdateType = "addDirectories"
+	// PermissionUpdateTypeRemoveDirectories removes directories from the destination.
+	PermissionUpdateTypeRemoveDirectories PermissionUpdateType = "removeDirectories"
+)
+
+// PermissionUpdateDestination indicates where a PermissionUpdate writes its changes.
+type PermissionUpdateDestination string
+
+const (
+	// PermissionDestinationUserSettings writes to user settings.
+	PermissionDestinationUserSettings PermissionUpdateDestination = "userSettings"
+	// PermissionDestinationProjectSettings writes to project settings.
+	PermissionDestinationProjectSettings PermissionUpdateDestination = "projectSettings"
+	// PermissionDestinationLocalSettings writes to local settings.
+	PermissionDestinationLocalSettings PermissionUpdateDestination = "localSettings"
+	// PermissionDestinationSession writes to the current session.
+	PermissionDestinationSession PermissionUpdateDestination = "session"
+	// PermissionDestinationCLIArg writes to the CLI argument source.
+	PermissionDestinationCLIArg PermissionUpdateDestination = "cliArg"
+)
 
 // PermissionBehavior controls permission behavior for rules.
 type PermissionBehavior string
