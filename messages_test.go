@@ -1053,6 +1053,540 @@ func TestParseMessageTaskNotification(t *testing.T) {
 	}
 }
 
+func TestParseMessageAPIRetry(t *testing.T) {
+	tests := []struct {
+		name            string
+		input           string
+		wantErrorStatus *int
+		wantError       APIRetryError
+	}{
+		{
+			name: "rate limit with HTTP status",
+			input: `{
+				"type": "system",
+				"subtype": "api_retry",
+				"attempt": 2,
+				"max_retries": 5,
+				"retry_delay_ms": 1500,
+				"error_status": 429,
+				"error": "rate_limit",
+				"uuid": "550e8400-e29b-41d4-a716-446655440200",
+				"session_id": "sess_misc_001"
+			}`,
+			wantErrorStatus: intPtr(429),
+			wantError:       APIRetryErrorRateLimit,
+		},
+		{
+			name: "connection error with null status",
+			input: `{
+				"type": "system",
+				"subtype": "api_retry",
+				"attempt": 1,
+				"max_retries": 3,
+				"retry_delay_ms": 250,
+				"error_status": null,
+				"error": "server_error",
+				"uuid": "550e8400-e29b-41d4-a716-446655440201",
+				"session_id": "sess_misc_001"
+			}`,
+			wantError: APIRetryErrorServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := ParseMessage([]byte(tt.input))
+			require.NoError(t, err)
+
+			retryMsg, ok := msg.(APIRetryMessage)
+			require.True(t, ok, "expected APIRetryMessage")
+
+			assert.Equal(t, "system", retryMsg.MessageType())
+			assert.Equal(t, "api_retry", retryMsg.Subtype)
+			assert.Equal(t, tt.wantError, retryMsg.Error)
+
+			if tt.wantErrorStatus == nil {
+				assert.Nil(t, retryMsg.ErrorStatus)
+			} else {
+				require.NotNil(t, retryMsg.ErrorStatus)
+				assert.Equal(t, *tt.wantErrorStatus, *retryMsg.ErrorStatus)
+			}
+		})
+	}
+}
+
+func TestParseMessageElicitationComplete(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "elicitation_complete",
+		"mcp_server_name": "github",
+		"elicitation_id": "elic_01HXYZ",
+		"uuid": "550e8400-e29b-41d4-a716-446655440210",
+		"session_id": "sess_misc_002"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	elicMsg, ok := msg.(ElicitationCompleteMessage)
+	require.True(t, ok, "expected ElicitationCompleteMessage")
+
+	assert.Equal(t, "system", elicMsg.MessageType())
+	assert.Equal(t, "elicitation_complete", elicMsg.Subtype)
+	assert.Equal(t, "github", elicMsg.MCPServerName)
+	assert.Equal(t, "elic_01HXYZ", elicMsg.ElicitationID)
+	assert.Equal(t, "sess_misc_002", elicMsg.SessionID)
+}
+
+func TestParseMessageFilesPersisted(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantFiles  int
+		wantFailed int
+	}{
+		{
+			name: "successes and failures",
+			input: `{
+				"type": "system",
+				"subtype": "files_persisted",
+				"files": [
+					{ "filename": "a.txt", "file_id": "file_001" },
+					{ "filename": "b.txt", "file_id": "file_002" }
+				],
+				"failed": [
+					{ "filename": "c.txt", "error": "io error" }
+				],
+				"processed_at": "2026-04-25T18:30:00Z",
+				"uuid": "550e8400-e29b-41d4-a716-446655440220",
+				"session_id": "sess_misc_003"
+			}`,
+			wantFiles:  2,
+			wantFailed: 1,
+		},
+		{
+			name: "only successes",
+			input: `{
+				"type": "system",
+				"subtype": "files_persisted",
+				"files": [
+					{ "filename": "only.txt", "file_id": "file_010" }
+				],
+				"failed": [],
+				"processed_at": "2026-04-25T18:31:00Z",
+				"uuid": "550e8400-e29b-41d4-a716-446655440221",
+				"session_id": "sess_misc_003"
+			}`,
+			wantFiles:  1,
+			wantFailed: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := ParseMessage([]byte(tt.input))
+			require.NoError(t, err)
+
+			fpMsg, ok := msg.(FilesPersistedEvent)
+			require.True(t, ok, "expected FilesPersistedEvent")
+
+			assert.Equal(t, "system", fpMsg.MessageType())
+			assert.Equal(t, "files_persisted", fpMsg.Subtype)
+			assert.Len(t, fpMsg.Files, tt.wantFiles)
+			assert.Len(t, fpMsg.Failed, tt.wantFailed)
+			assert.NotEmpty(t, fpMsg.ProcessedAt)
+			if tt.wantFiles > 0 {
+				assert.NotEmpty(t, fpMsg.Files[0].Filename)
+				assert.NotEmpty(t, fpMsg.Files[0].FileID)
+			}
+			if tt.wantFailed > 0 {
+				assert.NotEmpty(t, fpMsg.Failed[0].Filename)
+				assert.NotEmpty(t, fpMsg.Failed[0].Error)
+			}
+		})
+	}
+}
+
+func TestParseMessageLocalCommandOutput(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "local_command_output",
+		"content": "Usage: 1234 tokens this turn",
+		"uuid": "550e8400-e29b-41d4-a716-446655440230",
+		"session_id": "sess_misc_004"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	cmdMsg, ok := msg.(LocalCommandOutputMessage)
+	require.True(t, ok, "expected LocalCommandOutputMessage")
+
+	assert.Equal(t, "system", cmdMsg.MessageType())
+	assert.Equal(t, "local_command_output", cmdMsg.Subtype)
+	assert.Equal(t, "Usage: 1234 tokens this turn", cmdMsg.Content)
+	assert.Equal(t, "sess_misc_004", cmdMsg.SessionID)
+}
+
+func TestParseMessageMemoryRecall(t *testing.T) {
+	tests := []struct {
+		name             string
+		input            string
+		wantMode         MemoryRecallMode
+		wantEntries      int
+		wantContentEntry int // index of entry expected to have non-empty content; -1 = none
+	}{
+		{
+			name: "select mode without content",
+			input: `{
+				"type": "system",
+				"subtype": "memory_recall",
+				"mode": "select",
+				"memories": [
+					{ "path": "/memo/a.md", "scope": "personal" },
+					{ "path": "/memo/b.md", "scope": "team" }
+				],
+				"uuid": "550e8400-e29b-41d4-a716-446655440240",
+				"session_id": "sess_misc_005"
+			}`,
+			wantMode:         MemoryRecallModeSelect,
+			wantEntries:      2,
+			wantContentEntry: -1,
+		},
+		{
+			name: "synthesize mode with content",
+			input: `{
+				"type": "system",
+				"subtype": "memory_recall",
+				"mode": "synthesize",
+				"memories": [
+					{ "path": "<synthesis:/memo>", "scope": "team", "content": "Distilled paragraph." }
+				],
+				"uuid": "550e8400-e29b-41d4-a716-446655440241",
+				"session_id": "sess_misc_005"
+			}`,
+			wantMode:         MemoryRecallModeSynthesize,
+			wantEntries:      1,
+			wantContentEntry: 0,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := ParseMessage([]byte(tt.input))
+			require.NoError(t, err)
+
+			recallMsg, ok := msg.(MemoryRecallMessage)
+			require.True(t, ok, "expected MemoryRecallMessage")
+
+			assert.Equal(t, "system", recallMsg.MessageType())
+			assert.Equal(t, "memory_recall", recallMsg.Subtype)
+			assert.Equal(t, tt.wantMode, recallMsg.Mode)
+			assert.Len(t, recallMsg.Memories, tt.wantEntries)
+
+			for i, entry := range recallMsg.Memories {
+				assert.NotEmpty(t, entry.Path)
+				assert.NotEmpty(t, string(entry.Scope))
+				if i == tt.wantContentEntry {
+					assert.NotEmpty(t, entry.Content)
+				} else {
+					assert.Empty(t, entry.Content)
+				}
+			}
+		})
+	}
+}
+
+func TestParseMessageMirrorError(t *testing.T) {
+	tests := []struct {
+		name        string
+		input       string
+		wantSubpath string
+	}{
+		{
+			name: "with subpath",
+			input: `{
+				"type": "system",
+				"subtype": "mirror_error",
+				"error": "store unavailable",
+				"key": {
+					"projectKey": "proj_001",
+					"sessionId": "sess_xyz",
+					"subpath": "transcript/v1"
+				},
+				"uuid": "550e8400-e29b-41d4-a716-446655440250",
+				"session_id": "sess_misc_006"
+			}`,
+			wantSubpath: "transcript/v1",
+		},
+		{
+			name: "without subpath",
+			input: `{
+				"type": "system",
+				"subtype": "mirror_error",
+				"error": "timeout after 3 retries",
+				"key": {
+					"projectKey": "proj_002",
+					"sessionId": "sess_uvw"
+				},
+				"uuid": "550e8400-e29b-41d4-a716-446655440251",
+				"session_id": "sess_misc_006"
+			}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := ParseMessage([]byte(tt.input))
+			require.NoError(t, err)
+
+			mirMsg, ok := msg.(MirrorErrorMessage)
+			require.True(t, ok, "expected MirrorErrorMessage")
+
+			assert.Equal(t, "system", mirMsg.MessageType())
+			assert.Equal(t, "mirror_error", mirMsg.Subtype)
+			assert.NotEmpty(t, mirMsg.Error)
+			assert.NotEmpty(t, mirMsg.Key.ProjectKey)
+			assert.NotEmpty(t, mirMsg.Key.SessionID)
+			assert.Equal(t, tt.wantSubpath, mirMsg.Key.Subpath)
+		})
+	}
+}
+
+func TestParseMessageNotification(t *testing.T) {
+	tests := []struct {
+		name          string
+		input         string
+		wantPriority  NotificationPriority
+		wantColor     string
+		wantTimeoutMS *int
+	}{
+		{
+			name: "low with no optional fields",
+			input: `{
+				"type": "system",
+				"subtype": "notification",
+				"key": "low_test",
+				"text": "low priority message",
+				"priority": "low",
+				"uuid": "550e8400-e29b-41d4-a716-446655440260",
+				"session_id": "sess_misc_007"
+			}`,
+			wantPriority: NotificationPriorityLow,
+		},
+		{
+			name: "medium with color and timeout",
+			input: `{
+				"type": "system",
+				"subtype": "notification",
+				"key": "medium_test",
+				"text": "medium priority message",
+				"priority": "medium",
+				"color": "#ffaa00",
+				"timeout_ms": 5000,
+				"uuid": "550e8400-e29b-41d4-a716-446655440261",
+				"session_id": "sess_misc_007"
+			}`,
+			wantPriority:  NotificationPriorityMedium,
+			wantColor:     "#ffaa00",
+			wantTimeoutMS: intPtr(5000),
+		},
+		{
+			name: "high",
+			input: `{
+				"type": "system",
+				"subtype": "notification",
+				"key": "high_test",
+				"text": "high priority",
+				"priority": "high",
+				"uuid": "550e8400-e29b-41d4-a716-446655440262",
+				"session_id": "sess_misc_007"
+			}`,
+			wantPriority: NotificationPriorityHigh,
+		},
+		{
+			name: "immediate",
+			input: `{
+				"type": "system",
+				"subtype": "notification",
+				"key": "immediate_test",
+				"text": "act now",
+				"priority": "immediate",
+				"uuid": "550e8400-e29b-41d4-a716-446655440263",
+				"session_id": "sess_misc_007"
+			}`,
+			wantPriority: NotificationPriorityImmediate,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := ParseMessage([]byte(tt.input))
+			require.NoError(t, err)
+
+			notifMsg, ok := msg.(NotificationMessage)
+			require.True(t, ok, "expected NotificationMessage")
+
+			assert.Equal(t, "system", notifMsg.MessageType())
+			assert.Equal(t, "notification", notifMsg.Subtype)
+			assert.NotEmpty(t, notifMsg.Key)
+			assert.NotEmpty(t, notifMsg.Text)
+			assert.Equal(t, tt.wantPriority, notifMsg.Priority)
+			assert.Equal(t, tt.wantColor, notifMsg.Color)
+
+			if tt.wantTimeoutMS == nil {
+				assert.Nil(t, notifMsg.TimeoutMS)
+			} else {
+				require.NotNil(t, notifMsg.TimeoutMS)
+				assert.Equal(t, *tt.wantTimeoutMS, *notifMsg.TimeoutMS)
+			}
+		})
+	}
+}
+
+func TestParseMessagePluginInstall(t *testing.T) {
+	cases := []struct {
+		status PluginInstallStatus
+		name   string
+		err    string
+	}{
+		{status: PluginInstallStatusStarted},
+		{status: PluginInstallStatusInstalled, name: "marketplace-foo"},
+		{status: PluginInstallStatusFailed, name: "marketplace-bar", err: "checksum mismatch"},
+		{status: PluginInstallStatusCompleted},
+	}
+
+	for i, c := range cases {
+		t.Run(string(c.status), func(t *testing.T) {
+			body := `"status":"` + string(c.status) + `"`
+			if c.name != "" {
+				body += `,"name":"` + c.name + `"`
+			}
+			if c.err != "" {
+				body += `,"error":"` + c.err + `"`
+			}
+			input := `{
+				"type": "system",
+				"subtype": "plugin_install",
+				` + body + `,
+				"uuid": "550e8400-e29b-41d4-a716-44665544027` + string(rune('0'+i)) + `",
+				"session_id": "sess_misc_008"
+			}`
+
+			msg, err := ParseMessage([]byte(input))
+			require.NoError(t, err)
+
+			plugMsg, ok := msg.(PluginInstallMessage)
+			require.True(t, ok, "expected PluginInstallMessage")
+
+			assert.Equal(t, "system", plugMsg.MessageType())
+			assert.Equal(t, "plugin_install", plugMsg.Subtype)
+			assert.Equal(t, c.status, plugMsg.Status)
+			assert.Equal(t, c.name, plugMsg.Name)
+			assert.Equal(t, c.err, plugMsg.Error)
+		})
+	}
+}
+
+func TestParseMessageSessionStateChanged(t *testing.T) {
+	for _, state := range []SessionState{SessionStateIdle, SessionStateRunning, SessionStateRequiresAction} {
+		t.Run(string(state), func(t *testing.T) {
+			input := `{
+				"type": "system",
+				"subtype": "session_state_changed",
+				"state": "` + string(state) + `",
+				"uuid": "550e8400-e29b-41d4-a716-446655440290",
+				"session_id": "sess_misc_009"
+			}`
+
+			msg, err := ParseMessage([]byte(input))
+			require.NoError(t, err)
+
+			stateMsg, ok := msg.(SessionStateChangedMessage)
+			require.True(t, ok, "expected SessionStateChangedMessage")
+
+			assert.Equal(t, "system", stateMsg.MessageType())
+			assert.Equal(t, "session_state_changed", stateMsg.Subtype)
+			assert.Equal(t, state, stateMsg.State)
+		})
+	}
+}
+
+func TestParseMessageStatus(t *testing.T) {
+	tests := []struct {
+		name               string
+		input              string
+		wantStatusNil      bool
+		wantStatus         SDKStatusValue
+		wantPermissionMode PermissionMode
+		wantCompactResult  CompactResult
+		wantCompactError   string
+	}{
+		{
+			name: "compacting with permission mode",
+			input: `{
+				"type": "system",
+				"subtype": "status",
+				"status": "compacting",
+				"permissionMode": "acceptEdits",
+				"uuid": "550e8400-e29b-41d4-a716-4466554402A0",
+				"session_id": "sess_misc_010"
+			}`,
+			wantStatus:         SDKStatusCompacting,
+			wantPermissionMode: PermissionModeAcceptEdits,
+		},
+		{
+			name: "null status",
+			input: `{
+				"type": "system",
+				"subtype": "status",
+				"status": null,
+				"uuid": "550e8400-e29b-41d4-a716-4466554402A1",
+				"session_id": "sess_misc_010"
+			}`,
+			wantStatusNil: true,
+		},
+		{
+			name: "compact failed with error",
+			input: `{
+				"type": "system",
+				"subtype": "status",
+				"status": "requesting",
+				"compact_result": "failed",
+				"compact_error": "context too large",
+				"uuid": "550e8400-e29b-41d4-a716-4466554402A2",
+				"session_id": "sess_misc_010"
+			}`,
+			wantStatus:        SDKStatusRequesting,
+			wantCompactResult: CompactResultFailed,
+			wantCompactError:  "context too large",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := ParseMessage([]byte(tt.input))
+			require.NoError(t, err)
+
+			statusMsg, ok := msg.(StatusMessage)
+			require.True(t, ok, "expected StatusMessage")
+
+			assert.Equal(t, "system", statusMsg.MessageType())
+			assert.Equal(t, "status", statusMsg.Subtype)
+
+			if tt.wantStatusNil {
+				assert.Nil(t, statusMsg.Status)
+			} else {
+				require.NotNil(t, statusMsg.Status)
+				assert.Equal(t, tt.wantStatus, *statusMsg.Status)
+			}
+			assert.Equal(t, tt.wantPermissionMode, statusMsg.PermissionMode)
+			assert.Equal(t, tt.wantCompactResult, statusMsg.CompactResult)
+			assert.Equal(t, tt.wantCompactError, statusMsg.CompactError)
+		})
+	}
+}
+
 // TestParseMessageControlRequest tests parsing control requests.
 func TestParseMessageControlRequest(t *testing.T) {
 	input := `{

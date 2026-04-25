@@ -593,6 +593,246 @@ type TaskNotificationMessage struct {
 // MessageType implements Message.
 func (m TaskNotificationMessage) MessageType() string { return "system" }
 
+// Misc system subtype messages.
+
+// APIRetryError is the retryable assistant-message error category.
+type APIRetryError string
+
+const (
+	APIRetryErrorAuthenticationFailed APIRetryError = "authentication_failed"
+	APIRetryErrorBillingError         APIRetryError = "billing_error"
+	APIRetryErrorRateLimit            APIRetryError = "rate_limit"
+	APIRetryErrorInvalidRequest       APIRetryError = "invalid_request"
+	APIRetryErrorServerError          APIRetryError = "server_error"
+	APIRetryErrorUnknown              APIRetryError = "unknown"
+	APIRetryErrorMaxOutputTokens      APIRetryError = "max_output_tokens"
+)
+
+// APIRetryMessage reports that a failed API request will be retried.
+type APIRetryMessage struct {
+	Type         string        `json:"type"`           // Always "system"
+	Subtype      string        `json:"subtype"`        // "api_retry"
+	Attempt      int           `json:"attempt"`        // Current retry attempt
+	MaxRetries   int           `json:"max_retries"`    // Maximum retry attempts
+	RetryDelayMS int           `json:"retry_delay_ms"` // Delay before retry
+	ErrorStatus  *int          `json:"error_status"`   // HTTP status, nil represents JSON null (connection errors)
+	Error        APIRetryError `json:"error"`          // Retryable error category
+	UUID         string        `json:"uuid"`           // Unique message ID
+	SessionID    string        `json:"session_id"`     // Session identifier
+}
+
+// MessageType implements Message.
+func (m APIRetryMessage) MessageType() string { return "system" }
+
+// ElicitationCompleteMessage reports completion of a URL-mode MCP elicitation.
+type ElicitationCompleteMessage struct {
+	Type          string `json:"type"`            // Always "system"
+	Subtype       string `json:"subtype"`         // "elicitation_complete"
+	MCPServerName string `json:"mcp_server_name"` // MCP server name
+	ElicitationID string `json:"elicitation_id"`  // Elicitation identifier
+	UUID          string `json:"uuid"`            // Unique message ID
+	SessionID     string `json:"session_id"`      // Session identifier
+}
+
+// MessageType implements Message.
+func (m ElicitationCompleteMessage) MessageType() string { return "system" }
+
+// FilesPersistedSuccess describes a successfully persisted file.
+type FilesPersistedSuccess struct {
+	Filename string `json:"filename"`
+	FileID   string `json:"file_id"`
+}
+
+// FilesPersistedFailure describes a file that failed to persist.
+type FilesPersistedFailure struct {
+	Filename string `json:"filename"`
+	Error    string `json:"error"`
+}
+
+// FilesPersistedEvent reports persisted files and per-file failures.
+type FilesPersistedEvent struct {
+	Type        string                  `json:"type"`         // Always "system"
+	Subtype     string                  `json:"subtype"`      // "files_persisted"
+	Files       []FilesPersistedSuccess `json:"files"`        // Persisted files
+	Failed      []FilesPersistedFailure `json:"failed"`       // Failed files
+	ProcessedAt string                  `json:"processed_at"` // Processing timestamp
+	UUID        string                  `json:"uuid"`         // Unique message ID
+	SessionID   string                  `json:"session_id"`   // Session identifier
+}
+
+// MessageType implements Message.
+func (m FilesPersistedEvent) MessageType() string { return "system" }
+
+// LocalCommandOutputMessage reports output from a local slash command.
+type LocalCommandOutputMessage struct {
+	Type      string `json:"type"`       // Always "system"
+	Subtype   string `json:"subtype"`    // "local_command_output"
+	Content   string `json:"content"`    // Command output
+	UUID      string `json:"uuid"`       // Unique message ID
+	SessionID string `json:"session_id"` // Session identifier
+}
+
+// MessageType implements Message.
+func (m LocalCommandOutputMessage) MessageType() string { return "system" }
+
+// MemoryRecallMode describes how memories were surfaced.
+type MemoryRecallMode string
+
+const (
+	MemoryRecallModeSelect     MemoryRecallMode = "select"
+	MemoryRecallModeSynthesize MemoryRecallMode = "synthesize"
+)
+
+// MemoryScope identifies the source scope for a recalled memory.
+type MemoryScope string
+
+const (
+	MemoryScopePersonal MemoryScope = "personal"
+	MemoryScopeTeam     MemoryScope = "team"
+)
+
+// MemoryRecallEntry describes one recalled memory or synthesis.
+type MemoryRecallEntry struct {
+	Path    string      `json:"path"`
+	Scope   MemoryScope `json:"scope"`
+	Content string      `json:"content,omitempty"`
+}
+
+// MemoryRecallMessage reports memories surfaced into the current turn.
+type MemoryRecallMessage struct {
+	Type      string              `json:"type"`       // Always "system"
+	Subtype   string              `json:"subtype"`    // "memory_recall"
+	Mode      MemoryRecallMode    `json:"mode"`       // Recall mode
+	Memories  []MemoryRecallEntry `json:"memories"`   // Recalled memories
+	UUID      string              `json:"uuid"`       // Unique message ID
+	SessionID string              `json:"session_id"` // Session identifier
+}
+
+// MessageType implements Message.
+func (m MemoryRecallMessage) MessageType() string { return "system" }
+
+// MirrorErrorKey identifies the transcript mirror batch that failed.
+type MirrorErrorKey struct {
+	ProjectKey string `json:"projectKey"`
+	SessionID  string `json:"sessionId"`
+	Subpath    string `json:"subpath,omitempty"`
+}
+
+// MirrorErrorMessage reports a transcript mirror append failure.
+type MirrorErrorMessage struct {
+	Type      string         `json:"type"`       // Always "system"
+	Subtype   string         `json:"subtype"`    // "mirror_error"
+	Error     string         `json:"error"`      // Error text
+	Key       MirrorErrorKey `json:"key"`        // Mirror batch key
+	UUID      string         `json:"uuid"`       // Unique message ID
+	SessionID string         `json:"session_id"` // Session identifier
+}
+
+// MessageType implements Message.
+func (m MirrorErrorMessage) MessageType() string { return "system" }
+
+// NotificationPriority is the display urgency for a loop-side notification.
+type NotificationPriority string
+
+const (
+	NotificationPriorityLow       NotificationPriority = "low"
+	NotificationPriorityMedium    NotificationPriority = "medium"
+	NotificationPriorityHigh      NotificationPriority = "high"
+	NotificationPriorityImmediate NotificationPriority = "immediate"
+)
+
+// NotificationMessage reports a loop-side text notification.
+type NotificationMessage struct {
+	Type      string               `json:"type"`                 // Always "system"
+	Subtype   string               `json:"subtype"`              // "notification"
+	Key       string               `json:"key"`                  // Notification key
+	Text      string               `json:"text"`                 // Notification text
+	Priority  NotificationPriority `json:"priority"`             // Display urgency
+	Color     string               `json:"color,omitempty"`      // Optional display color
+	TimeoutMS *int                 `json:"timeout_ms,omitempty"` // Optional timeout
+	UUID      string               `json:"uuid"`                 // Unique message ID
+	SessionID string               `json:"session_id"`           // Session identifier
+}
+
+// MessageType implements Message.
+func (m NotificationMessage) MessageType() string { return "system" }
+
+// PluginInstallStatus is the plugin installation progress state.
+type PluginInstallStatus string
+
+const (
+	PluginInstallStatusStarted   PluginInstallStatus = "started"
+	PluginInstallStatusInstalled PluginInstallStatus = "installed"
+	PluginInstallStatusFailed    PluginInstallStatus = "failed"
+	PluginInstallStatusCompleted PluginInstallStatus = "completed"
+)
+
+// PluginInstallMessage reports headless plugin installation progress.
+type PluginInstallMessage struct {
+	Type      string              `json:"type"`            // Always "system"
+	Subtype   string              `json:"subtype"`         // "plugin_install"
+	Status    PluginInstallStatus `json:"status"`          // Installation status
+	Name      string              `json:"name,omitempty"`  // Marketplace or plugin name
+	Error     string              `json:"error,omitempty"` // Failure text
+	UUID      string              `json:"uuid"`            // Unique message ID
+	SessionID string              `json:"session_id"`      // Session identifier
+}
+
+// MessageType implements Message.
+func (m PluginInstallMessage) MessageType() string { return "system" }
+
+// SessionState is the current session run state.
+type SessionState string
+
+const (
+	SessionStateIdle           SessionState = "idle"
+	SessionStateRunning        SessionState = "running"
+	SessionStateRequiresAction SessionState = "requires_action"
+)
+
+// SessionStateChangedMessage reports authoritative turn-over state changes.
+type SessionStateChangedMessage struct {
+	Type      string       `json:"type"`       // Always "system"
+	Subtype   string       `json:"subtype"`    // "session_state_changed"
+	State     SessionState `json:"state"`      // Session state
+	UUID      string       `json:"uuid"`       // Unique message ID
+	SessionID string       `json:"session_id"` // Session identifier
+}
+
+// MessageType implements Message.
+func (m SessionStateChangedMessage) MessageType() string { return "system" }
+
+// SDKStatusValue is the non-null status payload for a status message.
+type SDKStatusValue string
+
+const (
+	SDKStatusCompacting SDKStatusValue = "compacting"
+	SDKStatusRequesting SDKStatusValue = "requesting"
+)
+
+// CompactResult is the terminal compaction result carried by status messages.
+type CompactResult string
+
+const (
+	CompactResultSuccess CompactResult = "success"
+	CompactResultFailed  CompactResult = "failed"
+)
+
+// StatusMessage reports current SDK status.
+type StatusMessage struct {
+	Type           string          `json:"type"`                     // Always "system"
+	Subtype        string          `json:"subtype"`                  // "status"
+	Status         *SDKStatusValue `json:"status"`                   // Nil represents JSON null
+	PermissionMode PermissionMode  `json:"permissionMode,omitempty"` // Optional permission mode
+	CompactResult  CompactResult   `json:"compact_result,omitempty"` // Optional compact result
+	CompactError   string          `json:"compact_error,omitempty"`  // Optional compact error
+	UUID           string          `json:"uuid"`                     // Unique message ID
+	SessionID      string          `json:"session_id"`               // Session identifier
+}
+
+// MessageType implements Message.
+func (m StatusMessage) MessageType() string { return "system" }
+
 // CompactMetadata contains details about a compaction event.
 type CompactMetadata struct {
 	Trigger   string `json:"trigger"`    // "manual" or "auto"
@@ -705,6 +945,46 @@ func ParseMessage(data []byte) (Message, error) {
 			return msg, err
 		case "task_notification":
 			var msg TaskNotificationMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "api_retry":
+			var msg APIRetryMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "elicitation_complete":
+			var msg ElicitationCompleteMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "files_persisted":
+			var msg FilesPersistedEvent
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "local_command_output":
+			var msg LocalCommandOutputMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "memory_recall":
+			var msg MemoryRecallMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "mirror_error":
+			var msg MirrorErrorMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "notification":
+			var msg NotificationMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "plugin_install":
+			var msg PluginInstallMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "session_state_changed":
+			var msg SessionStateChangedMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "status":
+			var msg StatusMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
 		default:
