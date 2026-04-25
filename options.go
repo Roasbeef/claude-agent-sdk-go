@@ -789,6 +789,7 @@ const (
 type HookConfig struct {
 	Type     HookType     // Hook event type
 	Matcher  string       // Glob pattern for tool names (e.g., "*", "fetch_*")
+	Timeout  int          // Optional timeout in seconds; 0 = use default
 	Callback HookCallback // Callback function
 }
 

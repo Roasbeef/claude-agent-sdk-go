@@ -239,6 +239,158 @@ func TestProtocolInitializeOptions(t *testing.T) {
 	}
 }
 
+func TestProtocolInitializeHookTimeout(t *testing.T) {
+	callback := func(ctx context.Context, input HookInput) (HookResult, error) {
+		return HookResult{Continue: true}, nil
+	}
+
+	tests := []struct {
+		name    string
+		configs []HookConfig
+		assert  func(*testing.T, SDKControlRequest)
+	}{
+		{
+			name: "timeout set",
+			configs: []HookConfig{
+				{
+					Matcher:  "*",
+					Timeout:  30,
+					Callback: callback,
+				},
+			},
+			assert: func(t *testing.T, initReq SDKControlRequest) {
+				matchers := initReq.Request.Hooks[string(HookTypePreToolUse)]
+				require.Len(t, matchers, 1)
+				assert.Equal(t, "*", matchers[0].Matcher)
+				assert.Equal(t, 30, matchers[0].Timeout)
+
+				got := marshalHookMatcher(t, matchers[0])
+				assert.Equal(t, float64(30), got["timeout"])
+			},
+		},
+		{
+			name: "timeout zero omitted",
+			configs: []HookConfig{
+				{
+					Matcher:  "*",
+					Callback: callback,
+				},
+			},
+			assert: func(t *testing.T, initReq SDKControlRequest) {
+				matchers := initReq.Request.Hooks[string(HookTypePreToolUse)]
+				require.Len(t, matchers, 1)
+				assert.Zero(t, matchers[0].Timeout)
+
+				got := marshalHookMatcher(t, matchers[0])
+				assert.NotContains(t, got, "timeout")
+			},
+		},
+		{
+			name: "multiple matchers mixed",
+			configs: []HookConfig{
+				{
+					Matcher:  "Bash",
+					Timeout:  15,
+					Callback: callback,
+				},
+				{
+					Matcher:  "Read",
+					Callback: callback,
+				},
+			},
+			assert: func(t *testing.T, initReq SDKControlRequest) {
+				matchers := initReq.Request.Hooks[string(HookTypePreToolUse)]
+				require.Len(t, matchers, 2)
+				assert.Equal(t, "Bash", matchers[0].Matcher)
+				assert.Equal(t, 15, matchers[0].Timeout)
+				assert.Equal(t, "Read", matchers[1].Matcher)
+				assert.Zero(t, matchers[1].Timeout)
+
+				withTimeout := marshalHookMatcher(t, matchers[0])
+				withoutTimeout := marshalHookMatcher(t, matchers[1])
+				assert.Equal(t, float64(15), withTimeout["timeout"])
+				assert.NotContains(t, withoutTimeout, "timeout")
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+			opts := NewOptions()
+			opts.Hooks = map[HookType][]HookConfig{
+				HookTypePreToolUse: tt.configs,
+			}
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+			protocol := NewProtocol(transport, opts)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+
+			err := transport.Connect(ctx)
+			require.NoError(t, err)
+			defer transport.Close()
+
+			initReqCh := make(chan SDKControlRequest, 1)
+			go func() {
+				decoder := json.NewDecoder(runner.StdinPipe)
+				var initReq SDKControlRequest
+				if err := decoder.Decode(&initReq); err != nil {
+					return
+				}
+				initReqCh <- initReq
+
+				resp := SDKControlResponse{
+					Type: "control_response",
+					Response: SDKControlResponseBody{
+						Subtype:   "success",
+						RequestID: initReq.RequestID,
+						Response:  map[string]interface{}{"status": "ok"},
+					},
+				}
+				data, _ := json.Marshal(resp)
+				data = append(data, '\n')
+				runner.StdoutPipe.Write(data)
+			}()
+
+			go func() {
+				for msg, err := range transport.ReadMessages(ctx) {
+					if err != nil {
+						continue
+					}
+					if ctrlResp, ok := msg.(SDKControlResponse); ok {
+						protocol.handleSDKControlResponse(ctrlResp)
+					}
+				}
+			}()
+
+			err = protocol.Initialize(ctx)
+			require.NoError(t, err)
+
+			var initReq SDKControlRequest
+			select {
+			case initReq = <-initReqCh:
+			case <-ctx.Done():
+				t.Fatal("timeout waiting for initialize request")
+			}
+
+			tt.assert(t, initReq)
+		})
+	}
+}
+
+func marshalHookMatcher(t *testing.T, matcher SDKHookCallbackMatcher) map[string]interface{} {
+	t.Helper()
+
+	data, err := json.Marshal(matcher)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	return got
+}
+
 // TestProtocolPermissionRequest tests permission checking.
 func TestProtocolPermissionRequest(t *testing.T) {
 	t.Run("allow", func(t *testing.T) {
