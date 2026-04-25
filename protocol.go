@@ -1351,7 +1351,11 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 	// This gives callbacks full control over the hookSpecificOutput
 	// envelope when auto-translation of Modify is insufficient.
 	if result.HookSpecificOutput != nil {
-		resp["hookSpecificOutput"] = result.HookSpecificOutput
+		hookSpecificOutput := make(map[string]interface{}, len(result.HookSpecificOutput))
+		for key, value := range result.HookSpecificOutput {
+			hookSpecificOutput[key] = value
+		}
+		resp["hookSpecificOutput"] = hookSpecificOutput
 	} else if len(result.Modify) > 0 {
 		// Auto-translate Modify into the hookSpecificOutput format
 		// expected by the CLI. PreToolUse and PermissionRequest hooks
@@ -1380,5 +1384,33 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 		}
 	}
 
+	if len(result.WatchPaths) > 0 && isWatchPathsHook(hookType) {
+		hookSpecificOutput, _ := resp["hookSpecificOutput"].(map[string]interface{})
+		if hookSpecificOutput == nil {
+			hookSpecificOutput = map[string]interface{}{
+				"hookEventName": hookType,
+			}
+		}
+		hookSpecificOutput["watchPaths"] = result.WatchPaths
+		resp["hookSpecificOutput"] = hookSpecificOutput
+	}
+
 	return resp
+}
+
+// isWatchPathsHook returns true for hook events whose
+// hookSpecificOutput accepts the optional watchPaths field per
+// sdk.d.ts v0.2.119: CwdChanged (L435-L438), FileChanged (L555-L558),
+// and SessionStart (L3515-L3520). WorktreeCreate's specific output is
+// {hookEventName, worktreePath} (L5423-L5426) and does not accept
+// watchPaths.
+func isWatchPathsHook(hookType string) bool {
+	switch hookType {
+	case string(HookTypeSessionStart),
+		string(HookTypeCwdChanged),
+		string(HookTypeFileChanged):
+		return true
+	default:
+		return false
+	}
 }
