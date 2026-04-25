@@ -426,6 +426,65 @@ type CompactBoundaryMessage struct {
 // MessageType implements Message.
 func (m CompactBoundaryMessage) MessageType() string { return "system" }
 
+// HookOutcome describes the terminal status of a hook execution.
+type HookOutcome string
+
+const (
+	HookOutcomeSuccess  HookOutcome = "success"
+	HookOutcomeError    HookOutcome = "error"
+	HookOutcomeCanceled HookOutcome = "cancelled" //nolint:misspell // upstream wire format spelling
+)
+
+// HookStartedMessage reports that a hook has started executing.
+type HookStartedMessage struct {
+	Type      string `json:"type"`       // Always "system"
+	Subtype   string `json:"subtype"`    // "hook_started"
+	HookID    string `json:"hook_id"`    // Hook invocation ID
+	HookName  string `json:"hook_name"`  // Hook name
+	HookEvent string `json:"hook_event"` // Hook event name
+	UUID      string `json:"uuid"`       // Unique message ID
+	SessionID string `json:"session_id"` // Session identifier
+}
+
+// MessageType implements Message.
+func (m HookStartedMessage) MessageType() string { return "system" }
+
+// HookProgressMessage reports intermediate hook execution output.
+type HookProgressMessage struct {
+	Type      string `json:"type"`       // Always "system"
+	Subtype   string `json:"subtype"`    // "hook_progress"
+	HookID    string `json:"hook_id"`    // Hook invocation ID
+	HookName  string `json:"hook_name"`  // Hook name
+	HookEvent string `json:"hook_event"` // Hook event name
+	Stdout    string `json:"stdout"`     // Standard output
+	Stderr    string `json:"stderr"`     // Standard error
+	Output    string `json:"output"`     // Combined output
+	UUID      string `json:"uuid"`       // Unique message ID
+	SessionID string `json:"session_id"` // Session identifier
+}
+
+// MessageType implements Message.
+func (m HookProgressMessage) MessageType() string { return "system" }
+
+// HookResponseMessage reports terminal hook execution output.
+type HookResponseMessage struct {
+	Type      string      `json:"type"`                // Always "system"
+	Subtype   string      `json:"subtype"`             // "hook_response"
+	HookID    string      `json:"hook_id"`             // Hook invocation ID
+	HookName  string      `json:"hook_name"`           // Hook name
+	HookEvent string      `json:"hook_event"`          // Hook event name
+	Output    string      `json:"output"`              // Combined output
+	Stdout    string      `json:"stdout"`              // Standard output
+	Stderr    string      `json:"stderr"`              // Standard error
+	ExitCode  *int        `json:"exit_code,omitempty"` // Process exit code
+	Outcome   HookOutcome `json:"outcome"`             // Terminal status
+	UUID      string      `json:"uuid"`                // Unique message ID
+	SessionID string      `json:"session_id"`          // Session identifier
+}
+
+// MessageType implements Message.
+func (m HookResponseMessage) MessageType() string { return "system" }
+
 // CompactMetadata contains details about a compaction event.
 type CompactMetadata struct {
 	Trigger   string `json:"trigger"`    // "manual" or "auto"
@@ -499,7 +558,7 @@ func ParseMessage(data []byte) (Message, error) {
 		return msg, err
 
 	case "system":
-		// System messages have subtypes: "init" or "compact_boundary"
+		// System messages have subtypes: "init", "compact_boundary", and lifecycle events.
 		var base struct {
 			Subtype string `json:"subtype"`
 		}
@@ -507,16 +566,29 @@ func ParseMessage(data []byte) (Message, error) {
 			return nil, err
 		}
 
-		if base.Subtype == "compact_boundary" {
+		switch base.Subtype {
+		case "compact_boundary":
 			var msg CompactBoundaryMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
+		case "hook_started":
+			var msg HookStartedMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "hook_progress":
+			var msg HookProgressMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "hook_response":
+			var msg HookResponseMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		default:
+			// Includes "init" and any forward-compatible unknown subtypes.
+			var msg SystemMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
 		}
-
-		// Default: init message
-		var msg SystemMessage
-		err := json.Unmarshal(data, &msg)
-		return msg, err
 
 	case "todo_update":
 		var msg TodoUpdateMessage

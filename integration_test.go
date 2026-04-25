@@ -1220,3 +1220,28 @@ func TestIntegrationWorkingDirectory(t *testing.T) {
 	assert.Contains(t, responseText, markerContent,
 		"expected response to contain the marker content, indicating cwd was set correctly")
 }
+
+// TestIntegrationHookLifecycleMessages exercises the wire-protocol hook
+// lifecycle messages (hook_started / hook_progress / hook_response) that are
+// emitted by the CLI when a settings.json subprocess hook fires.
+//
+// These wire messages are distinct from the SDK's callback hooks (see
+// TestIntegrationHooks): callback hooks are control-channel mediated and never
+// surface as system subtype messages. The lifecycle messages we parse here
+// only appear when the CLI runs an external command hook configured via a
+// settings file, and emission is gated on CLI behavior we have not been able
+// to reproduce locally with the v2.1.119 binary using --setting-sources
+// project + a UserPromptSubmit hook entry.
+//
+// TODO(integration): once we know the exact settings shape that triggers wire
+// hook emission in v2.1.119+ (or once a future SDK version exposes a way to
+// register subprocess hooks programmatically), drop the t.Skip and assert that
+// each lifecycle message round-trips with hook_id, hook_name, hook_event, and
+// the expected outcome.
+func TestIntegrationHookLifecycleMessages(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	t.Skip("not triggerable from CLI yet: settings.json hook configuration " +
+		"shape that emits hook_started/hook_progress/hook_response in v2.1.119 " +
+		"is not reproducible from this test harness; see TODO above")
+}
