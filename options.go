@@ -719,13 +719,29 @@ type PermissionContext struct {
 	Metadata  map[string]interface{}
 }
 
+// PermissionDecisionClassification labels how a permission decision was reached
+// for SDK-host telemetry. If unset, the CLI infers conservatively.
+type PermissionDecisionClassification string
+
+const (
+	// PermissionClassificationUserTemporary is "allow-once".
+	PermissionClassificationUserTemporary PermissionDecisionClassification = "user_temporary"
+	// PermissionClassificationUserPermanent is "always-allow" and later cache hits.
+	PermissionClassificationUserPermanent PermissionDecisionClassification = "user_permanent"
+	// PermissionClassificationUserReject is "deny".
+	PermissionClassificationUserReject PermissionDecisionClassification = "user_reject"
+)
+
 // PermissionResult is the outcome of a permission check.
 type PermissionResult interface {
 	IsAllow() bool
 }
 
 // PermissionAllow indicates permission granted.
-type PermissionAllow struct{}
+type PermissionAllow struct {
+	// Classification optionally labels the decision for telemetry. Empty = unset.
+	Classification PermissionDecisionClassification
+}
 
 // IsAllow implements PermissionResult.
 func (PermissionAllow) IsAllow() bool { return true }
@@ -733,6 +749,8 @@ func (PermissionAllow) IsAllow() bool { return true }
 // PermissionDeny indicates permission denied.
 type PermissionDeny struct {
 	Reason string
+	// Classification optionally labels the decision for telemetry. Empty = unset.
+	Classification PermissionDecisionClassification
 }
 
 // IsAllow implements PermissionResult.
