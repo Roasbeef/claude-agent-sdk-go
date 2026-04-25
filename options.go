@@ -3,6 +3,7 @@ package claudeagent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 )
 
 // Options holds configuration for a Claude agent client.
@@ -991,11 +992,166 @@ type HookResult struct {
 
 // AgentDefinition defines a specialized subagent.
 type AgentDefinition struct {
-	Name        string   // Agent identifier
-	Description string   // When to invoke this agent
-	Prompt      string   // System instructions for the subagent
-	Tools       []string // Tool whitelist (nil = inherit all)
-	Model       string   // Optional model override
+	Name                               string               `json:"-"` // Agent identifier
+	Description                        string               `json:"description"`
+	Prompt                             string               `json:"prompt"`
+	Tools                              []string             `json:"tools,omitempty"`
+	Model                              string               `json:"model,omitempty"`
+	DisallowedTools                    []string             `json:"disallowedTools,omitempty"`
+	MCPServers                         []AgentMCPServerSpec `json:"mcpServers,omitempty"`
+	CriticalSystemReminderExperimental string               `json:"criticalSystemReminder_EXPERIMENTAL,omitempty"`
+	Skills                             []string             `json:"skills,omitempty"`
+	InitialPrompt                      string               `json:"initialPrompt,omitempty"`
+	MaxTurns                           int                  `json:"maxTurns,omitempty"`
+	Background                         *bool                `json:"background,omitempty"`
+	Memory                             AgentMemoryScope     `json:"memory,omitempty"`
+	Effort                             AgentEffort          `json:"effort,omitempty"`
+	PermissionMode                     PermissionMode       `json:"permissionMode,omitempty"`
+}
+
+// MarshalJSON emits the TypeScript SDK agent wire shape.
+func (a AgentDefinition) MarshalJSON() ([]byte, error) {
+	type agentDefinitionJSON struct {
+		Description                        string               `json:"description"`
+		Prompt                             string               `json:"prompt"`
+		Tools                              []string             `json:"tools,omitempty"`
+		Model                              string               `json:"model,omitempty"`
+		DisallowedTools                    []string             `json:"disallowedTools,omitempty"`
+		MCPServers                         []AgentMCPServerSpec `json:"mcpServers,omitempty"`
+		CriticalSystemReminderExperimental string               `json:"criticalSystemReminder_EXPERIMENTAL,omitempty"`
+		Skills                             []string             `json:"skills,omitempty"`
+		InitialPrompt                      string               `json:"initialPrompt,omitempty"`
+		MaxTurns                           int                  `json:"maxTurns,omitempty"`
+		Background                         *bool                `json:"background,omitempty"`
+		Memory                             AgentMemoryScope     `json:"memory,omitempty"`
+		Effort                             *AgentEffort         `json:"effort,omitempty"`
+		PermissionMode                     PermissionMode       `json:"permissionMode,omitempty"`
+	}
+
+	out := agentDefinitionJSON{
+		Description:                        a.Description,
+		Prompt:                             a.Prompt,
+		Tools:                              a.Tools,
+		Model:                              a.Model,
+		DisallowedTools:                    a.DisallowedTools,
+		MCPServers:                         a.MCPServers,
+		CriticalSystemReminderExperimental: a.CriticalSystemReminderExperimental,
+		Skills:                             a.Skills,
+		InitialPrompt:                      a.InitialPrompt,
+		MaxTurns:                           a.MaxTurns,
+		Background:                         a.Background,
+		Memory:                             a.Memory,
+		PermissionMode:                     a.PermissionMode,
+	}
+	if !a.Effort.IsZero() {
+		out.Effort = &a.Effort
+	}
+
+	return json.Marshal(out)
+}
+
+// AgentMemoryScope controls which memory scope is available to an agent.
+type AgentMemoryScope string
+
+const (
+	// AgentMemoryUser enables user memory for the agent.
+	AgentMemoryUser AgentMemoryScope = "user"
+	// AgentMemoryProject enables project memory for the agent.
+	AgentMemoryProject AgentMemoryScope = "project"
+	// AgentMemoryLocal enables local memory for the agent.
+	AgentMemoryLocal AgentMemoryScope = "local"
+)
+
+// AgentEffort is the AgentDefinition effort union: EffortLevel or numeric budget.
+type AgentEffort struct {
+	Level   EffortLevel
+	Numeric *int
+}
+
+// IsZero reports whether no effort was configured.
+func (e AgentEffort) IsZero() bool {
+	return e.Level == "" && e.Numeric == nil
+}
+
+// MarshalJSON emits either the numeric or string effort variant.
+func (e AgentEffort) MarshalJSON() ([]byte, error) {
+	if e.Numeric != nil {
+		return json.Marshal(*e.Numeric)
+	}
+	if e.Level != "" {
+		return json.Marshal(e.Level)
+	}
+	return []byte("null"), nil
+}
+
+// UnmarshalJSON decodes either the numeric or string effort variant.
+func (e *AgentEffort) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*e = AgentEffort{}
+		return nil
+	}
+
+	var level EffortLevel
+	if err := json.Unmarshal(data, &level); err == nil {
+		*e = AgentEffort{Level: level}
+		return nil
+	}
+
+	var numeric int
+	if err := json.Unmarshal(data, &numeric); err != nil {
+		return err
+	}
+	*e = AgentEffort{Numeric: &numeric}
+	return nil
+}
+
+// AgentMCPServerSpec references a top-level MCP server or defines inline servers.
+type AgentMCPServerSpec struct {
+	// Name references a server defined in Options.MCPServers by key. Mutually exclusive with Inline.
+	Name string
+	// Inline defines servers locally for this agent. Mutually exclusive with Name.
+	Inline map[string]MCPServerConfig
+}
+
+// MarshalJSON emits the AgentMCPServerSpec discriminated union.
+func (s AgentMCPServerSpec) MarshalJSON() ([]byte, error) {
+	if s.Name != "" {
+		return json.Marshal(s.Name)
+	}
+	if s.Inline != nil {
+		return json.Marshal(s.Inline)
+	}
+	return []byte("null"), nil
+}
+
+// UnmarshalJSON decodes a named or inline AgentMCPServerSpec.
+func (s *AgentMCPServerSpec) UnmarshalJSON(data []byte) error {
+	var raw json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if len(raw) == 0 || string(raw) == "null" {
+		*s = AgentMCPServerSpec{}
+		return nil
+	}
+
+	switch raw[0] {
+	case '"':
+		var name string
+		if err := json.Unmarshal(raw, &name); err != nil {
+			return err
+		}
+		*s = AgentMCPServerSpec{Name: name}
+	case '{':
+		var inline map[string]MCPServerConfig
+		if err := json.Unmarshal(raw, &inline); err != nil {
+			return err
+		}
+		*s = AgentMCPServerSpec{Inline: inline}
+	default:
+		return fmt.Errorf("agent MCP server spec must be string or object")
+	}
+	return nil
 }
 
 // SessionOptions configures session behavior.
@@ -1009,11 +1165,11 @@ type SessionOptions struct {
 
 // MCPServerConfig configures an MCP server.
 type MCPServerConfig struct {
-	Type    string            // "stdio" or "socket"
-	Command string            // Command to start server (for stdio)
-	Args    []string          // Command arguments
-	Env     map[string]string // Environment variables
-	Address string            // Socket address (for socket type)
+	Type    string            `json:"type,omitempty"`    // "stdio" or "socket"
+	Command string            `json:"command,omitempty"` // Command to start server (for stdio)
+	Args    []string          `json:"args,omitempty"`    // Command arguments
+	Env     map[string]string `json:"env,omitempty"`     // Environment variables
+	Address string            `json:"address,omitempty"` // Socket address (for socket type)
 }
 
 // SkillsConfig controls how Skills are loaded.

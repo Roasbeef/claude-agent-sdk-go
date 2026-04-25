@@ -60,6 +60,166 @@ func TestSDKControlRequestBodyInitializeOptionsOmitUnset(t *testing.T) {
 	}
 }
 
+func TestAgentDefinitionJSON(t *testing.T) {
+	background := false
+	effortBudget := 30000
+	agent := AgentDefinition{
+		Name:                               "reviewer",
+		Description:                        "Reviews Go changes",
+		Prompt:                             "Review carefully",
+		Tools:                              []string{"Read", "Grep"},
+		Model:                              "claude-opus-4-5-20250929",
+		DisallowedTools:                    []string{"Bash"},
+		MCPServers:                         []AgentMCPServerSpec{{Name: "github"}},
+		CriticalSystemReminderExperimental: "Stay focused",
+		Skills:                             []string{"go"},
+		InitialPrompt:                      "Start here",
+		MaxTurns:                           5,
+		Background:                         &background,
+		Memory:                             AgentMemoryProject,
+		Effort:                             AgentEffort{Numeric: &effortBudget},
+		PermissionMode:                     PermissionModeAcceptEdits,
+	}
+
+	data, err := json.Marshal(agent)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.NotContains(t, got, "Name")
+	assert.NotContains(t, got, "name")
+	assert.Equal(t, "Reviews Go changes", got["description"])
+	assert.Equal(t, "Review carefully", got["prompt"])
+	assert.Equal(t, []interface{}{"Read", "Grep"}, got["tools"])
+	assert.Equal(t, "claude-opus-4-5-20250929", got["model"])
+	assert.Equal(t, []interface{}{"Bash"}, got["disallowedTools"])
+	assert.Equal(t, []interface{}{"github"}, got["mcpServers"])
+	assert.Equal(t, "Stay focused", got["criticalSystemReminder_EXPERIMENTAL"])
+	assert.Equal(t, []interface{}{"go"}, got["skills"])
+	assert.Equal(t, "Start here", got["initialPrompt"])
+	assert.Equal(t, float64(5), got["maxTurns"])
+	assert.Equal(t, false, got["background"])
+	assert.Equal(t, "project", got["memory"])
+	assert.Equal(t, float64(30000), got["effort"])
+	assert.Equal(t, "acceptEdits", got["permissionMode"])
+
+	var decoded AgentDefinition
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Equal(t, agent.Description, decoded.Description)
+	assert.Equal(t, agent.Prompt, decoded.Prompt)
+	assert.Equal(t, agent.Tools, decoded.Tools)
+	assert.Equal(t, agent.Model, decoded.Model)
+	assert.Equal(t, agent.DisallowedTools, decoded.DisallowedTools)
+	require.Len(t, decoded.MCPServers, 1)
+	assert.Equal(t, "github", decoded.MCPServers[0].Name)
+	assert.Equal(t, agent.CriticalSystemReminderExperimental, decoded.CriticalSystemReminderExperimental)
+	assert.Equal(t, agent.Skills, decoded.Skills)
+	assert.Equal(t, agent.InitialPrompt, decoded.InitialPrompt)
+	assert.Equal(t, agent.MaxTurns, decoded.MaxTurns)
+	require.NotNil(t, decoded.Background)
+	assert.Equal(t, false, *decoded.Background)
+	assert.Equal(t, agent.Memory, decoded.Memory)
+	require.NotNil(t, decoded.Effort.Numeric)
+	assert.Equal(t, effortBudget, *decoded.Effort.Numeric)
+	assert.Equal(t, agent.PermissionMode, decoded.PermissionMode)
+}
+
+func TestAgentDefinitionJSONOmitUnset(t *testing.T) {
+	data, err := json.Marshal(AgentDefinition{
+		Description: "Reviews changes",
+		Prompt:      "Review carefully",
+	})
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.Equal(t, "Reviews changes", got["description"])
+	assert.Equal(t, "Review carefully", got["prompt"])
+	for _, key := range []string{"memory", "effort", "maxTurns", "background"} {
+		assert.NotContains(t, got, key)
+	}
+}
+
+func TestAgentMCPServerSpecJSON(t *testing.T) {
+	t.Run("name", func(t *testing.T) {
+		data, err := json.Marshal(AgentMCPServerSpec{Name: "github"})
+		require.NoError(t, err)
+		assert.JSONEq(t, `"github"`, string(data))
+
+		var decoded AgentMCPServerSpec
+		require.NoError(t, json.Unmarshal(data, &decoded))
+		assert.Equal(t, "github", decoded.Name)
+		assert.Nil(t, decoded.Inline)
+	})
+
+	t.Run("inline", func(t *testing.T) {
+		spec := AgentMCPServerSpec{
+			Inline: map[string]MCPServerConfig{
+				"github": {
+					Type:    "stdio",
+					Command: "gh",
+				},
+			},
+		}
+		data, err := json.Marshal(spec)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"github":{"type":"stdio","command":"gh"}}`, string(data))
+
+		var decoded AgentMCPServerSpec
+		require.NoError(t, json.Unmarshal(data, &decoded))
+		require.Contains(t, decoded.Inline, "github")
+		assert.Equal(t, "stdio", decoded.Inline["github"].Type)
+		assert.Equal(t, "gh", decoded.Inline["github"].Command)
+		assert.Empty(t, decoded.Name)
+	})
+}
+
+func TestAgentEffortJSON(t *testing.T) {
+	t.Run("level", func(t *testing.T) {
+		data, err := json.Marshal(AgentEffort{Level: EffortHigh})
+		require.NoError(t, err)
+		assert.JSONEq(t, `"high"`, string(data))
+
+		var decoded AgentEffort
+		require.NoError(t, json.Unmarshal(data, &decoded))
+		assert.Equal(t, EffortHigh, decoded.Level)
+		assert.Nil(t, decoded.Numeric)
+	})
+
+	t.Run("numeric", func(t *testing.T) {
+		budget := 30000
+		data, err := json.Marshal(AgentEffort{Numeric: &budget})
+		require.NoError(t, err)
+		assert.JSONEq(t, `30000`, string(data))
+
+		var decoded AgentEffort
+		require.NoError(t, json.Unmarshal(data, &decoded))
+		require.NotNil(t, decoded.Numeric)
+		assert.Equal(t, budget, *decoded.Numeric)
+		assert.Empty(t, decoded.Level)
+	})
+}
+
+func TestAgentMemoryScopeJSON(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		scope AgentMemoryScope
+		want  string
+	}{
+		{"user", AgentMemoryUser, `"user"`},
+		{"project", AgentMemoryProject, `"project"`},
+		{"local", AgentMemoryLocal, `"local"`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			data, err := json.Marshal(tt.scope)
+			require.NoError(t, err)
+			assert.JSONEq(t, tt.want, string(data))
+		})
+	}
+}
+
 // TestParseMessageUserMessage tests parsing user messages.
 func TestParseMessageUserMessage(t *testing.T) {
 	input := `{

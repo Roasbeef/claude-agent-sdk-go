@@ -90,6 +90,14 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 		excludeDynamicSections = &trueVal
 	}
 
+	var agents map[string]interface{}
+	if len(p.options.Agents) > 0 {
+		agents = make(map[string]interface{}, len(p.options.Agents))
+		for k, v := range p.options.Agents {
+			agents[k] = v
+		}
+	}
+
 	// Build initialization request in TypeScript SDK format.
 	requestID := p.nextRequestID()
 	req := SDKControlRequest{
@@ -102,6 +110,7 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 			SystemPrompt:           p.options.SystemPrompt,
 			PlanModeInstructions:   p.options.PlanModeInstructions,
 			ExcludeDynamicSections: excludeDynamicSections,
+			Agents:                 agents,
 			Title:                  p.options.Title,
 			Skills:                 p.options.Skills,
 			PromptSuggestions:      p.options.PromptSuggestions,
