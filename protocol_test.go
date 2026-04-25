@@ -1804,7 +1804,10 @@ func TestBuildHookResponse_WatchPaths(t *testing.T) {
 		assert.Equal(t, []string{"/foo", "/bar"}, hso["watchPaths"])
 	})
 
-	t.Run("WorktreeCreate preserves explicit output", func(t *testing.T) {
+	t.Run("WorktreeCreate is not watchPaths-eligible", func(t *testing.T) {
+		// WorktreeCreateHookSpecificOutput (sdk.d.ts L5423-L5426) only
+		// declares hookEventName and worktreePath. WatchPaths set on
+		// this event must NOT leak into the wire response.
 		result := HookResult{
 			Continue:   true,
 			WatchPaths: []string{"/x"},
@@ -1820,8 +1823,10 @@ func TestBuildHookResponse_WatchPaths(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, "WorktreeCreate", hso["hookEventName"])
 		assert.Equal(t, "/x", hso["worktreePath"])
-		assert.Equal(t, []string{"/x"}, hso["watchPaths"])
+		_, hasWatchPaths := hso["watchPaths"]
+		assert.False(t, hasWatchPaths, "WorktreeCreate output must not carry watchPaths")
 
+		// Caller's map must not have been mutated by buildHookResponse.
 		_, mutated := result.HookSpecificOutput["watchPaths"]
 		assert.False(t, mutated)
 	})

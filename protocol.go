@@ -1398,10 +1398,15 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 	return resp
 }
 
+// isWatchPathsHook returns true for hook events whose
+// hookSpecificOutput accepts the optional watchPaths field per
+// sdk.d.ts v0.2.119: CwdChanged (L435-L438), FileChanged (L555-L558),
+// and SessionStart (L3515-L3520). WorktreeCreate's specific output is
+// {hookEventName, worktreePath} (L5423-L5426) and does not accept
+// watchPaths.
 func isWatchPathsHook(hookType string) bool {
 	switch hookType {
 	case string(HookTypeSessionStart),
-		string(HookTypeWorktreeCreate),
 		string(HookTypeCwdChanged),
 		string(HookTypeFileChanged):
 		return true

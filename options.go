@@ -1293,9 +1293,9 @@ type HookResult struct {
 	Modify   map[string]interface{} // Modifications to apply
 
 	// WatchPaths registers filesystem paths the CLI should watch and
-	// re-fire the hook on changes. Honored by SessionStart,
-	// WorktreeCreate, CwdChanged, and FileChanged hooks. Empty slice or
-	// nil omits the field on the wire.
+	// re-fire the hook on changes. Honored by SessionStart, CwdChanged,
+	// and FileChanged hooks. Empty slice or nil omits the field on the
+	// wire.
 	WatchPaths []string
 
 	// Decision controls session exit for Stop hooks.
