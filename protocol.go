@@ -230,8 +230,18 @@ func (p *Protocol) handlePermissionRequest(ctx context.Context, req ControlReque
 	respData := map[string]interface{}{
 		"allowed": result.IsAllow(),
 	}
-	if deny, ok := result.(PermissionDeny); ok && !result.IsAllow() {
-		respData["reason"] = deny.Reason
+	var classification PermissionDecisionClassification
+	switch r := result.(type) {
+	case PermissionAllow:
+		classification = r.Classification
+	case PermissionDeny:
+		classification = r.Classification
+		if !result.IsAllow() {
+			respData["reason"] = r.Reason
+		}
+	}
+	if classification != "" {
+		respData["decisionClassification"] = string(classification)
 	}
 
 	return SDKControlResponse{
@@ -750,14 +760,22 @@ func (p *Protocol) handleSDKPermissionRequest(ctx context.Context, req SDKContro
 	responseData := map[string]interface{}{
 		"behavior": "allow",
 	}
+	var classification PermissionDecisionClassification
 	if result.IsAllow() {
 		// Pass the original tool input through unchanged.
 		responseData["updatedInput"] = arguments
+		if allow, ok := result.(PermissionAllow); ok {
+			classification = allow.Classification
+		}
 	} else {
 		responseData["behavior"] = "deny"
 		if deny, ok := result.(PermissionDeny); ok {
 			responseData["message"] = deny.Reason
+			classification = deny.Classification
 		}
+	}
+	if classification != "" {
+		responseData["decisionClassification"] = string(classification)
 	}
 	responseData["toolUseID"] = req.Request.ToolUseID
 

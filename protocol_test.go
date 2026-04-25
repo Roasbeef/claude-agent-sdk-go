@@ -512,6 +512,168 @@ func TestProtocolPermissionRequest(t *testing.T) {
 	})
 }
 
+func TestProtocolHandlePermissionRequestClassification(t *testing.T) {
+	tests := []struct {
+		name       string
+		result     PermissionResult
+		expected   map[string]interface{}
+		unexpected []string
+	}{
+		{
+			name:   "allow without classification",
+			result: PermissionAllow{},
+			expected: map[string]interface{}{
+				"allowed": true,
+			},
+			unexpected: []string{"decisionClassification"},
+		},
+		{
+			name: "allow with classification",
+			result: PermissionAllow{
+				Classification: PermissionClassificationUserPermanent,
+			},
+			expected: map[string]interface{}{
+				"allowed":                true,
+				"decisionClassification": "user_permanent",
+			},
+		},
+		{
+			name:   "deny without classification",
+			result: PermissionDeny{Reason: "no"},
+			expected: map[string]interface{}{
+				"allowed": false,
+				"reason":  "no",
+			},
+			unexpected: []string{"decisionClassification"},
+		},
+		{
+			name: "deny with classification",
+			result: PermissionDeny{
+				Reason:         "no",
+				Classification: PermissionClassificationUserReject,
+			},
+			expected: map[string]interface{}{
+				"allowed":                false,
+				"reason":                 "no",
+				"decisionClassification": "user_reject",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := NewOptions()
+			opts.CanUseTool = func(ctx context.Context, req ToolPermissionRequest) PermissionResult {
+				return tt.result
+			}
+			protocol := NewProtocol(nil, opts)
+
+			resp := protocol.handlePermissionRequest(context.Background(), ControlRequest{
+				Type:      "control",
+				Subtype:   "can_use_tool",
+				RequestID: "req_1",
+				Payload: map[string]interface{}{
+					"tool_name":   "fetch_quote",
+					"tool_use_id": "tool_1",
+					"input":       map[string]interface{}{},
+				},
+			})
+
+			require.Equal(t, "success", resp.Response.Subtype)
+			respData := resp.Response.Response
+			for key, want := range tt.expected {
+				assert.Equal(t, want, respData[key])
+			}
+			for _, key := range tt.unexpected {
+				assert.NotContains(t, respData, key)
+			}
+		})
+	}
+}
+
+func TestProtocolHandleSDKPermissionRequestClassification(t *testing.T) {
+	tests := []struct {
+		name       string
+		result     PermissionResult
+		expected   map[string]interface{}
+		unexpected []string
+	}{
+		{
+			name:   "allow without classification",
+			result: PermissionAllow{},
+			expected: map[string]interface{}{
+				"behavior":  "allow",
+				"toolUseID": "tool_1",
+			},
+			unexpected: []string{"decisionClassification"},
+		},
+		{
+			name: "allow with classification",
+			result: PermissionAllow{
+				Classification: PermissionClassificationUserPermanent,
+			},
+			expected: map[string]interface{}{
+				"behavior":               "allow",
+				"decisionClassification": "user_permanent",
+				"toolUseID":              "tool_1",
+			},
+		},
+		{
+			name:   "deny without classification",
+			result: PermissionDeny{Reason: "no"},
+			expected: map[string]interface{}{
+				"behavior":  "deny",
+				"message":   "no",
+				"toolUseID": "tool_1",
+			},
+			unexpected: []string{"decisionClassification"},
+		},
+		{
+			name: "deny with classification",
+			result: PermissionDeny{
+				Reason:         "no",
+				Classification: PermissionClassificationUserReject,
+			},
+			expected: map[string]interface{}{
+				"behavior":               "deny",
+				"message":                "no",
+				"decisionClassification": "user_reject",
+				"toolUseID":              "tool_1",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := NewOptions()
+			opts.CanUseTool = func(ctx context.Context, req ToolPermissionRequest) PermissionResult {
+				return tt.result
+			}
+			protocol := NewProtocol(nil, opts)
+
+			resp := protocol.handleSDKPermissionRequest(context.Background(), SDKControlRequest{
+				Type:      "control_request",
+				RequestID: "req_1",
+				Request: SDKControlRequestBody{
+					Subtype:   "can_use_tool",
+					ToolName:  "fetch_quote",
+					ToolUseID: "tool_1",
+					Input:     map[string]interface{}{},
+				},
+			})
+
+			require.Equal(t, "success", resp.Response.Subtype)
+			respData := resp.Response.Response
+			for key, want := range tt.expected {
+				assert.Equal(t, want, respData[key])
+			}
+			for _, key := range tt.unexpected {
+				assert.NotContains(t, respData, key)
+			}
+		})
+	}
+}
+
 func TestProtocolHandleElicitationRequest(t *testing.T) {
 	basePayload := map[string]interface{}{
 		"mcp_server_name":  "auth-server",
