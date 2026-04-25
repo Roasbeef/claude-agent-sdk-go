@@ -745,6 +745,21 @@ const (
 	// HookTypePermissionRequest fires when permission check requested.
 	HookTypePermissionRequest HookType = "PermissionRequest"
 
+	// HookTypePermissionDenied fires when permission is denied.
+	HookTypePermissionDenied HookType = "PermissionDenied"
+
+	// HookTypeCwdChanged fires when the current working directory changes.
+	HookTypeCwdChanged HookType = "CwdChanged"
+
+	// HookTypeFileChanged fires when a watched file changes.
+	HookTypeFileChanged HookType = "FileChanged"
+
+	// HookTypeElicitation fires when an MCP server requests elicitation.
+	HookTypeElicitation HookType = "Elicitation"
+
+	// HookTypeElicitationResult fires when an elicitation response is available.
+	HookTypeElicitationResult HookType = "ElicitationResult"
+
 	// HookTypeSetup fires during setup.
 	HookTypeSetup HookType = "Setup"
 
@@ -1025,6 +1040,80 @@ func (PermissionRequestInput) HookType() HookType { return HookTypePermissionReq
 
 // Base implements HookInput.
 func (i PermissionRequestInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// PermissionDeniedInput contains data for PermissionDenied hooks.
+type PermissionDeniedInput struct {
+	BaseHookInput
+	ToolName  string          `json:"tool_name"`
+	ToolInput json.RawMessage `json:"tool_input"`
+	ToolUseID string          `json:"tool_use_id"`
+	Reason    string          `json:"reason"`
+}
+
+// HookType implements HookInput.
+func (PermissionDeniedInput) HookType() HookType { return HookTypePermissionDenied }
+
+// Base implements HookInput.
+func (i PermissionDeniedInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// CwdChangedInput contains data for CwdChanged hooks.
+type CwdChangedInput struct {
+	BaseHookInput
+	OldCwd string `json:"old_cwd"`
+	NewCwd string `json:"new_cwd"`
+}
+
+// HookType implements HookInput.
+func (CwdChangedInput) HookType() HookType { return HookTypeCwdChanged }
+
+// Base implements HookInput.
+func (i CwdChangedInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// FileChangedInput contains data for FileChanged hooks.
+type FileChangedInput struct {
+	BaseHookInput
+	FilePath string `json:"file_path"`
+	Event    string `json:"event"`
+}
+
+// HookType implements HookInput.
+func (FileChangedInput) HookType() HookType { return HookTypeFileChanged }
+
+// Base implements HookInput.
+func (i FileChangedInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// ElicitationInput contains data for Elicitation hooks.
+type ElicitationInput struct {
+	BaseHookInput
+	MCPServerName   string                 `json:"mcp_server_name"`
+	Message         string                 `json:"message"`
+	Mode            string                 `json:"mode,omitempty"`
+	URL             string                 `json:"url,omitempty"`
+	ElicitationID   string                 `json:"elicitation_id,omitempty"`
+	RequestedSchema map[string]interface{} `json:"requested_schema,omitempty"`
+}
+
+// HookType implements HookInput.
+func (ElicitationInput) HookType() HookType { return HookTypeElicitation }
+
+// Base implements HookInput.
+func (i ElicitationInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// ElicitationResultInput contains data for ElicitationResult hooks.
+type ElicitationResultInput struct {
+	BaseHookInput
+	MCPServerName string                 `json:"mcp_server_name"`
+	ElicitationID string                 `json:"elicitation_id,omitempty"`
+	Mode          string                 `json:"mode,omitempty"`
+	Action        string                 `json:"action"`
+	Content       map[string]interface{} `json:"content,omitempty"`
+}
+
+// HookType implements HookInput.
+func (ElicitationResultInput) HookType() HookType { return HookTypeElicitationResult }
+
+// Base implements HookInput.
+func (i ElicitationResultInput) Base() BaseHookInput { return i.BaseHookInput }
 
 // SetupInput contains data for Setup hooks.
 type SetupInput struct {
