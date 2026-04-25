@@ -9,6 +9,57 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSDKControlRequestBodyInitializeOptions(t *testing.T) {
+	trueVal := true
+	falseVal := false
+
+	body := SDKControlRequestBody{
+		Subtype:                "initialize",
+		PlanModeInstructions:   "plan first",
+		ExcludeDynamicSections: &trueVal,
+		Title:                  "custom title",
+		Skills:                 []string{"go", "review"},
+		PromptSuggestions:      &falseVal,
+		AgentProgressSummaries: &trueVal,
+		ForwardSubagentText:    &falseVal,
+	}
+
+	data, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.Equal(t, "initialize", got["subtype"])
+	assert.Equal(t, "plan first", got["planModeInstructions"])
+	assert.Equal(t, true, got["excludeDynamicSections"])
+	assert.Equal(t, "custom title", got["title"])
+	assert.Equal(t, []interface{}{"go", "review"}, got["skills"])
+	assert.Equal(t, false, got["promptSuggestions"])
+	assert.Equal(t, true, got["agentProgressSummaries"])
+	assert.Equal(t, false, got["forwardSubagentText"])
+}
+
+func TestSDKControlRequestBodyInitializeOptionsOmitUnset(t *testing.T) {
+	data, err := json.Marshal(SDKControlRequestBody{Subtype: "initialize"})
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	for _, key := range []string{
+		"planModeInstructions",
+		"excludeDynamicSections",
+		"title",
+		"skills",
+		"promptSuggestions",
+		"agentProgressSummaries",
+		"forwardSubagentText",
+	} {
+		assert.NotContains(t, got, key)
+	}
+}
+
 // TestParseMessageUserMessage tests parsing user messages.
 func TestParseMessageUserMessage(t *testing.T) {
 	input := `{
