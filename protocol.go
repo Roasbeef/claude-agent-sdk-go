@@ -84,16 +84,29 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 		}
 	}
 
+	var excludeDynamicSections *bool
+	if p.options.ExcludeDynamicSystemPromptSections {
+		trueVal := true
+		excludeDynamicSections = &trueVal
+	}
+
 	// Build initialization request in TypeScript SDK format.
 	requestID := p.nextRequestID()
 	req := SDKControlRequest{
 		Type:      "control_request",
 		RequestID: requestID,
 		Request: SDKControlRequestBody{
-			Subtype:       "initialize",
-			Hooks:         hooks,
-			SDKMCPServers: sdkMcpServers,
-			SystemPrompt:  p.options.SystemPrompt,
+			Subtype:                "initialize",
+			Hooks:                  hooks,
+			SDKMCPServers:          sdkMcpServers,
+			SystemPrompt:           p.options.SystemPrompt,
+			PlanModeInstructions:   p.options.PlanModeInstructions,
+			ExcludeDynamicSections: excludeDynamicSections,
+			Title:                  p.options.Title,
+			Skills:                 p.options.Skills,
+			PromptSuggestions:      p.options.PromptSuggestions,
+			AgentProgressSummaries: p.options.AgentProgressSummaries,
+			ForwardSubagentText:    p.options.ForwardSubagentText,
 		},
 	}
 

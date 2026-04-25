@@ -65,6 +65,24 @@ type Options struct {
 	// Agents defines specialized subagents for task delegation.
 	Agents map[string]AgentDefinition
 
+	// PlanModeInstructions customizes the plan-mode workflow body.
+	PlanModeInstructions string
+
+	// Title sets a custom session title.
+	Title string
+
+	// Skills limits main-session skills to the named allowlist.
+	Skills []string
+
+	// PromptSuggestions enables next-prompt suggestion events.
+	PromptSuggestions *bool
+
+	// AgentProgressSummaries enables agent progress summary events.
+	AgentProgressSummaries *bool
+
+	// ForwardSubagentText surfaces subagent text in the main stream.
+	ForwardSubagentText *bool
+
 	// SessionOptions configure session behavior (create/resume/fork).
 	SessionOptions SessionOptions
 
@@ -380,6 +398,48 @@ func WithModel(model string) Option {
 func WithMainAgent(name string) Option {
 	return func(o *Options) {
 		o.MainAgent = name
+	}
+}
+
+// WithPlanModeInstructions customizes the plan-mode workflow body.
+func WithPlanModeInstructions(instructions string) Option {
+	return func(o *Options) {
+		o.PlanModeInstructions = instructions
+	}
+}
+
+// WithTitle sets a custom session title.
+func WithTitle(title string) Option {
+	return func(o *Options) {
+		o.Title = title
+	}
+}
+
+// WithSkillsAllowlist limits main-session skills to the named allowlist.
+func WithSkillsAllowlist(skills []string) Option {
+	return func(o *Options) {
+		o.Skills = skills
+	}
+}
+
+// WithPromptSuggestions enables or disables next-prompt suggestion events.
+func WithPromptSuggestions(enable bool) Option {
+	return func(o *Options) {
+		o.PromptSuggestions = &enable
+	}
+}
+
+// WithAgentProgressSummaries enables or disables agent progress summary events.
+func WithAgentProgressSummaries(enable bool) Option {
+	return func(o *Options) {
+		o.AgentProgressSummaries = &enable
+	}
+}
+
+// WithForwardSubagentText enables or disables forwarding subagent text.
+func WithForwardSubagentText(enable bool) Option {
+	return func(o *Options) {
+		o.ForwardSubagentText = &enable
 	}
 }
 

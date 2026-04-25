@@ -222,24 +222,31 @@ type SDKControlRequest struct {
 // SDKControlRequestBody contains the actual request data.
 // Note: This is a union type - different fields are used for different subtypes.
 type SDKControlRequestBody struct {
-	Subtype            string                              `json:"subtype"`                       // Request subtype
-	Hooks              map[string][]SDKHookCallbackMatcher `json:"hooks,omitempty"`               // For initialize
-	SDKMCPServers      []string                            `json:"sdkMcpServers,omitempty"`       // For initialize
-	JSONSchema         map[string]interface{}              `json:"jsonSchema,omitempty"`          // For initialize
-	SystemPrompt       string                              `json:"systemPrompt,omitempty"`        // For initialize
-	AppendSystemPrompt string                              `json:"appendSystemPrompt,omitempty"`  // For initialize
-	Agents             map[string]interface{}              `json:"agents,omitempty"`              // For initialize
-	ToolName           string                              `json:"tool_name,omitempty"`           // For can_use_tool/hook_callback
-	Input              map[string]interface{}              `json:"input,omitempty"`               // For can_use_tool/hook_callback
-	ToolUseID          string                              `json:"tool_use_id,omitempty"`         // For can_use_tool/hooks
-	AgentID            string                              `json:"agent_id,omitempty"`            // For can_use_tool
-	CallbackID         string                              `json:"callback_id,omitempty"`         // For hook_callback
-	Mode               string                              `json:"mode,omitempty"`                // For set_permission_mode
-	Model              string                              `json:"model,omitempty"`               // For set_model
-	MaxThinkingTokens  *int                                `json:"max_thinking_tokens,omitempty"` // For set_max_thinking_tokens
-	UserMessageID      string                              `json:"user_message_id,omitempty"`     // For rewind_files
-	ServerName         string                              `json:"server_name,omitempty"`         // For mcp_message
-	Message            map[string]interface{}              `json:"message,omitempty"`             // For mcp_message (JSONRPC)
+	Subtype                string                              `json:"subtype"`                          // Request subtype
+	Hooks                  map[string][]SDKHookCallbackMatcher `json:"hooks,omitempty"`                  // For initialize
+	SDKMCPServers          []string                            `json:"sdkMcpServers,omitempty"`          // For initialize
+	JSONSchema             map[string]interface{}              `json:"jsonSchema,omitempty"`             // For initialize
+	SystemPrompt           string                              `json:"systemPrompt,omitempty"`           // For initialize
+	AppendSystemPrompt     string                              `json:"appendSystemPrompt,omitempty"`     // For initialize
+	PlanModeInstructions   string                              `json:"planModeInstructions,omitempty"`   // For initialize
+	ExcludeDynamicSections *bool                               `json:"excludeDynamicSections,omitempty"` // For initialize
+	Agents                 map[string]interface{}              `json:"agents,omitempty"`                 // For initialize
+	Title                  string                              `json:"title,omitempty"`                  // For initialize
+	Skills                 []string                            `json:"skills,omitempty"`                 // For initialize
+	PromptSuggestions      *bool                               `json:"promptSuggestions,omitempty"`      // For initialize
+	AgentProgressSummaries *bool                               `json:"agentProgressSummaries,omitempty"` // For initialize
+	ForwardSubagentText    *bool                               `json:"forwardSubagentText,omitempty"`    // For initialize
+	ToolName               string                              `json:"tool_name,omitempty"`              // For can_use_tool/hook_callback
+	Input                  map[string]interface{}              `json:"input,omitempty"`                  // For can_use_tool/hook_callback
+	ToolUseID              string                              `json:"tool_use_id,omitempty"`            // For can_use_tool/hooks
+	AgentID                string                              `json:"agent_id,omitempty"`               // For can_use_tool
+	CallbackID             string                              `json:"callback_id,omitempty"`            // For hook_callback
+	Mode                   string                              `json:"mode,omitempty"`                   // For set_permission_mode
+	Model                  string                              `json:"model,omitempty"`                  // For set_model
+	MaxThinkingTokens      *int                                `json:"max_thinking_tokens,omitempty"`    // For set_max_thinking_tokens
+	UserMessageID          string                              `json:"user_message_id,omitempty"`        // For rewind_files
+	ServerName             string                              `json:"server_name,omitempty"`            // For mcp_message
+	Message                map[string]interface{}              `json:"message,omitempty"`                // For mcp_message (JSONRPC)
 }
 
 // SDKHookCallbackMatcher defines hook callback matching configuration.

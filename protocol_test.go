@@ -102,6 +102,117 @@ func TestProtocolInitialize(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestProtocolInitializeOptions(t *testing.T) {
+	tests := []struct {
+		name       string
+		configure  func(*Options)
+		expected   map[string]interface{}
+		unexpected []string
+	}{
+		{
+			name: "all options",
+			configure: func(opts *Options) {
+				WithPlanModeInstructions("plan deliberately")(opts)
+				WithTitle("session title")(opts)
+				WithSkillsAllowlist([]string{"go", "review"})(opts)
+				WithPromptSuggestions(false)(opts)
+				WithAgentProgressSummaries(true)(opts)
+				WithForwardSubagentText(false)(opts)
+				WithExcludeDynamicSystemPromptSections(true)(opts)
+			},
+			expected: map[string]interface{}{
+				"planModeInstructions":   "plan deliberately",
+				"title":                  "session title",
+				"skills":                 []interface{}{"go", "review"},
+				"promptSuggestions":      false,
+				"agentProgressSummaries": true,
+				"forwardSubagentText":    false,
+				"excludeDynamicSections": true,
+			},
+		},
+		{
+			name: "exclude dynamic false omitted",
+			configure: func(opts *Options) {
+				WithExcludeDynamicSystemPromptSections(false)(opts)
+			},
+			unexpected: []string{"excludeDynamicSections"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+			opts := NewOptions()
+			tt.configure(opts)
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+			protocol := NewProtocol(transport, opts)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+
+			err := transport.Connect(ctx)
+			require.NoError(t, err)
+			defer transport.Close()
+
+			initReqCh := make(chan SDKControlRequest, 1)
+			go func() {
+				decoder := json.NewDecoder(runner.StdinPipe)
+				var initReq SDKControlRequest
+				if err := decoder.Decode(&initReq); err != nil {
+					return
+				}
+				initReqCh <- initReq
+
+				resp := SDKControlResponse{
+					Type: "control_response",
+					Response: SDKControlResponseBody{
+						Subtype:   "success",
+						RequestID: initReq.RequestID,
+						Response:  map[string]interface{}{"status": "ok"},
+					},
+				}
+				data, _ := json.Marshal(resp)
+				data = append(data, '\n')
+				runner.StdoutPipe.Write(data)
+			}()
+
+			go func() {
+				for msg, err := range transport.ReadMessages(ctx) {
+					if err != nil {
+						continue
+					}
+					if ctrlResp, ok := msg.(SDKControlResponse); ok {
+						protocol.handleSDKControlResponse(ctrlResp)
+					}
+				}
+			}()
+
+			err = protocol.Initialize(ctx)
+			require.NoError(t, err)
+
+			var initReq SDKControlRequest
+			select {
+			case initReq = <-initReqCh:
+			case <-ctx.Done():
+				t.Fatal("timeout waiting for initialize request")
+			}
+
+			data, err := json.Marshal(initReq.Request)
+			require.NoError(t, err)
+			var requestBody map[string]interface{}
+			require.NoError(t, json.Unmarshal(data, &requestBody))
+
+			for key, want := range tt.expected {
+				assert.Equal(t, want, requestBody[key])
+			}
+			for _, key := range tt.unexpected {
+				assert.NotContains(t, requestBody, key)
+			}
+		})
+	}
+}
+
 // TestProtocolPermissionRequest tests permission checking.
 func TestProtocolPermissionRequest(t *testing.T) {
 	t.Run("allow", func(t *testing.T) {
