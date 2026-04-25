@@ -525,6 +525,33 @@ func TestParseMessageSystemInit(t *testing.T) {
 	assert.Equal(t, "default", systemMsg.OutputStyle)
 }
 
+func TestParseMessageCompactBoundary(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "compact_boundary",
+		"uuid": "550e8400-e29b-41d4-a716-446655440010",
+		"session_id": "sess_compact_123",
+		"compact_metadata": {
+			"trigger": "auto",
+			"pre_tokens": 198732
+		}
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	compactMsg, ok := msg.(CompactBoundaryMessage)
+	require.True(t, ok, "expected CompactBoundaryMessage")
+
+	assert.Equal(t, "system", compactMsg.MessageType())
+	assert.Equal(t, "system", compactMsg.Type)
+	assert.Equal(t, "compact_boundary", compactMsg.Subtype)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440010", compactMsg.UUID)
+	assert.Equal(t, "sess_compact_123", compactMsg.SessionID)
+	assert.Equal(t, "auto", compactMsg.CompactMetadata.Trigger)
+	assert.Equal(t, 198732, compactMsg.CompactMetadata.PreTokens)
+}
+
 func TestParseMessageHookStarted(t *testing.T) {
 	input := `{
 		"type": "system",
