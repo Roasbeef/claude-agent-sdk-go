@@ -1499,12 +1499,27 @@ type SessionOptions struct {
 
 // MCPServerConfig configures an MCP server.
 type MCPServerConfig struct {
-	Type    string            `json:"type,omitempty"`    // "stdio" or "socket"
-	Command string            `json:"command,omitempty"` // Command to start server (for stdio)
-	Args    []string          `json:"args,omitempty"`    // Command arguments
-	Env     map[string]string `json:"env,omitempty"`     // Environment variables
-	Address string            `json:"address,omitempty"` // Socket address (for socket type)
+	Type    string                `json:"type,omitempty"`    // "stdio", "sse", "http", or legacy "socket"
+	Command string                `json:"command,omitempty"` // Command to start server (for stdio)
+	Args    []string              `json:"args,omitempty"`    // Command arguments
+	Env     map[string]string     `json:"env,omitempty"`     // Environment variables
+	URL     string                `json:"url,omitempty"`     // Remote server URL (for sse/http)
+	Headers map[string]string     `json:"headers,omitempty"` // Remote server headers (for sse/http)
+	Tools   []MCPServerToolPolicy `json:"tools,omitempty"`   // Remote server tool permission policies
+	Address string                `json:"address,omitempty"` // Socket address (for socket type)
 }
+
+// MCPServerToolPolicy configures a per-tool permission policy for remote MCP servers.
+type MCPServerToolPolicy struct {
+	Name             string `json:"name"`
+	PermissionPolicy string `json:"permission_policy"`
+}
+
+const (
+	MCPToolPolicyAllowAlways = "always_allow"
+	MCPToolPolicyAskAlways   = "always_ask"
+	MCPToolPolicyDenyAlways  = "always_deny"
+)
 
 // SkillsConfig controls how Skills are loaded.
 type SkillsConfig struct {
