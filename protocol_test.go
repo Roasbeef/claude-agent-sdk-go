@@ -3,6 +3,7 @@ package claudeagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -508,6 +509,122 @@ func TestProtocolPermissionRequest(t *testing.T) {
 		case <-time.After(500 * time.Millisecond):
 			t.Fatal("Timeout waiting for response")
 		}
+	})
+}
+
+func TestProtocolHandleElicitationRequest(t *testing.T) {
+	basePayload := map[string]interface{}{
+		"mcp_server_name":  "auth-server",
+		"message":          "Enter credentials",
+		"mode":             "form",
+		"url":              "https://example.com/auth",
+		"elicitation_id":   "elicit_1",
+		"requested_schema": map[string]interface{}{"type": "object"},
+		"title":            "Sign in",
+		"display_name":     "Auth Server",
+		"description":      "Authentication required",
+	}
+
+	tests := []struct {
+		name      string
+		callback  OnElicitationFunc
+		want      map[string]interface{}
+		noContent bool
+	}{
+		{
+			name: "accept with content",
+			callback: func(ctx context.Context, req ElicitationRequest) (ElicitationResult, error) {
+				return ElicitationResult{
+					Action:  ElicitationActionAccept,
+					Content: map[string]interface{}{"name": "alice"},
+				}, nil
+			},
+			want: map[string]interface{}{
+				"action":  "accept",
+				"content": map[string]interface{}{"name": "alice"},
+			},
+		},
+		{
+			name: "decline",
+			callback: func(ctx context.Context, req ElicitationRequest) (ElicitationResult, error) {
+				return ElicitationResult{Action: ElicitationActionDecline}, nil
+			},
+			want:      map[string]interface{}{"action": "decline"},
+			noContent: true,
+		},
+		{
+			name: "cancel",
+			callback: func(ctx context.Context, req ElicitationRequest) (ElicitationResult, error) {
+				return ElicitationResult{Action: ElicitationActionCancel}, nil
+			},
+			want:      map[string]interface{}{"action": "cancel"},
+			noContent: true,
+		},
+		{
+			name: "callback error cancels",
+			callback: func(ctx context.Context, req ElicitationRequest) (ElicitationResult, error) {
+				return ElicitationResult{Action: ElicitationActionAccept}, errors.New("failed")
+			},
+			want:      map[string]interface{}{"action": "cancel"},
+			noContent: true,
+		},
+		{
+			name:      "nil callback declines",
+			want:      map[string]interface{}{"action": "decline"},
+			noContent: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			opts := NewOptions()
+			opts.OnElicitation = tt.callback
+			protocol := NewProtocol(nil, opts)
+
+			resp := protocol.handleElicitationRequest(context.Background(), ControlRequest{
+				Type:      "control",
+				Subtype:   "elicitation",
+				RequestID: "req_elicit",
+				Payload:   basePayload,
+			})
+
+			assert.Equal(t, "control_response", resp.Type)
+			assert.Equal(t, "success", resp.Response.Subtype)
+			assert.Equal(t, "req_elicit", resp.Response.RequestID)
+			assert.Equal(t, tt.want, resp.Response.Response)
+			if tt.noContent {
+				_, hasContent := resp.Response.Response["content"]
+				assert.False(t, hasContent)
+			}
+		})
+	}
+
+	t.Run("request fields propagated", func(t *testing.T) {
+		opts := NewOptions()
+		var got ElicitationRequest
+		opts.OnElicitation = func(ctx context.Context, req ElicitationRequest) (ElicitationResult, error) {
+			got = req
+			return ElicitationResult{Action: ElicitationActionDecline}, nil
+		}
+		protocol := NewProtocol(nil, opts)
+
+		resp := protocol.handleElicitationRequest(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "elicitation",
+			RequestID: "req_fields",
+			Payload:   basePayload,
+		})
+
+		assert.Equal(t, "decline", resp.Response.Response["action"])
+		assert.Equal(t, "auth-server", got.ServerName)
+		assert.Equal(t, "Enter credentials", got.Message)
+		assert.Equal(t, "form", got.Mode)
+		assert.Equal(t, "https://example.com/auth", got.URL)
+		assert.Equal(t, "elicit_1", got.ElicitationID)
+		assert.Equal(t, map[string]interface{}{"type": "object"}, got.RequestedSchema)
+		assert.Equal(t, "Sign in", got.Title)
+		assert.Equal(t, "Auth Server", got.DisplayName)
+		assert.Equal(t, "Authentication required", got.Description)
 	})
 }
 
