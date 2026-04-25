@@ -487,6 +487,194 @@ func TestParseMessageSubagentResult(t *testing.T) {
 	assert.Contains(t, subagentMsg.Result, "strong fundamentals")
 }
 
+func TestParseMessageSystemInit(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "init",
+		"uuid": "550e8400-e29b-41d4-a716-446655440000",
+		"session_id": "sess_hook_123",
+		"apiKeySource": "env",
+		"cwd": "/workspace/project",
+		"tools": ["Read", "Edit"],
+		"mcp_servers": [{"name": "github", "status": "connected"}],
+		"model": "claude-opus-4-5-20250929",
+		"permissionMode": "acceptEdits",
+		"slash_commands": ["/help"],
+		"output_style": "default"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	systemMsg, ok := msg.(SystemMessage)
+	require.True(t, ok, "expected SystemMessage")
+
+	assert.Equal(t, "system", systemMsg.MessageType())
+	assert.Equal(t, "init", systemMsg.Subtype)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440000", systemMsg.UUID)
+	assert.Equal(t, "sess_hook_123", systemMsg.SessionID)
+	assert.Equal(t, "env", systemMsg.APIKeySource)
+	assert.Equal(t, "/workspace/project", systemMsg.Cwd)
+	assert.Equal(t, []string{"Read", "Edit"}, systemMsg.Tools)
+	require.Len(t, systemMsg.MCPServers, 1)
+	assert.Equal(t, "github", systemMsg.MCPServers[0].Name)
+	assert.Equal(t, "connected", systemMsg.MCPServers[0].Status)
+	assert.Equal(t, "claude-opus-4-5-20250929", systemMsg.Model)
+	assert.Equal(t, PermissionModeAcceptEdits, systemMsg.PermissionMode)
+	assert.Equal(t, []string{"/help"}, systemMsg.SlashCommands)
+	assert.Equal(t, "default", systemMsg.OutputStyle)
+}
+
+func TestParseMessageHookStarted(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "hook_started",
+		"hook_id": "hook_01J8Z8Y2X3K4M5N6P7Q8R9S0T1",
+		"hook_name": "format-go",
+		"hook_event": "PostToolUse",
+		"uuid": "550e8400-e29b-41d4-a716-446655440001",
+		"session_id": "sess_hook_123"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	hookMsg, ok := msg.(HookStartedMessage)
+	require.True(t, ok, "expected HookStartedMessage")
+
+	assert.Equal(t, "system", hookMsg.MessageType())
+	assert.Equal(t, "system", hookMsg.Type)
+	assert.Equal(t, "hook_started", hookMsg.Subtype)
+	assert.Equal(t, "hook_01J8Z8Y2X3K4M5N6P7Q8R9S0T1", hookMsg.HookID)
+	assert.Equal(t, "format-go", hookMsg.HookName)
+	assert.Equal(t, "PostToolUse", hookMsg.HookEvent)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440001", hookMsg.UUID)
+	assert.Equal(t, "sess_hook_123", hookMsg.SessionID)
+}
+
+func TestParseMessageHookProgress(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "hook_progress",
+		"hook_id": "hook_01J8Z8Y2X3K4M5N6P7Q8R9S0T2",
+		"hook_name": "format-go",
+		"hook_event": "PostToolUse",
+		"stdout": "gofmt messages.go\n",
+		"stderr": "",
+		"output": "gofmt messages.go\n",
+		"uuid": "550e8400-e29b-41d4-a716-446655440002",
+		"session_id": "sess_hook_123"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	hookMsg, ok := msg.(HookProgressMessage)
+	require.True(t, ok, "expected HookProgressMessage")
+
+	assert.Equal(t, "system", hookMsg.MessageType())
+	assert.Equal(t, "system", hookMsg.Type)
+	assert.Equal(t, "hook_progress", hookMsg.Subtype)
+	assert.Equal(t, "hook_01J8Z8Y2X3K4M5N6P7Q8R9S0T2", hookMsg.HookID)
+	assert.Equal(t, "format-go", hookMsg.HookName)
+	assert.Equal(t, "PostToolUse", hookMsg.HookEvent)
+	assert.Equal(t, "gofmt messages.go\n", hookMsg.Stdout)
+	assert.Empty(t, hookMsg.Stderr)
+	assert.Equal(t, "gofmt messages.go\n", hookMsg.Output)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440002", hookMsg.UUID)
+	assert.Equal(t, "sess_hook_123", hookMsg.SessionID)
+}
+
+func TestParseMessageHookResponse(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		wantOutcome  HookOutcome
+		wantExitCode *int
+	}{
+		{
+			name: "success with exit code",
+			input: `{
+				"type": "system",
+				"subtype": "hook_response",
+				"hook_id": "hook_01J8Z8Y2X3K4M5N6P7Q8R9S0T3",
+				"hook_name": "format-go",
+				"hook_event": "PostToolUse",
+				"output": "formatted files\n",
+				"stdout": "formatted files\n",
+				"stderr": "",
+				"exit_code": 0,
+				"outcome": "success",
+				"uuid": "550e8400-e29b-41d4-a716-446655440003",
+				"session_id": "sess_hook_123"
+			}`,
+			wantOutcome:  HookOutcomeSuccess,
+			wantExitCode: intPtr(0),
+		},
+		{
+			name: "error without exit code",
+			input: `{
+				"type": "system",
+				"subtype": "hook_response",
+				"hook_id": "hook_01J8Z8Y2X3K4M5N6P7Q8R9S0T4",
+				"hook_name": "lint-go",
+				"hook_event": "PostToolUse",
+				"output": "lint failed\n",
+				"stdout": "",
+				"stderr": "lint failed\n",
+				"outcome": "error",
+				"uuid": "550e8400-e29b-41d4-a716-446655440004",
+				"session_id": "sess_hook_123"
+			}`,
+			wantOutcome: HookOutcomeError,
+		},
+		{
+			name: "cancelled without exit code",
+			input: `{
+				"type": "system",
+				"subtype": "hook_response",
+				"hook_id": "hook_01J8Z8Y2X3K4M5N6P7Q8R9S0T5",
+				"hook_name": "slow-check",
+				"hook_event": "PreToolUse",
+				"output": "cancelled by user\n",
+				"stdout": "",
+				"stderr": "",
+				"outcome": "cancelled",
+				"uuid": "550e8400-e29b-41d4-a716-446655440005",
+				"session_id": "sess_hook_123"
+			}`,
+			wantOutcome: HookOutcomeCancelled,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := ParseMessage([]byte(tt.input))
+			require.NoError(t, err)
+
+			hookMsg, ok := msg.(HookResponseMessage)
+			require.True(t, ok, "expected HookResponseMessage")
+
+			assert.Equal(t, "system", hookMsg.MessageType())
+			assert.Equal(t, "system", hookMsg.Type)
+			assert.Equal(t, "hook_response", hookMsg.Subtype)
+			assert.NotEmpty(t, hookMsg.HookID)
+			assert.NotEmpty(t, hookMsg.HookName)
+			assert.NotEmpty(t, hookMsg.HookEvent)
+			assert.NotEmpty(t, hookMsg.Output)
+			assert.Equal(t, tt.wantOutcome, hookMsg.Outcome)
+			if tt.wantExitCode == nil {
+				assert.Nil(t, hookMsg.ExitCode)
+			} else {
+				require.NotNil(t, hookMsg.ExitCode)
+				assert.Equal(t, *tt.wantExitCode, *hookMsg.ExitCode)
+			}
+			assert.NotEmpty(t, hookMsg.UUID)
+			assert.Equal(t, "sess_hook_123", hookMsg.SessionID)
+		})
+	}
+}
+
 // TestParseMessageControlRequest tests parsing control requests.
 func TestParseMessageControlRequest(t *testing.T) {
 	input := `{
@@ -663,6 +851,8 @@ func BenchmarkParseMessage(b *testing.B) {
 		_, _ = ParseMessage(input)
 	}
 }
+
+func intPtr(i int) *int { return &i }
 
 // BenchmarkContentText benchmarks content text extraction.
 func BenchmarkContentText(b *testing.B) {
