@@ -702,6 +702,357 @@ func TestParseMessageHookResponse(t *testing.T) {
 	}
 }
 
+func TestParseMessageTaskStarted(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		check func(t *testing.T, msg TaskStartedMessage)
+	}{
+		{
+			name: "all fields populated",
+			input: `{
+				"type": "system",
+				"subtype": "task_started",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0T6",
+				"tool_use_id": "toolu_01J8Z8Y2X3K4M5N6P7Q8R9S0T7",
+				"description": "Run repository checks",
+				"task_type": "local_workflow",
+				"workflow_name": "ci-checks",
+				"prompt": "Run the Go validation workflow",
+				"skip_transcript": false,
+				"uuid": "550e8400-e29b-41d4-a716-446655440011",
+				"session_id": "sess_task_123"
+			}`,
+			check: func(t *testing.T, taskMsg TaskStartedMessage) {
+				t.Helper()
+				assert.Equal(t, "task_01J8Z8Y2X3K4M5N6P7Q8R9S0T6", taskMsg.TaskID)
+				assert.Equal(t, "toolu_01J8Z8Y2X3K4M5N6P7Q8R9S0T7", taskMsg.ToolUseID)
+				assert.Equal(t, "Run repository checks", taskMsg.Description)
+				assert.Equal(t, "local_workflow", taskMsg.TaskType)
+				assert.Equal(t, "ci-checks", taskMsg.WorkflowName)
+				assert.Equal(t, "Run the Go validation workflow", taskMsg.Prompt)
+				require.NotNil(t, taskMsg.SkipTranscript)
+				assert.False(t, *taskMsg.SkipTranscript)
+			},
+		},
+		{
+			name: "minimum required fields",
+			input: `{
+				"type": "system",
+				"subtype": "task_started",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0T8",
+				"description": "Summarize repository status",
+				"uuid": "550e8400-e29b-41d4-a716-446655440012",
+				"session_id": "sess_task_123"
+			}`,
+			check: func(t *testing.T, taskMsg TaskStartedMessage) {
+				t.Helper()
+				assert.Equal(t, "task_01J8Z8Y2X3K4M5N6P7Q8R9S0T8", taskMsg.TaskID)
+				assert.Equal(t, "Summarize repository status", taskMsg.Description)
+				assert.Empty(t, taskMsg.ToolUseID)
+				assert.Empty(t, taskMsg.TaskType)
+				assert.Empty(t, taskMsg.WorkflowName)
+				assert.Empty(t, taskMsg.Prompt)
+				assert.Nil(t, taskMsg.SkipTranscript)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := ParseMessage([]byte(tt.input))
+			require.NoError(t, err)
+
+			taskMsg, ok := msg.(TaskStartedMessage)
+			require.True(t, ok, "expected TaskStartedMessage")
+
+			assert.Equal(t, "system", taskMsg.MessageType())
+			assert.Equal(t, "system", taskMsg.Type)
+			assert.Equal(t, "task_started", taskMsg.Subtype)
+			assert.NotEmpty(t, taskMsg.UUID)
+			assert.Equal(t, "sess_task_123", taskMsg.SessionID)
+			tt.check(t, taskMsg)
+		})
+	}
+}
+
+func TestParseMessageTaskProgress(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		check func(t *testing.T, msg TaskProgressMessage)
+	}{
+		{
+			name: "with optional progress fields",
+			input: `{
+				"type": "system",
+				"subtype": "task_progress",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0T9",
+				"tool_use_id": "toolu_01J8Z8Y2X3K4M5N6P7Q8R9S0TA",
+				"description": "Run repository checks",
+				"usage": {
+					"total_tokens": 1200,
+					"tool_uses": 3,
+					"duration_ms": 4500
+				},
+				"last_tool_name": "Bash",
+				"summary": "Tests are still running",
+				"uuid": "550e8400-e29b-41d4-a716-446655440013",
+				"session_id": "sess_task_123"
+			}`,
+			check: func(t *testing.T, taskMsg TaskProgressMessage) {
+				t.Helper()
+				assert.Equal(t, "toolu_01J8Z8Y2X3K4M5N6P7Q8R9S0TA", taskMsg.ToolUseID)
+				assert.Equal(t, "Bash", taskMsg.LastToolName)
+				assert.Equal(t, "Tests are still running", taskMsg.Summary)
+			},
+		},
+		{
+			name: "required usage only",
+			input: `{
+				"type": "system",
+				"subtype": "task_progress",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0TB",
+				"description": "Collect task output",
+				"usage": {
+					"total_tokens": 12,
+					"tool_uses": 1,
+					"duration_ms": 80
+				},
+				"uuid": "550e8400-e29b-41d4-a716-446655440014",
+				"session_id": "sess_task_123"
+			}`,
+			check: func(t *testing.T, taskMsg TaskProgressMessage) {
+				t.Helper()
+				assert.Empty(t, taskMsg.ToolUseID)
+				assert.Empty(t, taskMsg.LastToolName)
+				assert.Empty(t, taskMsg.Summary)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := ParseMessage([]byte(tt.input))
+			require.NoError(t, err)
+
+			taskMsg, ok := msg.(TaskProgressMessage)
+			require.True(t, ok, "expected TaskProgressMessage")
+
+			assert.Equal(t, "system", taskMsg.MessageType())
+			assert.Equal(t, "system", taskMsg.Type)
+			assert.Equal(t, "task_progress", taskMsg.Subtype)
+			assert.NotEmpty(t, taskMsg.TaskID)
+			assert.NotEmpty(t, taskMsg.Description)
+			assert.NotEmpty(t, taskMsg.UUID)
+			assert.Equal(t, "sess_task_123", taskMsg.SessionID)
+			assert.NotZero(t, taskMsg.Usage.TotalTokens)
+			assert.NotZero(t, taskMsg.Usage.ToolUses)
+			assert.NotZero(t, taskMsg.Usage.DurationMS)
+			tt.check(t, taskMsg)
+		})
+	}
+}
+
+func TestParseMessageTaskUpdated(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		check func(t *testing.T, msg TaskUpdatedMessage)
+	}{
+		{
+			name: "status only",
+			input: `{
+				"type": "system",
+				"subtype": "task_updated",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0TC",
+				"patch": {
+					"status": "running"
+				},
+				"uuid": "550e8400-e29b-41d4-a716-446655440015",
+				"session_id": "sess_task_123"
+			}`,
+			check: func(t *testing.T, taskMsg TaskUpdatedMessage) {
+				t.Helper()
+				assert.Equal(t, TaskRunStatusRunning, taskMsg.Patch.Status)
+				assert.Empty(t, taskMsg.Patch.Error)
+				assert.Nil(t, taskMsg.Patch.EndTime)
+				assert.Nil(t, taskMsg.Patch.TotalPausedMS)
+				assert.Nil(t, taskMsg.Patch.IsBackgrounded)
+			},
+		},
+		{
+			name: "error only",
+			input: `{
+				"type": "system",
+				"subtype": "task_updated",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0TD",
+				"patch": {
+					"error": "workflow exited with status 1"
+				},
+				"uuid": "550e8400-e29b-41d4-a716-446655440016",
+				"session_id": "sess_task_123"
+			}`,
+			check: func(t *testing.T, taskMsg TaskUpdatedMessage) {
+				t.Helper()
+				assert.Empty(t, taskMsg.Patch.Status)
+				assert.Equal(t, "workflow exited with status 1", taskMsg.Patch.Error)
+				assert.Nil(t, taskMsg.Patch.EndTime)
+				assert.Nil(t, taskMsg.Patch.TotalPausedMS)
+				assert.Nil(t, taskMsg.Patch.IsBackgrounded)
+			},
+		},
+		{
+			name: "populated patch",
+			input: `{
+				"type": "system",
+				"subtype": "task_updated",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0TE",
+				"patch": {
+					"status": "completed",
+					"description": "Repository checks completed",
+					"end_time": 1763856000123,
+					"total_paused_ms": 250,
+					"is_backgrounded": true
+				},
+				"uuid": "550e8400-e29b-41d4-a716-446655440017",
+				"session_id": "sess_task_123"
+			}`,
+			check: func(t *testing.T, taskMsg TaskUpdatedMessage) {
+				t.Helper()
+				assert.Equal(t, TaskRunStatusCompleted, taskMsg.Patch.Status)
+				assert.Equal(t, "Repository checks completed", taskMsg.Patch.Description)
+				require.NotNil(t, taskMsg.Patch.EndTime)
+				assert.Equal(t, int64(1763856000123), *taskMsg.Patch.EndTime)
+				require.NotNil(t, taskMsg.Patch.TotalPausedMS)
+				assert.Equal(t, int64(250), *taskMsg.Patch.TotalPausedMS)
+				require.NotNil(t, taskMsg.Patch.IsBackgrounded)
+				assert.True(t, *taskMsg.Patch.IsBackgrounded)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := ParseMessage([]byte(tt.input))
+			require.NoError(t, err)
+
+			taskMsg, ok := msg.(TaskUpdatedMessage)
+			require.True(t, ok, "expected TaskUpdatedMessage")
+
+			assert.Equal(t, "system", taskMsg.MessageType())
+			assert.Equal(t, "system", taskMsg.Type)
+			assert.Equal(t, "task_updated", taskMsg.Subtype)
+			assert.NotEmpty(t, taskMsg.TaskID)
+			assert.NotEmpty(t, taskMsg.UUID)
+			assert.Equal(t, "sess_task_123", taskMsg.SessionID)
+			tt.check(t, taskMsg)
+		})
+	}
+}
+
+func TestParseMessageTaskNotification(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		wantStatus TaskNotificationStatus
+		check      func(t *testing.T, msg TaskNotificationMessage)
+	}{
+		{
+			name: "completed with usage",
+			input: `{
+				"type": "system",
+				"subtype": "task_notification",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0TF",
+				"tool_use_id": "toolu_01J8Z8Y2X3K4M5N6P7Q8R9S0TG",
+				"status": "completed",
+				"output_file": "/tmp/claude-task-output.md",
+				"summary": "Checks completed successfully",
+				"usage": {
+					"total_tokens": 2400,
+					"tool_uses": 4,
+					"duration_ms": 9100
+				},
+				"skip_transcript": true,
+				"uuid": "550e8400-e29b-41d4-a716-446655440018",
+				"session_id": "sess_task_123"
+			}`,
+			wantStatus: TaskNotificationStatusCompleted,
+			check: func(t *testing.T, taskMsg TaskNotificationMessage) {
+				t.Helper()
+				assert.Equal(t, "toolu_01J8Z8Y2X3K4M5N6P7Q8R9S0TG", taskMsg.ToolUseID)
+				require.NotNil(t, taskMsg.Usage)
+				assert.Equal(t, 2400, taskMsg.Usage.TotalTokens)
+				assert.Equal(t, 4, taskMsg.Usage.ToolUses)
+				assert.Equal(t, 9100, taskMsg.Usage.DurationMS)
+				require.NotNil(t, taskMsg.SkipTranscript)
+				assert.True(t, *taskMsg.SkipTranscript)
+			},
+		},
+		{
+			name: "failed without usage",
+			input: `{
+				"type": "system",
+				"subtype": "task_notification",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0TH",
+				"status": "failed",
+				"output_file": "/tmp/claude-task-output-failed.md",
+				"summary": "Checks failed",
+				"uuid": "550e8400-e29b-41d4-a716-446655440019",
+				"session_id": "sess_task_123"
+			}`,
+			wantStatus: TaskNotificationStatusFailed,
+			check: func(t *testing.T, taskMsg TaskNotificationMessage) {
+				t.Helper()
+				assert.Empty(t, taskMsg.ToolUseID)
+				assert.Nil(t, taskMsg.Usage)
+				assert.Nil(t, taskMsg.SkipTranscript)
+			},
+		},
+		{
+			name: "stopped without usage",
+			input: `{
+				"type": "system",
+				"subtype": "task_notification",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0TI",
+				"status": "stopped",
+				"output_file": "/tmp/claude-task-output-stopped.md",
+				"summary": "Task stopped by request",
+				"uuid": "550e8400-e29b-41d4-a716-446655440020",
+				"session_id": "sess_task_123"
+			}`,
+			wantStatus: TaskNotificationStatusStopped,
+			check: func(t *testing.T, taskMsg TaskNotificationMessage) {
+				t.Helper()
+				assert.Empty(t, taskMsg.ToolUseID)
+				assert.Nil(t, taskMsg.Usage)
+				assert.Nil(t, taskMsg.SkipTranscript)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := ParseMessage([]byte(tt.input))
+			require.NoError(t, err)
+
+			taskMsg, ok := msg.(TaskNotificationMessage)
+			require.True(t, ok, "expected TaskNotificationMessage")
+
+			assert.Equal(t, "system", taskMsg.MessageType())
+			assert.Equal(t, "system", taskMsg.Type)
+			assert.Equal(t, "task_notification", taskMsg.Subtype)
+			assert.NotEmpty(t, taskMsg.TaskID)
+			assert.Equal(t, tt.wantStatus, taskMsg.Status)
+			assert.NotEmpty(t, taskMsg.OutputFile)
+			assert.NotEmpty(t, taskMsg.Summary)
+			assert.NotEmpty(t, taskMsg.UUID)
+			assert.Equal(t, "sess_task_123", taskMsg.SessionID)
+			tt.check(t, taskMsg)
+		})
+	}
+}
+
 // TestParseMessageControlRequest tests parsing control requests.
 func TestParseMessageControlRequest(t *testing.T) {
 	input := `{
