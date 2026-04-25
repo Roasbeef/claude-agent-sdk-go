@@ -629,21 +629,21 @@ func TestParseMessageHookResponse(t *testing.T) {
 			wantOutcome: HookOutcomeError,
 		},
 		{
-			name: "cancelled without exit code",
+			name: "canceled without exit code",
 			input: `{
 				"type": "system",
 				"subtype": "hook_response",
 				"hook_id": "hook_01J8Z8Y2X3K4M5N6P7Q8R9S0T5",
 				"hook_name": "slow-check",
 				"hook_event": "PreToolUse",
-				"output": "cancelled by user\n",
+				"output": "canceled by user\n",
 				"stdout": "",
 				"stderr": "",
 				"outcome": "cancelled",
 				"uuid": "550e8400-e29b-41d4-a716-446655440005",
 				"session_id": "sess_hook_123"
-			}`,
-			wantOutcome: HookOutcomeCancelled,
+			}`, //nolint:misspell // upstream wire format spelling
+			wantOutcome: HookOutcomeCanceled,
 		},
 	}
 

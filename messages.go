@@ -430,9 +430,9 @@ func (m CompactBoundaryMessage) MessageType() string { return "system" }
 type HookOutcome string
 
 const (
-	HookOutcomeSuccess   HookOutcome = "success"
-	HookOutcomeError     HookOutcome = "error"
-	HookOutcomeCancelled HookOutcome = "cancelled"
+	HookOutcomeSuccess  HookOutcome = "success"
+	HookOutcomeError    HookOutcome = "error"
+	HookOutcomeCanceled HookOutcome = "cancelled" //nolint:misspell // upstream wire format spelling
 )
 
 // HookStartedMessage reports that a hook has started executing.
