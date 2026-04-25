@@ -303,9 +303,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			Status:               getString(inputData, "status"),
 			Result:               getString(inputData, "result"),
 			StopHookActive:       getBool(inputData, "stop_hook_active"),
-			AgentID:              getString(inputData, "agent_id"),
 			AgentTranscriptPath:  getString(inputData, "agent_transcript_path"),
-			AgentType:            getString(inputData, "agent_type"),
 			LastAssistantMessage: getString(inputData, "last_assistant_message"),
 		}
 	case HookTypePreCompact:
@@ -668,9 +666,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			Status:               getString(hookInput, "status"),
 			Result:               getString(hookInput, "result"),
 			StopHookActive:       getBool(hookInput, "stop_hook_active"),
-			AgentID:              getString(hookInput, "agent_id"),
 			AgentTranscriptPath:  getString(hookInput, "agent_transcript_path"),
-			AgentType:            getString(hookInput, "agent_type"),
 			LastAssistantMessage: getString(hookInput, "last_assistant_message"),
 		}
 	case "PreCompact":

@@ -815,15 +815,16 @@ func (StopInput) HookType() HookType { return HookTypeStop }
 func (i StopInput) Base() BaseHookInput { return i.BaseHookInput }
 
 // SubagentStopInput contains data for SubagentStop hooks.
+//
+// AgentID and AgentType live on the embedded BaseHookInput (TS treats them as
+// base hook fields) — read them via i.Base() or i.BaseHookInput.AgentID.
 type SubagentStopInput struct {
 	BaseHookInput
 	AgentName            string `json:"agent_name"`
 	Status               string `json:"status"`
 	Result               string `json:"result"`
 	StopHookActive       bool   `json:"stop_hook_active"`
-	AgentID              string `json:"agent_id,omitempty"`
 	AgentTranscriptPath  string `json:"agent_transcript_path,omitempty"`
-	AgentType            string `json:"agent_type,omitempty"`
 	LastAssistantMessage string `json:"last_assistant_message,omitempty"`
 }
 
