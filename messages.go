@@ -304,12 +304,99 @@ type ToolProgressMessage struct {
 	ToolName           string  `json:"tool_name"`            // Tool name
 	ParentToolUseID    *string `json:"parent_tool_use_id"`   // Parent tool if nested
 	ElapsedTimeSeconds float64 `json:"elapsed_time_seconds"` // Time elapsed
+	TaskID             *string `json:"task_id,omitempty"`    // Task ID if associated with a task
 	UUID               string  `json:"uuid"`                 // Message UUID
 	SessionID          string  `json:"session_id"`           // Session ID
 }
 
 // MessageType implements Message.
 func (m ToolProgressMessage) MessageType() string { return "tool_progress" }
+
+// ToolUseSummaryMessage reports a summary of preceding tool uses.
+type ToolUseSummaryMessage struct {
+	Type                string   `json:"type"`                   // Always "tool_use_summary"
+	Summary             string   `json:"summary"`                // Summary text
+	PrecedingToolUseIDs []string `json:"preceding_tool_use_ids"` // Tool use IDs summarized
+	UUID                string   `json:"uuid"`                   // Message UUID
+	SessionID           string   `json:"session_id"`             // Session ID
+}
+
+// MessageType implements Message.
+func (m ToolUseSummaryMessage) MessageType() string { return "tool_use_summary" }
+
+// PromptSuggestionMessage contains a predicted next user prompt.
+type PromptSuggestionMessage struct {
+	Type       string `json:"type"`       // Always "prompt_suggestion"
+	Suggestion string `json:"suggestion"` // Suggested prompt text
+	UUID       string `json:"uuid"`       // Message UUID
+	SessionID  string `json:"session_id"` // Session ID
+}
+
+// MessageType implements Message.
+func (m PromptSuggestionMessage) MessageType() string { return "prompt_suggestion" }
+
+// RateLimitEventMessage reports rate limit information changes.
+type RateLimitEventMessage struct {
+	Type          string        `json:"type"`            // Always "rate_limit_event"
+	RateLimitInfo RateLimitInfo `json:"rate_limit_info"` // Rate limit details
+	UUID          string        `json:"uuid"`            // Message UUID
+	SessionID     string        `json:"session_id"`      // Session ID
+}
+
+// MessageType implements Message.
+func (m RateLimitEventMessage) MessageType() string { return "rate_limit_event" }
+
+// RateLimitStatus is the status of a rate limit check.
+type RateLimitStatus string
+
+const (
+	RateLimitStatusAllowed        RateLimitStatus = "allowed"
+	RateLimitStatusAllowedWarning RateLimitStatus = "allowed_warning"
+	RateLimitStatusRejected       RateLimitStatus = "rejected"
+)
+
+// RateLimitType identifies the quota window or overage bucket.
+type RateLimitType string
+
+const (
+	RateLimitTypeFiveHour       RateLimitType = "five_hour"
+	RateLimitTypeSevenDay       RateLimitType = "seven_day"
+	RateLimitTypeSevenDayOpus   RateLimitType = "seven_day_opus"
+	RateLimitTypeSevenDaySonnet RateLimitType = "seven_day_sonnet"
+	RateLimitTypeOverage        RateLimitType = "overage"
+)
+
+// RateLimitOverageDisabledReason explains why overage is unavailable.
+type RateLimitOverageDisabledReason string
+
+const (
+	RateLimitOverageDisabledReasonOverageNotProvisioned   RateLimitOverageDisabledReason = "overage_not_provisioned"
+	RateLimitOverageDisabledReasonOrgLevelDisabled        RateLimitOverageDisabledReason = "org_level_disabled"
+	RateLimitOverageDisabledReasonOrgLevelDisabledUntil   RateLimitOverageDisabledReason = "org_level_disabled_until"
+	RateLimitOverageDisabledReasonOutOfCredits            RateLimitOverageDisabledReason = "out_of_credits"
+	RateLimitOverageDisabledReasonSeatTierLevelDisabled   RateLimitOverageDisabledReason = "seat_tier_level_disabled"
+	RateLimitOverageDisabledReasonMemberLevelDisabled     RateLimitOverageDisabledReason = "member_level_disabled"
+	RateLimitOverageDisabledReasonSeatTierZeroCreditLimit RateLimitOverageDisabledReason = "seat_tier_zero_credit_limit"
+	RateLimitOverageDisabledReasonGroupZeroCreditLimit    RateLimitOverageDisabledReason = "group_zero_credit_limit"
+	RateLimitOverageDisabledReasonMemberZeroCreditLimit   RateLimitOverageDisabledReason = "member_zero_credit_limit"
+	RateLimitOverageDisabledReasonOrgServiceLevelDisabled RateLimitOverageDisabledReason = "org_service_level_disabled"
+	RateLimitOverageDisabledReasonNoLimitsConfigured      RateLimitOverageDisabledReason = "no_limits_configured"
+	RateLimitOverageDisabledReasonFetchError              RateLimitOverageDisabledReason = "fetch_error"
+	RateLimitOverageDisabledReasonUnknown                 RateLimitOverageDisabledReason = "unknown"
+)
+
+// RateLimitInfo contains rate limit details for claude.ai subscription users.
+type RateLimitInfo struct {
+	Status                RateLimitStatus                 `json:"status"`
+	ResetsAt              *int64                          `json:"resetsAt,omitempty"`
+	RateLimitType         *RateLimitType                  `json:"rateLimitType,omitempty"`
+	Utilization           *float64                        `json:"utilization,omitempty"`
+	OverageStatus         *RateLimitStatus                `json:"overageStatus,omitempty"`
+	OverageResetsAt       *int64                          `json:"overageResetsAt,omitempty"`
+	OverageDisabledReason *RateLimitOverageDisabledReason `json:"overageDisabledReason,omitempty"`
+	IsUsingOverage        *bool                           `json:"isUsingOverage,omitempty"`
+	SurpassedThreshold    *float64                        `json:"surpassedThreshold,omitempty"`
+}
 
 // AuthStatusMessage reports authentication status.
 type AuthStatusMessage struct {
@@ -1024,6 +1111,21 @@ func ParseMessage(data []byte) (Message, error) {
 
 	case "tool_progress":
 		var msg ToolProgressMessage
+		err := json.Unmarshal(data, &msg)
+		return msg, err
+
+	case "tool_use_summary":
+		var msg ToolUseSummaryMessage
+		err := json.Unmarshal(data, &msg)
+		return msg, err
+
+	case "prompt_suggestion":
+		var msg PromptSuggestionMessage
+		err := json.Unmarshal(data, &msg)
+		return msg, err
+
+	case "rate_limit_event":
+		var msg RateLimitEventMessage
 		err := json.Unmarshal(data, &msg)
 		return msg, err
 
