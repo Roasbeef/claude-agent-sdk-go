@@ -50,6 +50,11 @@ linters:
 
     misspell:
       locale: US
+      # Upstream Claude Code wire protocol uses British spelling for
+      # certain enum values (e.g. hook outcome "cancelled"); the Go SDK
+      # mirrors them verbatim to round-trip.
+      ignore-rules:
+        - cancelled
 
   exclusions:
     rules:
