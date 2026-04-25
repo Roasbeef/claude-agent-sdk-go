@@ -265,6 +265,8 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 		TranscriptPath: getString(inputData, "transcript_path"),
 		Cwd:            getString(inputData, "cwd"),
 		PermissionMode: getString(inputData, "permission_mode"),
+		AgentID:        getString(inputData, "agent_id"),
+		AgentType:      getString(inputData, "agent_type"),
 	}
 
 	// Build hook input based on type.
@@ -290,14 +292,21 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 		}
 	case HookTypeStop:
 		input = StopInput{
-			BaseHookInput: base,
+			BaseHookInput:        base,
+			StopHookActive:       getBool(inputData, "stop_hook_active"),
+			LastAssistantMessage: getString(inputData, "last_assistant_message"),
 		}
 	case HookTypeSubagentStop:
 		input = SubagentStopInput{
-			BaseHookInput: base,
-			AgentName:     getString(inputData, "agent_name"),
-			Status:        getString(inputData, "status"),
-			Result:        getString(inputData, "result"),
+			BaseHookInput:        base,
+			AgentName:            getString(inputData, "agent_name"),
+			Status:               getString(inputData, "status"),
+			Result:               getString(inputData, "result"),
+			StopHookActive:       getBool(inputData, "stop_hook_active"),
+			AgentID:              getString(inputData, "agent_id"),
+			AgentTranscriptPath:  getString(inputData, "agent_transcript_path"),
+			AgentType:            getString(inputData, "agent_type"),
+			LastAssistantMessage: getString(inputData, "last_assistant_message"),
 		}
 	case HookTypePreCompact:
 		input = PreCompactInput{
@@ -619,6 +628,8 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 		TranscriptPath: getString(hookInput, "transcript_path"),
 		Cwd:            getString(hookInput, "cwd"),
 		PermissionMode: getString(hookInput, "permission_mode"),
+		AgentID:        getString(hookInput, "agent_id"),
+		AgentType:      getString(hookInput, "agent_type"),
 	}
 
 	// Build hook input based on hook_event_name.
@@ -646,14 +657,21 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 		}
 	case "Stop":
 		input = StopInput{
-			BaseHookInput: base,
+			BaseHookInput:        base,
+			StopHookActive:       getBool(hookInput, "stop_hook_active"),
+			LastAssistantMessage: getString(hookInput, "last_assistant_message"),
 		}
 	case "SubagentStop":
 		input = SubagentStopInput{
-			BaseHookInput: base,
-			AgentName:     getString(hookInput, "agent_name"),
-			Status:        getString(hookInput, "status"),
-			Result:        getString(hookInput, "result"),
+			BaseHookInput:        base,
+			AgentName:            getString(hookInput, "agent_name"),
+			Status:               getString(hookInput, "status"),
+			Result:               getString(hookInput, "result"),
+			StopHookActive:       getBool(hookInput, "stop_hook_active"),
+			AgentID:              getString(hookInput, "agent_id"),
+			AgentTranscriptPath:  getString(hookInput, "agent_transcript_path"),
+			AgentType:            getString(hookInput, "agent_type"),
+			LastAssistantMessage: getString(hookInput, "last_assistant_message"),
 		}
 	case "PreCompact":
 		input = PreCompactInput{

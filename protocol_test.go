@@ -1242,6 +1242,159 @@ func TestHandleSDKHookCallback_PreToolUseModify(t *testing.T) {
 	}
 }
 
+func TestHandleHookCallback_BaseAgentFields(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+
+	protocol.hookCallbacks["hook_base_agent"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+		preToolInput, ok := input.(PreToolUseInput)
+		require.True(t, ok)
+		assert.Equal(t, "agent_123", preToolInput.Base().AgentID)
+		assert.Equal(t, "reviewer", preToolInput.Base().AgentType)
+		return HookResult{Continue: true}, nil
+	}
+
+	resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+		Type:      "control",
+		Subtype:   "hook_callback",
+		RequestID: "req_base_agent",
+		Payload: map[string]interface{}{
+			"callback_id": "hook_base_agent",
+			"input": map[string]interface{}{
+				"hook_event": "PreToolUse",
+				"tool_name":  "Read",
+				"tool_input": map[string]interface{}{
+					"file_path": "README.md",
+				},
+				"agent_id":   "agent_123",
+				"agent_type": "reviewer",
+			},
+		},
+	})
+
+	assert.Equal(t, "success", resp.Response.Subtype)
+	assert.Equal(t, "req_base_agent", resp.Response.RequestID)
+}
+
+func TestHandleHookCallback_StopInputFields(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+
+	protocol.hookCallbacks["hook_stop"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+		stopInput, ok := input.(StopInput)
+		require.True(t, ok)
+		assert.True(t, stopInput.StopHookActive)
+		assert.Equal(t, "final answer", stopInput.LastAssistantMessage)
+		assert.Equal(t, "agent_stop", stopInput.Base().AgentID)
+		assert.Equal(t, "planner", stopInput.Base().AgentType)
+		return HookResult{Continue: true}, nil
+	}
+
+	resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+		Type:      "control",
+		Subtype:   "hook_callback",
+		RequestID: "req_stop",
+		Payload: map[string]interface{}{
+			"callback_id": "hook_stop",
+			"input": map[string]interface{}{
+				"hook_event":             "Stop",
+				"stop_hook_active":       true,
+				"last_assistant_message": "final answer",
+				"agent_id":               "agent_stop",
+				"agent_type":             "planner",
+			},
+		},
+	})
+
+	assert.Equal(t, "success", resp.Response.Subtype)
+	assert.Equal(t, "req_stop", resp.Response.RequestID)
+}
+
+func TestHandleSDKHookCallback_SubagentStopInputFields(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+
+	protocol.hookCallbacks["sdk_subagent_stop"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+		subagentStopInput, ok := input.(SubagentStopInput)
+		require.True(t, ok)
+		assert.True(t, subagentStopInput.StopHookActive)
+		assert.Equal(t, "agent_sdk", subagentStopInput.AgentID)
+		assert.Equal(t, "/tmp/agent-transcript.jsonl", subagentStopInput.AgentTranscriptPath)
+		assert.Equal(t, "builder", subagentStopInput.AgentType)
+		assert.Equal(t, "subagent answer", subagentStopInput.LastAssistantMessage)
+		assert.Equal(t, "legacy-name", subagentStopInput.AgentName)
+		assert.Equal(t, "done", subagentStopInput.Status)
+		assert.Equal(t, "legacy result", subagentStopInput.Result)
+		assert.Equal(t, "agent_sdk", subagentStopInput.Base().AgentID)
+		assert.Equal(t, "builder", subagentStopInput.Base().AgentType)
+		return HookResult{Continue: true}, nil
+	}
+
+	resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+		Type:      "control_request",
+		RequestID: "sdk_subagent_stop",
+		Request: SDKControlRequestBody{
+			Subtype:    "hook_callback",
+			CallbackID: "sdk_subagent_stop",
+			Input: map[string]interface{}{
+				"hook_event_name":        "SubagentStop",
+				"stop_hook_active":       true,
+				"agent_id":               "agent_sdk",
+				"agent_transcript_path":  "/tmp/agent-transcript.jsonl",
+				"agent_type":             "builder",
+				"last_assistant_message": "subagent answer",
+				"agent_name":             "legacy-name",
+				"status":                 "done",
+				"result":                 "legacy result",
+			},
+		},
+	})
+
+	assert.Equal(t, "success", resp.Response.Subtype)
+	assert.Equal(t, "sdk_subagent_stop", resp.Response.RequestID)
+}
+
+func TestHandleSDKHookCallback_MissingHookAuditFields(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+
+	protocol.hookCallbacks["sdk_subagent_stop_legacy"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+		subagentStopInput, ok := input.(SubagentStopInput)
+		require.True(t, ok)
+		assert.False(t, subagentStopInput.StopHookActive)
+		assert.Empty(t, subagentStopInput.AgentID)
+		assert.Empty(t, subagentStopInput.AgentTranscriptPath)
+		assert.Empty(t, subagentStopInput.AgentType)
+		assert.Empty(t, subagentStopInput.LastAssistantMessage)
+		assert.Equal(t, "legacy-name", subagentStopInput.AgentName)
+		assert.Equal(t, "done", subagentStopInput.Status)
+		assert.Equal(t, "legacy result", subagentStopInput.Result)
+		return HookResult{Continue: true}, nil
+	}
+
+	resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+		Type:      "control_request",
+		RequestID: "sdk_subagent_stop_legacy",
+		Request: SDKControlRequestBody{
+			Subtype:    "hook_callback",
+			CallbackID: "sdk_subagent_stop_legacy",
+			Input: map[string]interface{}{
+				"hook_event_name": "SubagentStop",
+				"agent_name":      "legacy-name",
+				"status":          "done",
+				"result":          "legacy result",
+			},
+		},
+	})
+
+	assert.Equal(t, "success", resp.Response.Subtype)
+	assert.Equal(t, "sdk_subagent_stop_legacy", resp.Response.RequestID)
+}
+
 // TestHandleSDKHookCallback_PermissionRequestModify verifies the SDK
 // format path for PermissionRequest hooks with Modify, which uses a
 // nested decision.updatedInput structure.

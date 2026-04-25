@@ -758,6 +758,8 @@ type BaseHookInput struct {
 	TranscriptPath string `json:"transcript_path"`
 	Cwd            string `json:"cwd"`
 	PermissionMode string `json:"permission_mode,omitempty"`
+	AgentID        string `json:"agent_id,omitempty"`
+	AgentType      string `json:"agent_type,omitempty"`
 }
 
 // PreToolUseInput contains data for PreToolUse hooks.
@@ -802,6 +804,8 @@ func (i UserPromptSubmitInput) Base() BaseHookInput { return i.BaseHookInput }
 // StopInput contains data for Stop hooks.
 type StopInput struct {
 	BaseHookInput
+	StopHookActive       bool   `json:"stop_hook_active"`
+	LastAssistantMessage string `json:"last_assistant_message,omitempty"`
 }
 
 // HookType implements HookInput.
@@ -813,9 +817,14 @@ func (i StopInput) Base() BaseHookInput { return i.BaseHookInput }
 // SubagentStopInput contains data for SubagentStop hooks.
 type SubagentStopInput struct {
 	BaseHookInput
-	AgentName string `json:"agent_name"`
-	Status    string `json:"status"`
-	Result    string `json:"result"`
+	AgentName            string `json:"agent_name"`
+	Status               string `json:"status"`
+	Result               string `json:"result"`
+	StopHookActive       bool   `json:"stop_hook_active"`
+	AgentID              string `json:"agent_id,omitempty"`
+	AgentTranscriptPath  string `json:"agent_transcript_path,omitempty"`
+	AgentType            string `json:"agent_type,omitempty"`
+	LastAssistantMessage string `json:"last_assistant_message,omitempty"`
 }
 
 // HookType implements HookInput.
