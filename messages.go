@@ -439,11 +439,11 @@ const (
 type HookStartedMessage struct {
 	Type      string `json:"type"`       // Always "system"
 	Subtype   string `json:"subtype"`    // "hook_started"
-	HookID    string `json:"hook_id"`     // Hook invocation ID
-	HookName  string `json:"hook_name"`   // Hook name
-	HookEvent string `json:"hook_event"`  // Hook event name
-	UUID      string `json:"uuid"`        // Unique message ID
-	SessionID string `json:"session_id"`  // Session identifier
+	HookID    string `json:"hook_id"`    // Hook invocation ID
+	HookName  string `json:"hook_name"`  // Hook name
+	HookEvent string `json:"hook_event"` // Hook event name
+	UUID      string `json:"uuid"`       // Unique message ID
+	SessionID string `json:"session_id"` // Session identifier
 }
 
 // MessageType implements Message.
@@ -453,14 +453,14 @@ func (m HookStartedMessage) MessageType() string { return "system" }
 type HookProgressMessage struct {
 	Type      string `json:"type"`       // Always "system"
 	Subtype   string `json:"subtype"`    // "hook_progress"
-	HookID    string `json:"hook_id"`     // Hook invocation ID
-	HookName  string `json:"hook_name"`   // Hook name
-	HookEvent string `json:"hook_event"`  // Hook event name
-	Stdout    string `json:"stdout"`      // Standard output
-	Stderr    string `json:"stderr"`      // Standard error
-	Output    string `json:"output"`      // Combined output
-	UUID      string `json:"uuid"`        // Unique message ID
-	SessionID string `json:"session_id"`  // Session identifier
+	HookID    string `json:"hook_id"`    // Hook invocation ID
+	HookName  string `json:"hook_name"`  // Hook name
+	HookEvent string `json:"hook_event"` // Hook event name
+	Stdout    string `json:"stdout"`     // Standard output
+	Stderr    string `json:"stderr"`     // Standard error
+	Output    string `json:"output"`     // Combined output
+	UUID      string `json:"uuid"`       // Unique message ID
+	SessionID string `json:"session_id"` // Session identifier
 }
 
 // MessageType implements Message.
