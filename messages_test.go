@@ -487,6 +487,243 @@ func TestParseMessageSubagentResult(t *testing.T) {
 	assert.Contains(t, subagentMsg.Result, "strong fundamentals")
 }
 
+func int64Ptr(v int64) *int64       { return &v }
+func float64Ptr(v float64) *float64 { return &v }
+func boolPtr(v bool) *bool          { return &v }
+
+func rateLimitTypePtr(v RateLimitType) *RateLimitType       { return &v }
+func rateLimitStatusPtr(v RateLimitStatus) *RateLimitStatus { return &v }
+func rateLimitOverageDisabledReasonPtr(v RateLimitOverageDisabledReason) *RateLimitOverageDisabledReason {
+	return &v
+}
+
+func TestToolUseSummaryMessageRoundTripAndParse(t *testing.T) {
+	msg := ToolUseSummaryMessage{
+		Type:                "tool_use_summary",
+		Summary:             "Read and Edit completed",
+		PrecedingToolUseIDs: []string{"toolu_read", "toolu_edit"},
+		UUID:                "550e8400-e29b-41d4-a716-446655440030",
+		SessionID:           "sess_top_123",
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{
+		"type": "tool_use_summary",
+		"summary": "Read and Edit completed",
+		"preceding_tool_use_ids": ["toolu_read", "toolu_edit"],
+		"uuid": "550e8400-e29b-41d4-a716-446655440030",
+		"session_id": "sess_top_123"
+	}`, string(data))
+
+	parsed, err := ParseMessage(data)
+	require.NoError(t, err)
+	summaryMsg, ok := parsed.(ToolUseSummaryMessage)
+	require.True(t, ok, "expected ToolUseSummaryMessage")
+	assert.Equal(t, msg, summaryMsg)
+}
+
+func TestPromptSuggestionMessageRoundTripAndParse(t *testing.T) {
+	msg := PromptSuggestionMessage{
+		Type:       "prompt_suggestion",
+		Suggestion: "Run the test suite",
+		UUID:       "550e8400-e29b-41d4-a716-446655440031",
+		SessionID:  "sess_top_123",
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{
+		"type": "prompt_suggestion",
+		"suggestion": "Run the test suite",
+		"uuid": "550e8400-e29b-41d4-a716-446655440031",
+		"session_id": "sess_top_123"
+	}`, string(data))
+
+	parsed, err := ParseMessage(data)
+	require.NoError(t, err)
+	suggestionMsg, ok := parsed.(PromptSuggestionMessage)
+	require.True(t, ok, "expected PromptSuggestionMessage")
+	assert.Equal(t, msg, suggestionMsg)
+}
+
+func TestRateLimitEventMessageRoundTripAndParse(t *testing.T) {
+	t.Run("minimal", func(t *testing.T) {
+		msg := RateLimitEventMessage{
+			Type: "rate_limit_event",
+			RateLimitInfo: RateLimitInfo{
+				Status: RateLimitStatusAllowed,
+			},
+			UUID:      "550e8400-e29b-41d4-a716-446655440032",
+			SessionID: "sess_top_123",
+		}
+
+		data, err := json.Marshal(msg)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{
+			"type": "rate_limit_event",
+			"rate_limit_info": {
+				"status": "allowed"
+			},
+			"uuid": "550e8400-e29b-41d4-a716-446655440032",
+			"session_id": "sess_top_123"
+		}`, string(data))
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		info, ok := got["rate_limit_info"].(map[string]interface{})
+		require.True(t, ok)
+		for _, key := range []string{
+			"resetsAt",
+			"rateLimitType",
+			"utilization",
+			"overageStatus",
+			"overageResetsAt",
+			"overageDisabledReason",
+			"isUsingOverage",
+			"surpassedThreshold",
+		} {
+			assert.NotContains(t, info, key)
+		}
+
+		parsed, err := ParseMessage(data)
+		require.NoError(t, err)
+		rateLimitMsg, ok := parsed.(RateLimitEventMessage)
+		require.True(t, ok, "expected RateLimitEventMessage")
+		assert.Equal(t, msg, rateLimitMsg)
+	})
+
+	t.Run("populated", func(t *testing.T) {
+		msg := RateLimitEventMessage{
+			Type: "rate_limit_event",
+			RateLimitInfo: RateLimitInfo{
+				Status:                RateLimitStatusAllowedWarning,
+				ResetsAt:              int64Ptr(1763856000),
+				RateLimitType:         rateLimitTypePtr(RateLimitTypeSevenDaySonnet),
+				Utilization:           float64Ptr(0.87),
+				OverageStatus:         rateLimitStatusPtr(RateLimitStatusRejected),
+				OverageResetsAt:       int64Ptr(1763942400),
+				OverageDisabledReason: rateLimitOverageDisabledReasonPtr(RateLimitOverageDisabledReasonOutOfCredits),
+				IsUsingOverage:        boolPtr(true),
+				SurpassedThreshold:    float64Ptr(0.8),
+			},
+			UUID:      "550e8400-e29b-41d4-a716-446655440033",
+			SessionID: "sess_top_123",
+		}
+
+		data, err := json.Marshal(msg)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{
+			"type": "rate_limit_event",
+			"rate_limit_info": {
+				"status": "allowed_warning",
+				"resetsAt": 1763856000,
+				"rateLimitType": "seven_day_sonnet",
+				"utilization": 0.87,
+				"overageStatus": "rejected",
+				"overageResetsAt": 1763942400,
+				"overageDisabledReason": "out_of_credits",
+				"isUsingOverage": true,
+				"surpassedThreshold": 0.8
+			},
+			"uuid": "550e8400-e29b-41d4-a716-446655440033",
+			"session_id": "sess_top_123"
+		}`, string(data))
+
+		parsed, err := ParseMessage(data)
+		require.NoError(t, err)
+		rateLimitMsg, ok := parsed.(RateLimitEventMessage)
+		require.True(t, ok, "expected RateLimitEventMessage")
+		assert.Equal(t, msg, rateLimitMsg)
+	})
+
+	t.Run("unknown enum values parse", func(t *testing.T) {
+		input := []byte(`{
+			"type": "rate_limit_event",
+			"rate_limit_info": {
+				"status": "future_status",
+				"rateLimitType": "future_limit",
+				"overageStatus": "future_overage_status",
+				"overageDisabledReason": "future_reason"
+			},
+			"uuid": "550e8400-e29b-41d4-a716-446655440034",
+			"session_id": "sess_top_123"
+		}`)
+
+		parsed, err := ParseMessage(input)
+		require.NoError(t, err)
+		rateLimitMsg, ok := parsed.(RateLimitEventMessage)
+		require.True(t, ok, "expected RateLimitEventMessage")
+		assert.Equal(t, RateLimitStatus("future_status"), rateLimitMsg.RateLimitInfo.Status)
+		require.NotNil(t, rateLimitMsg.RateLimitInfo.RateLimitType)
+		assert.Equal(t, RateLimitType("future_limit"), *rateLimitMsg.RateLimitInfo.RateLimitType)
+		require.NotNil(t, rateLimitMsg.RateLimitInfo.OverageStatus)
+		assert.Equal(t, RateLimitStatus("future_overage_status"), *rateLimitMsg.RateLimitInfo.OverageStatus)
+		require.NotNil(t, rateLimitMsg.RateLimitInfo.OverageDisabledReason)
+		assert.Equal(t, RateLimitOverageDisabledReason("future_reason"), *rateLimitMsg.RateLimitInfo.OverageDisabledReason)
+	})
+}
+
+func TestToolProgressMessageTaskIDRoundTrip(t *testing.T) {
+	t.Run("with task id", func(t *testing.T) {
+		parentID := "toolu_parent"
+		msg := ToolProgressMessage{
+			Type:               "tool_progress",
+			ToolUseID:          "toolu_child",
+			ToolName:           "Bash",
+			ParentToolUseID:    &parentID,
+			ElapsedTimeSeconds: 1.25,
+			TaskID:             stringPtr("task_123"),
+			UUID:               "550e8400-e29b-41d4-a716-446655440035",
+			SessionID:          "sess_top_123",
+		}
+
+		data, err := json.Marshal(msg)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{
+			"type": "tool_progress",
+			"tool_use_id": "toolu_child",
+			"tool_name": "Bash",
+			"parent_tool_use_id": "toolu_parent",
+			"elapsed_time_seconds": 1.25,
+			"task_id": "task_123",
+			"uuid": "550e8400-e29b-41d4-a716-446655440035",
+			"session_id": "sess_top_123"
+		}`, string(data))
+
+		parsed, err := ParseMessage(data)
+		require.NoError(t, err)
+		progressMsg, ok := parsed.(ToolProgressMessage)
+		require.True(t, ok, "expected ToolProgressMessage")
+		require.NotNil(t, progressMsg.TaskID)
+		assert.Equal(t, "task_123", *progressMsg.TaskID)
+	})
+
+	t.Run("without task id", func(t *testing.T) {
+		msg := ToolProgressMessage{
+			Type:               "tool_progress",
+			ToolUseID:          "toolu_child",
+			ToolName:           "Bash",
+			ElapsedTimeSeconds: 1.25,
+			UUID:               "550e8400-e29b-41d4-a716-446655440036",
+			SessionID:          "sess_top_123",
+		}
+
+		data, err := json.Marshal(msg)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "task_id")
+
+		parsed, err := ParseMessage(data)
+		require.NoError(t, err)
+		progressMsg, ok := parsed.(ToolProgressMessage)
+		require.True(t, ok, "expected ToolProgressMessage")
+		assert.Nil(t, progressMsg.TaskID)
+	})
+}
+
 func TestParseMessageSystemInit(t *testing.T) {
 	input := `{
 		"type": "system",
