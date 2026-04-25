@@ -1218,7 +1218,10 @@ func getPostToolBatchToolCalls(m map[string]interface{}) []PostToolBatchToolCall
 			ToolInput: marshalJSON(entry["tool_input"]),
 			ToolUseID: getString(entry, "tool_use_id"),
 		}
-		if resp, ok := entry["tool_response"]; ok && resp != nil {
+		// Preserve the absent-vs-null distinction: TS `tool_response?: unknown`
+		// allows an explicit null payload, which must round-trip as "null" rather
+		// than be conflated with the key being missing.
+		if resp, ok := entry["tool_response"]; ok {
 			call.ToolResponse = marshalJSON(resp)
 		}
 		out = append(out, call)

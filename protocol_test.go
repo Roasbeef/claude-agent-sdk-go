@@ -1886,13 +1886,19 @@ func TestHandleHookCallback_ShapeCompatibleEvents(t *testing.T) {
 		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
 			ev, ok := input.(PostToolBatchInput)
 			require.True(t, ok)
-			require.Len(t, ev.ToolCalls, 2)
+			require.Len(t, ev.ToolCalls, 3)
 			assert.Equal(t, "Read", ev.ToolCalls[0].ToolName)
 			assert.Equal(t, "tu_1", ev.ToolCalls[0].ToolUseID)
 			assert.JSONEq(t, `{"file_path":"a.go"}`, string(ev.ToolCalls[0].ToolInput))
 			assert.JSONEq(t, `"contents"`, string(ev.ToolCalls[0].ToolResponse))
+
+			// Absent tool_response → empty.
 			assert.Equal(t, "Grep", ev.ToolCalls[1].ToolName)
 			assert.Empty(t, ev.ToolCalls[1].ToolResponse)
+
+			// Explicit JSON null → preserved as "null", not conflated with absent.
+			assert.Equal(t, "Bash", ev.ToolCalls[2].ToolName)
+			assert.Equal(t, "null", string(ev.ToolCalls[2].ToolResponse))
 			return HookResult{Continue: true}, nil
 		}
 		resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
@@ -1913,6 +1919,12 @@ func TestHandleHookCallback_ShapeCompatibleEvents(t *testing.T) {
 							"tool_name":   "Grep",
 							"tool_input":  map[string]interface{}{"pattern": "foo"},
 							"tool_use_id": "tu_2",
+						},
+						map[string]interface{}{
+							"tool_name":     "Bash",
+							"tool_input":    map[string]interface{}{"command": "true"},
+							"tool_use_id":   "tu_3",
+							"tool_response": nil,
 						},
 					},
 				},
