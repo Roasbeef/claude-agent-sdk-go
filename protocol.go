@@ -69,6 +69,7 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 				hookMatchers = append(hookMatchers, SDKHookCallbackMatcher{
 					Matcher:         cfg.Matcher,
 					HookCallbackIDs: []string{id},
+					Timeout:         cfg.Timeout,
 				})
 			}
 			hooks[string(hookType)] = hookMatchers
