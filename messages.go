@@ -485,6 +485,114 @@ type HookResponseMessage struct {
 // MessageType implements Message.
 func (m HookResponseMessage) MessageType() string { return "system" }
 
+// TaskUsage summarizes resource consumption for a task lifecycle event.
+type TaskUsage struct {
+	TotalTokens int `json:"total_tokens"`
+	ToolUses    int `json:"tool_uses"`
+	DurationMS  int `json:"duration_ms"`
+}
+
+// TaskNotificationStatus is the terminal status reported on task_notification.
+type TaskNotificationStatus string
+
+const (
+	TaskNotificationStatusCompleted TaskNotificationStatus = "completed"
+	TaskNotificationStatusFailed    TaskNotificationStatus = "failed"
+	TaskNotificationStatusStopped   TaskNotificationStatus = "stopped"
+)
+
+// TaskRunStatus is the running status carried in TaskUpdatePatch.Status.
+//
+// Distinct from TaskNotificationStatus: the notification set is a subset oriented
+// around terminal outcomes; this enum covers the full run lifecycle.
+type TaskRunStatus string
+
+const (
+	TaskRunStatusPending   TaskRunStatus = "pending"
+	TaskRunStatusRunning   TaskRunStatus = "running"
+	TaskRunStatusCompleted TaskRunStatus = "completed"
+	TaskRunStatusFailed    TaskRunStatus = "failed"
+	TaskRunStatusKilled    TaskRunStatus = "killed"
+)
+
+// TaskStartedMessage reports that a task has started executing.
+type TaskStartedMessage struct {
+	Type           string `json:"type"`                      // Always "system"
+	Subtype        string `json:"subtype"`                   // "task_started"
+	TaskID         string `json:"task_id"`                   // Task identifier
+	ToolUseID      string `json:"tool_use_id,omitempty"`     // Related tool use ID
+	Description    string `json:"description"`               // Task description
+	TaskType       string `json:"task_type,omitempty"`       // Task type
+	WorkflowName   string `json:"workflow_name,omitempty"`   // Workflow script metadata name
+	Prompt         string `json:"prompt,omitempty"`          // Task prompt
+	SkipTranscript *bool  `json:"skip_transcript,omitempty"` // Ambient task marker
+	UUID           string `json:"uuid"`                      // Unique message ID
+	SessionID      string `json:"session_id"`                // Session identifier
+}
+
+// MessageType implements Message.
+func (m TaskStartedMessage) MessageType() string { return "system" }
+
+// TaskProgressMessage reports intermediate task progress and usage.
+type TaskProgressMessage struct {
+	Type         string    `json:"type"`                     // Always "system"
+	Subtype      string    `json:"subtype"`                  // "task_progress"
+	TaskID       string    `json:"task_id"`                  // Task identifier
+	ToolUseID    string    `json:"tool_use_id,omitempty"`    // Related tool use ID
+	Description  string    `json:"description"`              // Task description
+	Usage        TaskUsage `json:"usage"`                    // Resource consumption
+	LastToolName string    `json:"last_tool_name,omitempty"` // Last tool used by task
+	Summary      string    `json:"summary,omitempty"`        // Task progress summary
+	UUID         string    `json:"uuid"`                     // Unique message ID
+	SessionID    string    `json:"session_id"`               // Session identifier
+}
+
+// MessageType implements Message.
+func (m TaskProgressMessage) MessageType() string { return "system" }
+
+// TaskUpdatePatch is the wire-safe subset of TaskState fields delivered with task_updated.
+//
+// All fields are optional: senders include only what changed.
+type TaskUpdatePatch struct {
+	Status         TaskRunStatus `json:"status,omitempty"`
+	Description    string        `json:"description,omitempty"`
+	EndTime        *int64        `json:"end_time,omitempty"`
+	TotalPausedMS  *int64        `json:"total_paused_ms,omitempty"`
+	Error          string        `json:"error,omitempty"`
+	IsBackgrounded *bool         `json:"is_backgrounded,omitempty"`
+}
+
+// TaskUpdatedMessage reports changes to task state.
+type TaskUpdatedMessage struct {
+	Type      string          `json:"type"`       // Always "system"
+	Subtype   string          `json:"subtype"`    // "task_updated"
+	TaskID    string          `json:"task_id"`    // Task identifier
+	Patch     TaskUpdatePatch `json:"patch"`      // Updated task fields
+	UUID      string          `json:"uuid"`       // Unique message ID
+	SessionID string          `json:"session_id"` // Session identifier
+}
+
+// MessageType implements Message.
+func (m TaskUpdatedMessage) MessageType() string { return "system" }
+
+// TaskNotificationMessage reports terminal task output.
+type TaskNotificationMessage struct {
+	Type           string                 `json:"type"`                      // Always "system"
+	Subtype        string                 `json:"subtype"`                   // "task_notification"
+	TaskID         string                 `json:"task_id"`                   // Task identifier
+	ToolUseID      string                 `json:"tool_use_id,omitempty"`     // Related tool use ID
+	Status         TaskNotificationStatus `json:"status"`                    // Terminal status
+	OutputFile     string                 `json:"output_file"`               // Output file path
+	Summary        string                 `json:"summary"`                   // Task summary
+	Usage          *TaskUsage             `json:"usage,omitempty"`           // Resource consumption
+	SkipTranscript *bool                  `json:"skip_transcript,omitempty"` // Ambient task marker
+	UUID           string                 `json:"uuid"`                      // Unique message ID
+	SessionID      string                 `json:"session_id"`                // Session identifier
+}
+
+// MessageType implements Message.
+func (m TaskNotificationMessage) MessageType() string { return "system" }
+
 // CompactMetadata contains details about a compaction event.
 type CompactMetadata struct {
 	Trigger   string `json:"trigger"`    // "manual" or "auto"
@@ -581,6 +689,22 @@ func ParseMessage(data []byte) (Message, error) {
 			return msg, err
 		case "hook_response":
 			var msg HookResponseMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "task_started":
+			var msg TaskStartedMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "task_progress":
+			var msg TaskProgressMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "task_updated":
+			var msg TaskUpdatedMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "task_notification":
+			var msg TaskNotificationMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
 		default:
