@@ -375,6 +375,47 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			ToolName:      getString(inputData, "tool_name"),
 			ToolInput:     marshalJSON(inputData["tool_input"]),
 		}
+	case HookTypePermissionDenied:
+		input = PermissionDeniedInput{
+			BaseHookInput: base,
+			ToolName:      getString(inputData, "tool_name"),
+			ToolInput:     marshalJSON(inputData["tool_input"]),
+			ToolUseID:     getString(inputData, "tool_use_id"),
+			Reason:        getString(inputData, "reason"),
+		}
+	case HookTypeCwdChanged:
+		input = CwdChangedInput{
+			BaseHookInput: base,
+			OldCwd:        getString(inputData, "old_cwd"),
+			NewCwd:        getString(inputData, "new_cwd"),
+		}
+	case HookTypeFileChanged:
+		input = FileChangedInput{
+			BaseHookInput: base,
+			FilePath:      getString(inputData, "file_path"),
+			Event:         getString(inputData, "event"),
+		}
+	case HookTypeElicitation:
+		requestedSchema, _ := inputData["requested_schema"].(map[string]interface{})
+		input = ElicitationInput{
+			BaseHookInput:   base,
+			MCPServerName:   getString(inputData, "mcp_server_name"),
+			Message:         getString(inputData, "message"),
+			Mode:            getString(inputData, "mode"),
+			URL:             getString(inputData, "url"),
+			ElicitationID:   getString(inputData, "elicitation_id"),
+			RequestedSchema: requestedSchema,
+		}
+	case HookTypeElicitationResult:
+		content, _ := inputData["content"].(map[string]interface{})
+		input = ElicitationResultInput{
+			BaseHookInput: base,
+			MCPServerName: getString(inputData, "mcp_server_name"),
+			ElicitationID: getString(inputData, "elicitation_id"),
+			Mode:          getString(inputData, "mode"),
+			Action:        getString(inputData, "action"),
+			Content:       content,
+		}
 	case HookTypeSetup:
 		input = SetupInput{
 			BaseHookInput: base,
@@ -819,6 +860,47 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			BaseHookInput: base,
 			ToolName:      getString(hookInput, "tool_name"),
 			ToolInput:     marshalJSON(hookInput["tool_input"]),
+		}
+	case "PermissionDenied":
+		input = PermissionDeniedInput{
+			BaseHookInput: base,
+			ToolName:      getString(hookInput, "tool_name"),
+			ToolInput:     marshalJSON(hookInput["tool_input"]),
+			ToolUseID:     getString(hookInput, "tool_use_id"),
+			Reason:        getString(hookInput, "reason"),
+		}
+	case "CwdChanged":
+		input = CwdChangedInput{
+			BaseHookInput: base,
+			OldCwd:        getString(hookInput, "old_cwd"),
+			NewCwd:        getString(hookInput, "new_cwd"),
+		}
+	case "FileChanged":
+		input = FileChangedInput{
+			BaseHookInput: base,
+			FilePath:      getString(hookInput, "file_path"),
+			Event:         getString(hookInput, "event"),
+		}
+	case "Elicitation":
+		requestedSchema, _ := hookInput["requested_schema"].(map[string]interface{})
+		input = ElicitationInput{
+			BaseHookInput:   base,
+			MCPServerName:   getString(hookInput, "mcp_server_name"),
+			Message:         getString(hookInput, "message"),
+			Mode:            getString(hookInput, "mode"),
+			URL:             getString(hookInput, "url"),
+			ElicitationID:   getString(hookInput, "elicitation_id"),
+			RequestedSchema: requestedSchema,
+		}
+	case "ElicitationResult":
+		content, _ := hookInput["content"].(map[string]interface{})
+		input = ElicitationResultInput{
+			BaseHookInput: base,
+			MCPServerName: getString(hookInput, "mcp_server_name"),
+			ElicitationID: getString(hookInput, "elicitation_id"),
+			Mode:          getString(hookInput, "mode"),
+			Action:        getString(hookInput, "action"),
+			Content:       content,
 		}
 	case "Setup":
 		input = SetupInput{

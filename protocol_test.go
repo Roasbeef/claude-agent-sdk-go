@@ -2145,3 +2145,208 @@ func TestHandleHookCallback_ShapeCompatibleEvents(t *testing.T) {
 		assert.Equal(t, "success", resp.Response.Subtype)
 	})
 }
+
+func TestHandleHookCallback_RetryWatchPathsEvents(t *testing.T) {
+	t.Run("CwdChanged via legacy path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(CwdChangedInput)
+			require.True(t, ok)
+			assert.Equal(t, "/repo/old", ev.OldCwd)
+			assert.Equal(t, "/repo/new", ev.NewCwd)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+			RequestID: "r",
+			Payload: map[string]interface{}{
+				"callback_id": "h",
+				"input": map[string]interface{}{
+					"hook_event": "CwdChanged",
+					"old_cwd":    "/repo/old",
+					"new_cwd":    "/repo/new",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("FileChanged via SDK path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(FileChangedInput)
+			require.True(t, ok)
+			assert.Equal(t, "/repo/main.go", ev.FilePath)
+			assert.Equal(t, "change", ev.Event)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+			RequestID: "r",
+			Request: SDKControlRequestBody{
+				Subtype:    "hook_callback",
+				CallbackID: "h",
+				Input: map[string]interface{}{
+					"hook_event_name": "FileChanged",
+					"file_path":       "/repo/main.go",
+					"event":           "change",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("PermissionDenied via legacy path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(PermissionDeniedInput)
+			require.True(t, ok)
+			assert.Equal(t, "Bash", ev.ToolName)
+			assert.JSONEq(t, `{"command":"rm -rf build"}`, string(ev.ToolInput))
+			assert.Equal(t, "toolu_123", ev.ToolUseID)
+			assert.Equal(t, "policy denied", ev.Reason)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+			RequestID: "r",
+			Payload: map[string]interface{}{
+				"callback_id": "h",
+				"input": map[string]interface{}{
+					"hook_event":  "PermissionDenied",
+					"tool_name":   "Bash",
+					"tool_input":  map[string]interface{}{"command": "rm -rf build"},
+					"tool_use_id": "toolu_123",
+					"reason":      "policy denied",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("Elicitation form via SDK path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(ElicitationInput)
+			require.True(t, ok)
+			assert.Equal(t, "payments", ev.MCPServerName)
+			assert.Equal(t, "Need account details", ev.Message)
+			assert.Equal(t, "form", ev.Mode)
+			assert.Equal(t, "elicit_1", ev.ElicitationID)
+			require.NotNil(t, ev.RequestedSchema)
+			assert.Equal(t, "object", ev.RequestedSchema["type"])
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+			RequestID: "r",
+			Request: SDKControlRequestBody{
+				Subtype:    "hook_callback",
+				CallbackID: "h",
+				Input: map[string]interface{}{
+					"hook_event_name":  "Elicitation",
+					"mcp_server_name":  "payments",
+					"message":          "Need account details",
+					"mode":             "form",
+					"elicitation_id":   "elicit_1",
+					"requested_schema": map[string]interface{}{"type": "object"},
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("Elicitation url via legacy path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(ElicitationInput)
+			require.True(t, ok)
+			assert.Equal(t, "identity", ev.MCPServerName)
+			assert.Equal(t, "Authorize access", ev.Message)
+			assert.Equal(t, "url", ev.Mode)
+			assert.Equal(t, "https://example.com/auth", ev.URL)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+			RequestID: "r",
+			Payload: map[string]interface{}{
+				"callback_id": "h",
+				"input": map[string]interface{}{
+					"hook_event":      "Elicitation",
+					"mcp_server_name": "identity",
+					"message":         "Authorize access",
+					"mode":            "url",
+					"url":             "https://example.com/auth",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("ElicitationResult form via legacy path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(ElicitationResultInput)
+			require.True(t, ok)
+			assert.Equal(t, "payments", ev.MCPServerName)
+			assert.Equal(t, "elicit_1", ev.ElicitationID)
+			assert.Equal(t, "form", ev.Mode)
+			assert.Equal(t, "accept", ev.Action)
+			require.NotNil(t, ev.Content)
+			assert.Equal(t, "acct_123", ev.Content["account_id"])
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+			RequestID: "r",
+			Payload: map[string]interface{}{
+				"callback_id": "h",
+				"input": map[string]interface{}{
+					"hook_event":      "ElicitationResult",
+					"mcp_server_name": "payments",
+					"elicitation_id":  "elicit_1",
+					"mode":            "form",
+					"action":          "accept",
+					"content":         map[string]interface{}{"account_id": "acct_123"},
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("ElicitationResult url via SDK path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(ElicitationResultInput)
+			require.True(t, ok)
+			assert.Equal(t, "identity", ev.MCPServerName)
+			assert.Equal(t, "url", ev.Mode)
+			assert.Equal(t, "decline", ev.Action)
+			assert.Nil(t, ev.Content)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+			RequestID: "r",
+			Request: SDKControlRequestBody{
+				Subtype:    "hook_callback",
+				CallbackID: "h",
+				Input: map[string]interface{}{
+					"hook_event_name": "ElicitationResult",
+					"mcp_server_name": "identity",
+					"mode":            "url",
+					"action":          "decline",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+}
