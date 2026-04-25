@@ -183,6 +183,10 @@ func (p *Protocol) handleControlRequest(ctx context.Context, req ControlRequest)
 	case "mcp_message":
 		resp = p.handleMCPMessage(ctx, req)
 
+	// MCP elicitation request from CLI (elicitation).
+	case "elicitation":
+		resp = p.handleElicitationRequest(ctx, req)
+
 	default:
 		resp = SDKControlResponse{
 			Type: "control_response",
@@ -228,6 +232,48 @@ func (p *Protocol) handlePermissionRequest(ctx context.Context, req ControlReque
 	}
 	if deny, ok := result.(PermissionDeny); ok && !result.IsAllow() {
 		respData["reason"] = deny.Reason
+	}
+
+	return SDKControlResponse{
+		Type: "control_response",
+		Response: SDKControlResponseBody{
+			Subtype:   "success",
+			RequestID: req.RequestID,
+			Response:  respData,
+		},
+	}
+}
+
+// handleElicitationRequest processes an MCP elicitation request from the CLI.
+func (p *Protocol) handleElicitationRequest(ctx context.Context, req ControlRequest) SDKControlResponse {
+	elReq := ElicitationRequest{}
+	elReq.ServerName, _ = req.Payload["mcp_server_name"].(string)
+	elReq.Message, _ = req.Payload["message"].(string)
+	elReq.Mode, _ = req.Payload["mode"].(string)
+	elReq.URL, _ = req.Payload["url"].(string)
+	elReq.ElicitationID, _ = req.Payload["elicitation_id"].(string)
+	if rs, ok := req.Payload["requested_schema"].(map[string]interface{}); ok {
+		elReq.RequestedSchema = rs
+	}
+	elReq.Title, _ = req.Payload["title"].(string)
+	elReq.DisplayName, _ = req.Payload["display_name"].(string)
+	elReq.Description, _ = req.Payload["description"].(string)
+
+	result := ElicitationResult{Action: ElicitationActionDecline}
+	if p.options.OnElicitation != nil {
+		callbackResult, err := p.options.OnElicitation(ctx, elReq)
+		if err != nil {
+			result = ElicitationResult{Action: ElicitationActionCancel}
+		} else {
+			result = callbackResult
+		}
+	}
+
+	respData := map[string]interface{}{
+		"action": result.Action,
+	}
+	if len(result.Content) > 0 {
+		respData["content"] = result.Content
 	}
 
 	return SDKControlResponse{

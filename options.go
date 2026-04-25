@@ -60,6 +60,9 @@ type Options struct {
 	// Return PermissionAllow to proceed or PermissionDeny to block.
 	CanUseTool CanUseToolFunc
 
+	// OnElicitation handles MCP server requests for user input.
+	OnElicitation OnElicitationFunc
+
 	// Hooks register lifecycle callbacks for events like tool use.
 	Hooks map[HookType][]HookConfig
 
@@ -491,6 +494,15 @@ func WithCanUseTool(fn CanUseToolFunc) Option {
 	}
 }
 
+// WithOnElicitation registers a callback that handles MCP elicitation requests.
+//
+// If unset, the SDK auto-declines all elicitation requests.
+func WithOnElicitation(fn OnElicitationFunc) Option {
+	return func(o *Options) {
+		o.OnElicitation = fn
+	}
+}
+
 // WithHooks registers lifecycle callbacks.
 //
 // Example:
@@ -658,6 +670,39 @@ const (
 //
 // Return PermissionAllow{} to proceed or PermissionDeny{Reason: "..."} to block.
 type CanUseToolFunc func(ctx context.Context, req ToolPermissionRequest) PermissionResult
+
+// OnElicitationFunc is invoked when an MCP server requests user input.
+//
+// Returning a non-nil error converts the response to action="cancel".
+type OnElicitationFunc func(ctx context.Context, req ElicitationRequest) (ElicitationResult, error)
+
+// ElicitationRequest is the input to the OnElicitation callback.
+type ElicitationRequest struct {
+	ServerName      string                 `json:"serverName"`
+	Message         string                 `json:"message"`
+	Mode            string                 `json:"mode,omitempty"`
+	URL             string                 `json:"url,omitempty"`
+	ElicitationID   string                 `json:"elicitationId,omitempty"`
+	RequestedSchema map[string]interface{} `json:"requestedSchema,omitempty"`
+	Title           string                 `json:"title,omitempty"`
+	DisplayName     string                 `json:"displayName,omitempty"`
+	Description     string                 `json:"description,omitempty"`
+}
+
+// ElicitationResult is what OnElicitation returns.
+type ElicitationResult struct {
+	Action  string                 `json:"action"`
+	Content map[string]interface{} `json:"content,omitempty"`
+}
+
+const (
+	// ElicitationActionAccept accepts the elicitation response.
+	ElicitationActionAccept = "accept"
+	// ElicitationActionDecline declines the elicitation response.
+	ElicitationActionDecline = "decline"
+	// ElicitationActionCancel cancels the elicitation response.
+	ElicitationActionCancel = "cancel"
+)
 
 // ToolPermissionRequest contains details about a tool execution request.
 type ToolPermissionRequest struct {
