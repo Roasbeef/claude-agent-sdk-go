@@ -610,15 +610,15 @@ const (
 
 // APIRetryMessage reports that a failed API request will be retried.
 type APIRetryMessage struct {
-	Type         string        `json:"type"`                   // Always "system"
-	Subtype      string        `json:"subtype"`                // "api_retry"
-	Attempt      int           `json:"attempt"`                // Current retry attempt
-	MaxRetries   int           `json:"max_retries"`            // Maximum retry attempts
-	RetryDelayMS int           `json:"retry_delay_ms"`         // Delay before retry
-	ErrorStatus  *int          `json:"error_status,omitempty"` // HTTP status, nil for connection errors
-	Error        APIRetryError `json:"error"`                  // Retryable error category
-	UUID         string        `json:"uuid"`                   // Unique message ID
-	SessionID    string        `json:"session_id"`             // Session identifier
+	Type         string        `json:"type"`           // Always "system"
+	Subtype      string        `json:"subtype"`        // "api_retry"
+	Attempt      int           `json:"attempt"`        // Current retry attempt
+	MaxRetries   int           `json:"max_retries"`    // Maximum retry attempts
+	RetryDelayMS int           `json:"retry_delay_ms"` // Delay before retry
+	ErrorStatus  *int          `json:"error_status"`   // HTTP status, nil represents JSON null (connection errors)
+	Error        APIRetryError `json:"error"`          // Retryable error category
+	UUID         string        `json:"uuid"`           // Unique message ID
+	SessionID    string        `json:"session_id"`     // Session identifier
 }
 
 // MessageType implements Message.
