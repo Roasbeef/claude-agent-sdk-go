@@ -1789,3 +1789,359 @@ func TestBuildHookResponse_PreToolUseUpdatedInput(t *testing.T) {
 		assert.False(t, hasModify)
 	})
 }
+
+// TestHandleHookCallback_ShapeCompatibleEvents covers the 12 v0.2.119 events
+// added in PR 8b. Each subtest exercises one event end-to-end through one of
+// the two dispatch paths and asserts every event-specific field on the parsed
+// input.
+func TestHandleHookCallback_ShapeCompatibleEvents(t *testing.T) {
+	t.Run("ConfigChange via legacy path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(ConfigChangeInput)
+			require.True(t, ok)
+			assert.Equal(t, "user_settings", ev.Source)
+			assert.Equal(t, "/home/u/.claude/settings.json", ev.FilePath)
+			assert.Equal(t, "agent-x", ev.Base().AgentID)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+			RequestID: "r",
+			Payload: map[string]interface{}{
+				"callback_id": "h",
+				"input": map[string]interface{}{
+					"hook_event": "ConfigChange",
+					"source":     "user_settings",
+					"file_path":  "/home/u/.claude/settings.json",
+					"agent_id":   "agent-x",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("InstructionsLoaded via SDK path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(InstructionsLoadedInput)
+			require.True(t, ok)
+			assert.Equal(t, "/proj/CLAUDE.md", ev.FilePath)
+			assert.Equal(t, "Project", ev.MemoryType)
+			assert.Equal(t, "session_start", ev.LoadReason)
+			assert.Equal(t, []string{"**/*.md"}, ev.Globs)
+			assert.Equal(t, "/proj/parent.md", ev.ParentFilePath)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+			RequestID: "r",
+			Request: SDKControlRequestBody{
+				Subtype:    "hook_callback",
+				CallbackID: "h",
+				Input: map[string]interface{}{
+					"hook_event_name":  "InstructionsLoaded",
+					"file_path":        "/proj/CLAUDE.md",
+					"memory_type":      "Project",
+					"load_reason":      "session_start",
+					"globs":            []interface{}{"**/*.md"},
+					"parent_file_path": "/proj/parent.md",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("PostCompact via legacy path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(PostCompactInput)
+			require.True(t, ok)
+			assert.Equal(t, "auto", ev.Trigger)
+			assert.Equal(t, "summary text", ev.CompactSummary)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+			RequestID: "r",
+			Payload: map[string]interface{}{
+				"callback_id": "h",
+				"input": map[string]interface{}{
+					"hook_event":      "PostCompact",
+					"trigger":         "auto",
+					"compact_summary": "summary text",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("PostToolBatch via SDK path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(PostToolBatchInput)
+			require.True(t, ok)
+			require.Len(t, ev.ToolCalls, 3)
+			assert.Equal(t, "Read", ev.ToolCalls[0].ToolName)
+			assert.Equal(t, "tu_1", ev.ToolCalls[0].ToolUseID)
+			assert.JSONEq(t, `{"file_path":"a.go"}`, string(ev.ToolCalls[0].ToolInput))
+			assert.JSONEq(t, `"contents"`, string(ev.ToolCalls[0].ToolResponse))
+
+			// Absent tool_response → empty.
+			assert.Equal(t, "Grep", ev.ToolCalls[1].ToolName)
+			assert.Empty(t, ev.ToolCalls[1].ToolResponse)
+
+			// Explicit JSON null → preserved as "null", not conflated with absent.
+			assert.Equal(t, "Bash", ev.ToolCalls[2].ToolName)
+			assert.Equal(t, "null", string(ev.ToolCalls[2].ToolResponse))
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+			RequestID: "r",
+			Request: SDKControlRequestBody{
+				Subtype:    "hook_callback",
+				CallbackID: "h",
+				Input: map[string]interface{}{
+					"hook_event_name": "PostToolBatch",
+					"tool_calls": []interface{}{
+						map[string]interface{}{
+							"tool_name":     "Read",
+							"tool_input":    map[string]interface{}{"file_path": "a.go"},
+							"tool_use_id":   "tu_1",
+							"tool_response": "contents",
+						},
+						map[string]interface{}{
+							"tool_name":   "Grep",
+							"tool_input":  map[string]interface{}{"pattern": "foo"},
+							"tool_use_id": "tu_2",
+						},
+						map[string]interface{}{
+							"tool_name":     "Bash",
+							"tool_input":    map[string]interface{}{"command": "true"},
+							"tool_use_id":   "tu_3",
+							"tool_response": nil,
+						},
+					},
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("Setup via legacy path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(SetupInput)
+			require.True(t, ok)
+			assert.Equal(t, "init", ev.Trigger)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+			RequestID: "r",
+			Payload: map[string]interface{}{
+				"callback_id": "h",
+				"input": map[string]interface{}{
+					"hook_event": "Setup",
+					"trigger":    "init",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("StopFailure via SDK path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(StopFailureInput)
+			require.True(t, ok)
+			assert.Equal(t, AssistantMessageErrorRateLimit, ev.Error)
+			assert.Equal(t, "rate limited by upstream", ev.ErrorDetails)
+			assert.Equal(t, "partial answer", ev.LastAssistantMessage)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+			RequestID: "r",
+			Request: SDKControlRequestBody{
+				Subtype:    "hook_callback",
+				CallbackID: "h",
+				Input: map[string]interface{}{
+					"hook_event_name":        "StopFailure",
+					"error":                  "rate_limit",
+					"error_details":          "rate limited by upstream",
+					"last_assistant_message": "partial answer",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("TaskCompleted via legacy path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(TaskCompletedInput)
+			require.True(t, ok)
+			assert.Equal(t, "task_42", ev.TaskID)
+			assert.Equal(t, "ship the thing", ev.TaskSubject)
+			assert.Equal(t, "longer description", ev.TaskDescription)
+			assert.Equal(t, "alice", ev.TeammateName)
+			assert.Equal(t, "platform", ev.TeamName)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+			RequestID: "r",
+			Payload: map[string]interface{}{
+				"callback_id": "h",
+				"input": map[string]interface{}{
+					"hook_event":       "TaskCompleted",
+					"task_id":          "task_42",
+					"task_subject":     "ship the thing",
+					"task_description": "longer description",
+					"teammate_name":    "alice",
+					"team_name":        "platform",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("TaskCreated via SDK path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(TaskCreatedInput)
+			require.True(t, ok)
+			assert.Equal(t, "task_99", ev.TaskID)
+			assert.Equal(t, "draft proposal", ev.TaskSubject)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+			RequestID: "r",
+			Request: SDKControlRequestBody{
+				Subtype:    "hook_callback",
+				CallbackID: "h",
+				Input: map[string]interface{}{
+					"hook_event_name": "TaskCreated",
+					"task_id":         "task_99",
+					"task_subject":    "draft proposal",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("TeammateIdle via legacy path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(TeammateIdleInput)
+			require.True(t, ok)
+			assert.Equal(t, "bob", ev.TeammateName)
+			assert.Equal(t, "platform", ev.TeamName)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+			RequestID: "r",
+			Payload: map[string]interface{}{
+				"callback_id": "h",
+				"input": map[string]interface{}{
+					"hook_event":    "TeammateIdle",
+					"teammate_name": "bob",
+					"team_name":     "platform",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("UserPromptExpansion via SDK path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(UserPromptExpansionInput)
+			require.True(t, ok)
+			assert.Equal(t, "slash_command", ev.ExpansionType)
+			assert.Equal(t, "review", ev.CommandName)
+			assert.Equal(t, "PR-30", ev.CommandArgs)
+			assert.Equal(t, "user", ev.CommandSource)
+			assert.Equal(t, "expanded prompt body", ev.Prompt)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+			RequestID: "r",
+			Request: SDKControlRequestBody{
+				Subtype:    "hook_callback",
+				CallbackID: "h",
+				Input: map[string]interface{}{
+					"hook_event_name": "UserPromptExpansion",
+					"expansion_type":  "slash_command",
+					"command_name":    "review",
+					"command_args":    "PR-30",
+					"command_source":  "user",
+					"prompt":          "expanded prompt body",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("WorktreeCreate via legacy path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(WorktreeCreateInput)
+			require.True(t, ok)
+			assert.Equal(t, "feature-x", ev.Name)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+			RequestID: "r",
+			Payload: map[string]interface{}{
+				"callback_id": "h",
+				"input": map[string]interface{}{
+					"hook_event": "WorktreeCreate",
+					"name":       "feature-x",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("WorktreeRemove via SDK path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(WorktreeRemoveInput)
+			require.True(t, ok)
+			assert.Equal(t, "/repo/worktrees/feature-x", ev.WorktreePath)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+			RequestID: "r",
+			Request: SDKControlRequestBody{
+				Subtype:    "hook_callback",
+				CallbackID: "h",
+				Input: map[string]interface{}{
+					"hook_event_name": "WorktreeRemove",
+					"worktree_path":   "/repo/worktrees/feature-x",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+}

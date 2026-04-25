@@ -272,6 +272,22 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 	// Build hook input based on type.
 	var input HookInput
 	switch HookType(hookType) {
+	case HookTypeConfigChange:
+		input = ConfigChangeInput{
+			BaseHookInput: base,
+			Source:        getString(inputData, "source"),
+			FilePath:      getString(inputData, "file_path"),
+		}
+	case HookTypeInstructionsLoaded:
+		input = InstructionsLoadedInput{
+			BaseHookInput:   base,
+			FilePath:        getString(inputData, "file_path"),
+			MemoryType:      getString(inputData, "memory_type"),
+			LoadReason:      getString(inputData, "load_reason"),
+			Globs:           getStringSlice(inputData, "globs"),
+			TriggerFilePath: getString(inputData, "trigger_file_path"),
+			ParentFilePath:  getString(inputData, "parent_file_path"),
+		}
 	case HookTypePreToolUse:
 		input = PreToolUseInput{
 			BaseHookInput: base,
@@ -312,6 +328,17 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			Trigger:       getString(inputData, "trigger"),
 			MessageCount:  getInt(inputData, "message_count"),
 		}
+	case HookTypePostCompact:
+		input = PostCompactInput{
+			BaseHookInput:  base,
+			Trigger:        getString(inputData, "trigger"),
+			CompactSummary: getString(inputData, "compact_summary"),
+		}
+	case HookTypePostToolBatch:
+		input = PostToolBatchInput{
+			BaseHookInput: base,
+			ToolCalls:     getPostToolBatchToolCalls(inputData),
+		}
 	case HookTypePostToolUseFailure:
 		input = PostToolUseFailureInput{
 			BaseHookInput: base,
@@ -347,6 +374,61 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			BaseHookInput: base,
 			ToolName:      getString(inputData, "tool_name"),
 			ToolInput:     marshalJSON(inputData["tool_input"]),
+		}
+	case HookTypeSetup:
+		input = SetupInput{
+			BaseHookInput: base,
+			Trigger:       getString(inputData, "trigger"),
+		}
+	case HookTypeStopFailure:
+		input = StopFailureInput{
+			BaseHookInput:        base,
+			Error:                AssistantMessageError(getString(inputData, "error")),
+			ErrorDetails:         getString(inputData, "error_details"),
+			LastAssistantMessage: getString(inputData, "last_assistant_message"),
+		}
+	case HookTypeTaskCompleted:
+		input = TaskCompletedInput{
+			BaseHookInput:   base,
+			TaskID:          getString(inputData, "task_id"),
+			TaskSubject:     getString(inputData, "task_subject"),
+			TaskDescription: getString(inputData, "task_description"),
+			TeammateName:    getString(inputData, "teammate_name"),
+			TeamName:        getString(inputData, "team_name"),
+		}
+	case HookTypeTaskCreated:
+		input = TaskCreatedInput{
+			BaseHookInput:   base,
+			TaskID:          getString(inputData, "task_id"),
+			TaskSubject:     getString(inputData, "task_subject"),
+			TaskDescription: getString(inputData, "task_description"),
+			TeammateName:    getString(inputData, "teammate_name"),
+			TeamName:        getString(inputData, "team_name"),
+		}
+	case HookTypeTeammateIdle:
+		input = TeammateIdleInput{
+			BaseHookInput: base,
+			TeammateName:  getString(inputData, "teammate_name"),
+			TeamName:      getString(inputData, "team_name"),
+		}
+	case HookTypeUserPromptExpansion:
+		input = UserPromptExpansionInput{
+			BaseHookInput: base,
+			ExpansionType: getString(inputData, "expansion_type"),
+			CommandName:   getString(inputData, "command_name"),
+			CommandArgs:   getString(inputData, "command_args"),
+			CommandSource: getString(inputData, "command_source"),
+			Prompt:        getString(inputData, "prompt"),
+		}
+	case HookTypeWorktreeCreate:
+		input = WorktreeCreateInput{
+			BaseHookInput: base,
+			Name:          getString(inputData, "name"),
+		}
+	case HookTypeWorktreeRemove:
+		input = WorktreeRemoveInput{
+			BaseHookInput: base,
+			WorktreePath:  getString(inputData, "worktree_path"),
 		}
 	default:
 		return SDKControlResponse{
@@ -635,6 +717,22 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 	var input HookInput
 
 	switch hookEventName {
+	case "ConfigChange":
+		input = ConfigChangeInput{
+			BaseHookInput: base,
+			Source:        getString(hookInput, "source"),
+			FilePath:      getString(hookInput, "file_path"),
+		}
+	case "InstructionsLoaded":
+		input = InstructionsLoadedInput{
+			BaseHookInput:   base,
+			FilePath:        getString(hookInput, "file_path"),
+			MemoryType:      getString(hookInput, "memory_type"),
+			LoadReason:      getString(hookInput, "load_reason"),
+			Globs:           getStringSlice(hookInput, "globs"),
+			TriggerFilePath: getString(hookInput, "trigger_file_path"),
+			ParentFilePath:  getString(hookInput, "parent_file_path"),
+		}
 	case "PreToolUse":
 		input = PreToolUseInput{
 			BaseHookInput: base,
@@ -675,6 +773,17 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			Trigger:       getString(hookInput, "trigger"),
 			MessageCount:  getInt(hookInput, "message_count"),
 		}
+	case "PostCompact":
+		input = PostCompactInput{
+			BaseHookInput:  base,
+			Trigger:        getString(hookInput, "trigger"),
+			CompactSummary: getString(hookInput, "compact_summary"),
+		}
+	case "PostToolBatch":
+		input = PostToolBatchInput{
+			BaseHookInput: base,
+			ToolCalls:     getPostToolBatchToolCalls(hookInput),
+		}
 	case "PostToolUseFailure":
 		input = PostToolUseFailureInput{
 			BaseHookInput: base,
@@ -710,6 +819,61 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			BaseHookInput: base,
 			ToolName:      getString(hookInput, "tool_name"),
 			ToolInput:     marshalJSON(hookInput["tool_input"]),
+		}
+	case "Setup":
+		input = SetupInput{
+			BaseHookInput: base,
+			Trigger:       getString(hookInput, "trigger"),
+		}
+	case "StopFailure":
+		input = StopFailureInput{
+			BaseHookInput:        base,
+			Error:                AssistantMessageError(getString(hookInput, "error")),
+			ErrorDetails:         getString(hookInput, "error_details"),
+			LastAssistantMessage: getString(hookInput, "last_assistant_message"),
+		}
+	case "TaskCompleted":
+		input = TaskCompletedInput{
+			BaseHookInput:   base,
+			TaskID:          getString(hookInput, "task_id"),
+			TaskSubject:     getString(hookInput, "task_subject"),
+			TaskDescription: getString(hookInput, "task_description"),
+			TeammateName:    getString(hookInput, "teammate_name"),
+			TeamName:        getString(hookInput, "team_name"),
+		}
+	case "TaskCreated":
+		input = TaskCreatedInput{
+			BaseHookInput:   base,
+			TaskID:          getString(hookInput, "task_id"),
+			TaskSubject:     getString(hookInput, "task_subject"),
+			TaskDescription: getString(hookInput, "task_description"),
+			TeammateName:    getString(hookInput, "teammate_name"),
+			TeamName:        getString(hookInput, "team_name"),
+		}
+	case "TeammateIdle":
+		input = TeammateIdleInput{
+			BaseHookInput: base,
+			TeammateName:  getString(hookInput, "teammate_name"),
+			TeamName:      getString(hookInput, "team_name"),
+		}
+	case "UserPromptExpansion":
+		input = UserPromptExpansionInput{
+			BaseHookInput: base,
+			ExpansionType: getString(hookInput, "expansion_type"),
+			CommandName:   getString(hookInput, "command_name"),
+			CommandArgs:   getString(hookInput, "command_args"),
+			CommandSource: getString(hookInput, "command_source"),
+			Prompt:        getString(hookInput, "prompt"),
+		}
+	case "WorktreeCreate":
+		input = WorktreeCreateInput{
+			BaseHookInput: base,
+			Name:          getString(hookInput, "name"),
+		}
+	case "WorktreeRemove":
+		input = WorktreeRemoveInput{
+			BaseHookInput: base,
+			WorktreePath:  getString(hookInput, "worktree_path"),
 		}
 	default:
 		return SDKControlResponse{
@@ -1022,6 +1186,47 @@ func marshalJSON(v interface{}) []byte {
 	}
 	data, _ := json.Marshal(v)
 	return data
+}
+
+func getStringSlice(m map[string]interface{}, key string) []string {
+	raw, ok := m[key].([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if s, ok := v.(string); ok {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func getPostToolBatchToolCalls(m map[string]interface{}) []PostToolBatchToolCall {
+	raw, ok := m["tool_calls"].([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]PostToolBatchToolCall, 0, len(raw))
+	for _, v := range raw {
+		entry, ok := v.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		call := PostToolBatchToolCall{
+			ToolName:  getString(entry, "tool_name"),
+			ToolInput: marshalJSON(entry["tool_input"]),
+			ToolUseID: getString(entry, "tool_use_id"),
+		}
+		// Preserve the absent-vs-null distinction: TS `tool_response?: unknown`
+		// allows an explicit null payload, which must round-trip as "null" rather
+		// than be conflated with the key being missing.
+		if resp, ok := entry["tool_response"]; ok {
+			call.ToolResponse = marshalJSON(resp)
+		}
+		out = append(out, call)
+	}
+	return out
 }
 
 // buildHookResponse constructs the response data map for hook callbacks.

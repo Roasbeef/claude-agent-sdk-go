@@ -697,6 +697,12 @@ func (PermissionDeny) IsAllow() bool { return false }
 type HookType string
 
 const (
+	// HookTypeConfigChange fires when configuration changes.
+	HookTypeConfigChange HookType = "ConfigChange"
+
+	// HookTypeInstructionsLoaded fires when instruction files are loaded.
+	HookTypeInstructionsLoaded HookType = "InstructionsLoaded"
+
 	// HookTypePreToolUse fires before tool execution.
 	HookTypePreToolUse HookType = "PreToolUse"
 
@@ -730,8 +736,38 @@ const (
 	// HookTypePreCompact fires before context compaction.
 	HookTypePreCompact HookType = "PreCompact"
 
+	// HookTypePostCompact fires after context compaction.
+	HookTypePostCompact HookType = "PostCompact"
+
+	// HookTypePostToolBatch fires after a batch of tool calls completes.
+	HookTypePostToolBatch HookType = "PostToolBatch"
+
 	// HookTypePermissionRequest fires when permission check requested.
 	HookTypePermissionRequest HookType = "PermissionRequest"
+
+	// HookTypeSetup fires during setup.
+	HookTypeSetup HookType = "Setup"
+
+	// HookTypeStopFailure fires when a stop attempt fails.
+	HookTypeStopFailure HookType = "StopFailure"
+
+	// HookTypeTaskCompleted fires when a task completes.
+	HookTypeTaskCompleted HookType = "TaskCompleted"
+
+	// HookTypeTaskCreated fires when a task is created.
+	HookTypeTaskCreated HookType = "TaskCreated"
+
+	// HookTypeTeammateIdle fires when a teammate becomes idle.
+	HookTypeTeammateIdle HookType = "TeammateIdle"
+
+	// HookTypeUserPromptExpansion fires when a prompt expansion occurs.
+	HookTypeUserPromptExpansion HookType = "UserPromptExpansion"
+
+	// HookTypeWorktreeCreate fires when a worktree is created.
+	HookTypeWorktreeCreate HookType = "WorktreeCreate"
+
+	// HookTypeWorktreeRemove fires when a worktree is removed.
+	HookTypeWorktreeRemove HookType = "WorktreeRemove"
 )
 
 // HookConfig defines a lifecycle callback.
@@ -761,6 +797,36 @@ type BaseHookInput struct {
 	AgentID        string `json:"agent_id,omitempty"`
 	AgentType      string `json:"agent_type,omitempty"`
 }
+
+// ConfigChangeInput contains data for ConfigChange hooks.
+type ConfigChangeInput struct {
+	BaseHookInput
+	Source   string `json:"source"`
+	FilePath string `json:"file_path,omitempty"`
+}
+
+// HookType implements HookInput.
+func (ConfigChangeInput) HookType() HookType { return HookTypeConfigChange }
+
+// Base implements HookInput.
+func (i ConfigChangeInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// InstructionsLoadedInput contains data for InstructionsLoaded hooks.
+type InstructionsLoadedInput struct {
+	BaseHookInput
+	FilePath        string   `json:"file_path"`
+	MemoryType      string   `json:"memory_type"`
+	LoadReason      string   `json:"load_reason"`
+	Globs           []string `json:"globs,omitempty"`
+	TriggerFilePath string   `json:"trigger_file_path,omitempty"`
+	ParentFilePath  string   `json:"parent_file_path,omitempty"`
+}
+
+// HookType implements HookInput.
+func (InstructionsLoadedInput) HookType() HookType { return HookTypeInstructionsLoaded }
+
+// Base implements HookInput.
+func (i InstructionsLoadedInput) Base() BaseHookInput { return i.BaseHookInput }
 
 // PreToolUseInput contains data for PreToolUse hooks.
 type PreToolUseInput struct {
@@ -848,6 +914,39 @@ func (PreCompactInput) HookType() HookType { return HookTypePreCompact }
 // Base implements HookInput.
 func (i PreCompactInput) Base() BaseHookInput { return i.BaseHookInput }
 
+// PostCompactInput contains data for PostCompact hooks.
+type PostCompactInput struct {
+	BaseHookInput
+	Trigger        string `json:"trigger"`
+	CompactSummary string `json:"compact_summary"`
+}
+
+// HookType implements HookInput.
+func (PostCompactInput) HookType() HookType { return HookTypePostCompact }
+
+// Base implements HookInput.
+func (i PostCompactInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// PostToolBatchInput contains data for PostToolBatch hooks.
+type PostToolBatchInput struct {
+	BaseHookInput
+	ToolCalls []PostToolBatchToolCall `json:"tool_calls"`
+}
+
+// PostToolBatchToolCall contains one tool call result from a PostToolBatch hook.
+type PostToolBatchToolCall struct {
+	ToolName     string          `json:"tool_name"`
+	ToolInput    json.RawMessage `json:"tool_input"`
+	ToolUseID    string          `json:"tool_use_id"`
+	ToolResponse json.RawMessage `json:"tool_response,omitempty"`
+}
+
+// HookType implements HookInput.
+func (PostToolBatchInput) HookType() HookType { return HookTypePostToolBatch }
+
+// Base implements HookInput.
+func (i PostToolBatchInput) Base() BaseHookInput { return i.BaseHookInput }
+
 // PostToolUseFailureInput contains data for PostToolUseFailure hooks.
 type PostToolUseFailureInput struct {
 	BaseHookInput
@@ -926,6 +1025,130 @@ func (PermissionRequestInput) HookType() HookType { return HookTypePermissionReq
 
 // Base implements HookInput.
 func (i PermissionRequestInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// SetupInput contains data for Setup hooks.
+type SetupInput struct {
+	BaseHookInput
+	Trigger string `json:"trigger"`
+}
+
+// HookType implements HookInput.
+func (SetupInput) HookType() HookType { return HookTypeSetup }
+
+// Base implements HookInput.
+func (i SetupInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// AssistantMessageError identifies an assistant message error code.
+type AssistantMessageError string
+
+const (
+	AssistantMessageErrorAuthenticationFailed AssistantMessageError = "authentication_failed"
+	AssistantMessageErrorBillingError         AssistantMessageError = "billing_error"
+	AssistantMessageErrorRateLimit            AssistantMessageError = "rate_limit"
+	AssistantMessageErrorInvalidRequest       AssistantMessageError = "invalid_request"
+	AssistantMessageErrorServerError          AssistantMessageError = "server_error"
+	AssistantMessageErrorUnknown              AssistantMessageError = "unknown"
+	AssistantMessageErrorMaxOutputTokens      AssistantMessageError = "max_output_tokens"
+)
+
+// StopFailureInput contains data for StopFailure hooks.
+type StopFailureInput struct {
+	BaseHookInput
+	Error                AssistantMessageError `json:"error"`
+	ErrorDetails         string                `json:"error_details,omitempty"`
+	LastAssistantMessage string                `json:"last_assistant_message,omitempty"`
+}
+
+// HookType implements HookInput.
+func (StopFailureInput) HookType() HookType { return HookTypeStopFailure }
+
+// Base implements HookInput.
+func (i StopFailureInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// TaskCompletedInput contains data for TaskCompleted hooks.
+type TaskCompletedInput struct {
+	BaseHookInput
+	TaskID          string `json:"task_id"`
+	TaskSubject     string `json:"task_subject"`
+	TaskDescription string `json:"task_description,omitempty"`
+	TeammateName    string `json:"teammate_name,omitempty"`
+	TeamName        string `json:"team_name,omitempty"`
+}
+
+// HookType implements HookInput.
+func (TaskCompletedInput) HookType() HookType { return HookTypeTaskCompleted }
+
+// Base implements HookInput.
+func (i TaskCompletedInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// TaskCreatedInput contains data for TaskCreated hooks.
+type TaskCreatedInput struct {
+	BaseHookInput
+	TaskID          string `json:"task_id"`
+	TaskSubject     string `json:"task_subject"`
+	TaskDescription string `json:"task_description,omitempty"`
+	TeammateName    string `json:"teammate_name,omitempty"`
+	TeamName        string `json:"team_name,omitempty"`
+}
+
+// HookType implements HookInput.
+func (TaskCreatedInput) HookType() HookType { return HookTypeTaskCreated }
+
+// Base implements HookInput.
+func (i TaskCreatedInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// TeammateIdleInput contains data for TeammateIdle hooks.
+type TeammateIdleInput struct {
+	BaseHookInput
+	TeammateName string `json:"teammate_name"`
+	TeamName     string `json:"team_name"`
+}
+
+// HookType implements HookInput.
+func (TeammateIdleInput) HookType() HookType { return HookTypeTeammateIdle }
+
+// Base implements HookInput.
+func (i TeammateIdleInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// UserPromptExpansionInput contains data for UserPromptExpansion hooks.
+type UserPromptExpansionInput struct {
+	BaseHookInput
+	ExpansionType string `json:"expansion_type"`
+	CommandName   string `json:"command_name"`
+	CommandArgs   string `json:"command_args"`
+	CommandSource string `json:"command_source,omitempty"`
+	Prompt        string `json:"prompt"`
+}
+
+// HookType implements HookInput.
+func (UserPromptExpansionInput) HookType() HookType { return HookTypeUserPromptExpansion }
+
+// Base implements HookInput.
+func (i UserPromptExpansionInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// WorktreeCreateInput contains data for WorktreeCreate hooks.
+type WorktreeCreateInput struct {
+	BaseHookInput
+	Name string `json:"name"`
+}
+
+// HookType implements HookInput.
+func (WorktreeCreateInput) HookType() HookType { return HookTypeWorktreeCreate }
+
+// Base implements HookInput.
+func (i WorktreeCreateInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// WorktreeRemoveInput contains data for WorktreeRemove hooks.
+type WorktreeRemoveInput struct {
+	BaseHookInput
+	WorktreePath string `json:"worktree_path"`
+}
+
+// HookType implements HookInput.
+func (WorktreeRemoveInput) HookType() HookType { return HookTypeWorktreeRemove }
+
+// Base implements HookInput.
+func (i WorktreeRemoveInput) Base() BaseHookInput { return i.BaseHookInput }
 
 // HookJSONOutput is the output format for hook callbacks.
 // This is what hooks can return to control behavior.
