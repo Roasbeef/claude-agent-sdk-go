@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"iter"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -58,6 +60,136 @@ func decodeMCPConfigArgs(t *testing.T, args []string) map[string]map[string]inte
 
 func stringPtr(s string) *string {
 	return &s
+}
+
+type mockTransport struct {
+	mu       sync.Mutex
+	written  []Message
+	incoming chan Message
+	closed   atomic.Bool
+	ended    atomic.Bool
+	ready    atomic.Bool
+}
+
+func newMockTransport(buf int) *mockTransport {
+	return &mockTransport{incoming: make(chan Message, buf)}
+}
+
+func (m *mockTransport) Connect(ctx context.Context) error {
+	m.ready.Store(true)
+	return nil
+}
+
+func (m *mockTransport) Write(ctx context.Context, msg Message) error {
+	if m.closed.Load() {
+		return &ErrTransportClosed{}
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.written = append(m.written, msg)
+	return nil
+}
+
+func (m *mockTransport) ReadMessages(ctx context.Context) iter.Seq2[Message, error] {
+	return func(yield func(Message, error) bool) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case msg, ok := <-m.incoming:
+				if !ok || !yield(msg, nil) {
+					return
+				}
+			}
+		}
+	}
+}
+
+func (m *mockTransport) EndInput() error {
+	m.ended.Store(true)
+	return nil
+}
+
+func (m *mockTransport) Close() error {
+	if !m.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+	m.ready.Store(false)
+	close(m.incoming)
+	return nil
+}
+
+func (m *mockTransport) IsReady() bool {
+	return m.ready.Load() && !m.closed.Load()
+}
+
+var _ Transport = (*mockTransport)(nil)
+
+// TestMockTransportReadMessagesRoundTrip drives the mock's iterator end-to-end:
+// pushes messages onto incoming, asserts each is yielded in order, and verifies
+// the iterator returns when context is canceled. Also covers Close idempotence
+// (the Close path closes the incoming channel; a second Close must be a no-op).
+func TestMockTransportReadMessagesRoundTrip(t *testing.T) {
+	mock := newMockTransport(4)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	require.NoError(t, mock.Connect(ctx))
+	assert.True(t, mock.IsReady())
+
+	want := []Message{
+		UserMessage{Type: "user", SessionID: "one"},
+		UserMessage{Type: "user", SessionID: "two"},
+		UserMessage{Type: "user", SessionID: "three"},
+	}
+	for _, msg := range want {
+		mock.incoming <- msg
+	}
+
+	got := make([]Message, 0, len(want))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for msg, err := range mock.ReadMessages(ctx) {
+			require.NoError(t, err)
+			got = append(got, msg)
+			if len(got) == len(want) {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ReadMessages did not yield all messages within timeout")
+	}
+	assert.Equal(t, want, got)
+
+	require.NoError(t, mock.Close())
+	require.NoError(t, mock.Close())
+	assert.False(t, mock.IsReady())
+
+	err := mock.Write(context.Background(), UserMessage{})
+	assert.IsType(t, &ErrTransportClosed{}, err)
+}
+
+// TestWithTransportOptionPlumbed verifies that WithTransport stores the
+// injected transport on Options so Client.Connect's injection branch picks it
+// up. End-to-end coverage through Client.Connect is deferred until the
+// control-channel initialize handshake is easier to fixture against a mock.
+func TestWithTransportOptionPlumbed(t *testing.T) {
+	mock := newMockTransport(1)
+
+	opts := NewOptions()
+	WithTransport(mock)(opts)
+
+	got, ok := opts.Transport.(*mockTransport)
+	require.True(t, ok, "Options.Transport should hold the injected mockTransport")
+	require.Same(t, mock, got)
 }
 
 // TestSubprocessTransportBasicCommunication tests stdin/stdout communication.
@@ -166,6 +298,56 @@ func TestSubprocessTransportGracefulShutdown(t *testing.T) {
 	// Verify transport is closed
 	assert.True(t, transport.closed.Load())
 	assert.False(t, transport.IsAlive())
+}
+
+func TestSubprocessTransportEndInput(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	err = transport.EndInput()
+	require.NoError(t, err)
+	assert.Nil(t, transport.stdin)
+	assert.True(t, runner.IsAlive())
+	assert.True(t, transport.IsReady())
+}
+
+func TestSubprocessTransportEndInputIdempotent(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	require.NoError(t, transport.EndInput())
+	require.NoError(t, transport.EndInput())
+	assert.Nil(t, transport.stdin)
+}
+
+func TestSubprocessTransportCloseAfterEndInput(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+
+	require.NoError(t, transport.EndInput())
+	require.NoError(t, transport.Close())
+	assert.True(t, transport.closed.Load())
+	assert.False(t, transport.IsReady())
 }
 
 // TestSubprocessTransportContextCancellation tests that context cancellation

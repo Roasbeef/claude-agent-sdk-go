@@ -17,7 +17,7 @@ import (
 // - Hook callback invocation
 // - Control request/response correlation
 type Protocol struct {
-	transport     *SubprocessTransport
+	transport     Transport
 	options       *Options
 	requestID     atomic.Uint64
 	pendingReqs   sync.Map                // requestID -> chan ControlResponse
@@ -27,7 +27,7 @@ type Protocol struct {
 }
 
 // NewProtocol creates a new protocol handler.
-func NewProtocol(transport *SubprocessTransport, options *Options) *Protocol {
+func NewProtocol(transport Transport, options *Options) *Protocol {
 	// Copy SDK MCP servers from options.
 	sdkMcpServers := make(map[string]*McpServer)
 	for name, server := range options.SDKMcpServers {

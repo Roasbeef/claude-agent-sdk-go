@@ -26,6 +26,40 @@ type writerRef struct {
 	w io.Writer
 }
 
+// Transport abstracts CLI communication so the SDK can swap implementations
+// (subprocess today; in-memory or network transports in the future).
+//
+// All methods must be safe for concurrent use unless documented otherwise:
+// implementations are responsible for serializing Write calls. ReadMessages
+// returns an iterator whose lifetime is bound by the supplied context.
+type Transport interface {
+	// Connect establishes the underlying connection. Must be called before
+	// Write / ReadMessages. Idempotent: subsequent calls return nil.
+	Connect(ctx context.Context) error
+
+	// Write sends a single SDK message. Implementations must serialize
+	// concurrent Write calls.
+	Write(ctx context.Context, msg Message) error
+
+	// ReadMessages returns an iterator over inbound messages. The iterator
+	// ends when the connection closes or ctx is canceled. Parse errors are
+	// yielded via the second return value.
+	ReadMessages(ctx context.Context) iter.Seq2[Message, error]
+
+	// EndInput closes the input side of the transport (stdin for subprocess
+	// transports) without tearing down the read side. Used to signal "no
+	// more user messages" while still draining replies. Safe to call
+	// multiple times.
+	EndInput() error
+
+	// Close terminates the transport and releases all resources. Safe to
+	// call multiple times. After Close, Write returns ErrTransportClosed.
+	Close() error
+
+	// IsReady reports whether the transport is connected and able to send.
+	IsReady() bool
+}
+
 type SubprocessTransport struct {
 	runner    SubprocessRunner
 	stdin     io.WriteCloser
@@ -445,6 +479,25 @@ func (t *SubprocessTransport) ReadMessages(ctx context.Context) iter.Seq2[Messag
 	}
 }
 
+// EndInput closes the CLI subprocess's stdin without terminating the process.
+// Use this to signal end-of-input while continuing to drain stdout. Idempotent.
+func (t *SubprocessTransport) EndInput() error {
+	if t.closed.Load() {
+		return nil
+	}
+
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if t.stdin == nil {
+		return nil
+	}
+
+	err := t.stdin.Close()
+	t.stdin = nil
+	return err
+}
+
 // Close terminates the CLI subprocess and cleans up resources.
 //
 // Close attempts a graceful shutdown by closing stdin, which signals the
@@ -497,3 +550,10 @@ func (t *SubprocessTransport) IsAlive() bool {
 	}
 	return t.runner.IsAlive()
 }
+
+// IsReady reports whether the subprocess is connected and able to send messages.
+func (t *SubprocessTransport) IsReady() bool {
+	return t.IsAlive()
+}
+
+var _ Transport = (*SubprocessTransport)(nil)
