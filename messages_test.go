@@ -491,6 +491,12 @@ func int64Ptr(v int64) *int64       { return &v }
 func float64Ptr(v float64) *float64 { return &v }
 func boolPtr(v bool) *bool          { return &v }
 
+func terminalReasonPtr(v TerminalReason) *TerminalReason { return &v }
+func fastModeStatePtr(v FastModeState) *FastModeState    { return &v }
+func userMessagePriorityPtr(v UserMessagePriority) *UserMessagePriority {
+	return &v
+}
+
 func rateLimitTypePtr(v RateLimitType) *RateLimitType       { return &v }
 func rateLimitStatusPtr(v RateLimitStatus) *RateLimitStatus { return &v }
 func rateLimitOverageDisabledReasonPtr(v RateLimitOverageDisabledReason) *RateLimitOverageDisabledReason {
@@ -722,6 +728,363 @@ func TestToolProgressMessageTaskIDRoundTrip(t *testing.T) {
 		require.True(t, ok, "expected ToolProgressMessage")
 		assert.Nil(t, progressMsg.TaskID)
 	})
+}
+
+func TestResultMessageFieldAdditionsRoundTrip(t *testing.T) {
+	stopReason := "stop_sequence"
+	msg := ResultMessage{
+		Type:             "result",
+		Status:           "success",
+		Subtype:          "success",
+		UUID:             "550e8400-e29b-41d4-a716-446655440040",
+		SessionID:        "sess_result_123",
+		Result:           "done",
+		StructuredOutput: map[string]interface{}{"ok": true},
+		StopReason:       &stopReason,
+		TerminalReason:   terminalReasonPtr(TerminalReasonHookStopped),
+		FastModeState:    fastModeStatePtr(FastModeStateCooldown),
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var decoded ResultMessage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NotNil(t, decoded.StopReason)
+	assert.Equal(t, stopReason, *decoded.StopReason)
+	require.NotNil(t, decoded.TerminalReason)
+	assert.Equal(t, TerminalReasonHookStopped, *decoded.TerminalReason)
+	require.NotNil(t, decoded.FastModeState)
+	assert.Equal(t, FastModeStateCooldown, *decoded.FastModeState)
+}
+
+func TestResultMessageStopReasonNullRoundTrip(t *testing.T) {
+	msg := ResultMessage{
+		Type:       "result",
+		Status:     "error",
+		Subtype:    "error_during_execution",
+		SessionID:  "sess_result_123",
+		StopReason: nil,
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var got map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.JSONEq(t, `null`, string(got["stop_reason"]))
+
+	var decoded ResultMessage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Nil(t, decoded.StopReason)
+}
+
+func TestResultMessageFieldAdditionsBackwardCompat(t *testing.T) {
+	input := []byte(`{
+		"type": "result",
+		"status": "success",
+		"subtype": "success",
+		"session_id": "sess_result_123",
+		"result": "done"
+	}`)
+
+	var decoded ResultMessage
+	require.NoError(t, json.Unmarshal(input, &decoded))
+	assert.Nil(t, decoded.StopReason)
+	assert.Nil(t, decoded.TerminalReason)
+	assert.Nil(t, decoded.FastModeState)
+}
+
+func TestSystemMessageFieldAdditionsRoundTrip(t *testing.T) {
+	msg := SystemMessage{
+		Type:              "system",
+		Subtype:           "init",
+		UUID:              "550e8400-e29b-41d4-a716-446655440041",
+		SessionID:         "sess_system_123",
+		APIKeySource:      "env",
+		Cwd:               "/workspace/project",
+		Tools:             []string{"Read", "Edit"},
+		MCPServers:        []MCPServerInfo{{Name: "github", Status: "connected"}},
+		Model:             "claude-opus-4-5-20250929",
+		PermissionMode:    PermissionModeAcceptEdits,
+		SlashCommands:     []string{"/help"},
+		OutputStyle:       "default",
+		ClaudeCodeVersion: "2.0.0",
+		Skills:            []string{"go", "review"},
+		Plugins:           []SystemPlugin{{Name: "github", Path: "/plugins/github"}},
+		Agents:            []string{"reviewer"},
+		Betas:             []string{"beta-flag"},
+		FastModeState:     fastModeStatePtr(FastModeStateOn),
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var decoded SystemMessage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Equal(t, msg, decoded)
+}
+
+func TestSystemMessageMinimalModernPayload(t *testing.T) {
+	msg := SystemMessage{
+		Type:              "system",
+		Subtype:           "init",
+		UUID:              "550e8400-e29b-41d4-a716-446655440042",
+		SessionID:         "sess_system_123",
+		APIKeySource:      "env",
+		Cwd:               "/workspace/project",
+		Tools:             []string{},
+		MCPServers:        []MCPServerInfo{},
+		Model:             "claude-sonnet-4-5-20250929",
+		PermissionMode:    PermissionModeDefault,
+		SlashCommands:     []string{},
+		OutputStyle:       "default",
+		ClaudeCodeVersion: "2.0.0",
+		Skills:            []string{},
+		Plugins:           []SystemPlugin{},
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Contains(t, got, "claude_code_version")
+	assert.Contains(t, got, "skills")
+	assert.Contains(t, got, "plugins")
+	for _, key := range []string{"agents", "betas", "fast_mode_state"} {
+		assert.NotContains(t, got, key)
+	}
+
+	var decoded SystemMessage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Nil(t, decoded.FastModeState)
+	assert.Nil(t, decoded.Agents)
+	assert.Nil(t, decoded.Betas)
+}
+
+func TestSystemMessageFieldAdditionsBackwardCompat(t *testing.T) {
+	input := []byte(`{
+		"type": "system",
+		"subtype": "init",
+		"uuid": "550e8400-e29b-41d4-a716-446655440043",
+		"session_id": "sess_system_123",
+		"apiKeySource": "env",
+		"cwd": "/workspace/project",
+		"tools": ["Read"],
+		"mcp_servers": [],
+		"model": "claude-sonnet-4-5-20250929",
+		"permissionMode": "default",
+		"slash_commands": [],
+		"output_style": "default"
+	}`)
+
+	var decoded SystemMessage
+	require.NoError(t, json.Unmarshal(input, &decoded))
+	assert.Empty(t, decoded.ClaudeCodeVersion)
+	assert.Nil(t, decoded.Skills)
+	assert.Nil(t, decoded.Plugins)
+	assert.Nil(t, decoded.Agents)
+	assert.Nil(t, decoded.Betas)
+	assert.Nil(t, decoded.FastModeState)
+}
+
+func TestModelUsageMaxOutputTokensRoundTrip(t *testing.T) {
+	usage := ModelUsage{
+		InputTokens:              10,
+		OutputTokens:             20,
+		CacheReadInputTokens:     3,
+		CacheCreationInputTokens: 4,
+		WebSearchRequests:        1,
+		CostUSD:                  0.25,
+		ContextWindow:            200000,
+		MaxOutputTokens:          32000,
+	}
+
+	data, err := json.Marshal(usage)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{
+		"inputTokens": 10,
+		"outputTokens": 20,
+		"cacheReadInputTokens": 3,
+		"cacheCreationInputTokens": 4,
+		"webSearchRequests": 1,
+		"costUSD": 0.25,
+		"contextWindow": 200000,
+		"maxOutputTokens": 32000
+	}`, string(data))
+
+	var decoded ModelUsage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Equal(t, usage, decoded)
+}
+
+func TestUserMessagePriorityRoundTrip(t *testing.T) {
+	for _, priority := range []UserMessagePriority{
+		UserMessagePriorityNow,
+		UserMessagePriorityNext,
+		UserMessagePriorityLater,
+	} {
+		t.Run(string(priority), func(t *testing.T) {
+			msg := UserMessage{
+				Type:            "user",
+				SessionID:       "sess_user_123",
+				ParentToolUseID: nil,
+				Message: APIUserMessage{
+					Role:    "user",
+					Content: []UserContentBlock{{Type: "text", Text: "hello"}},
+				},
+				Priority: userMessagePriorityPtr(priority),
+			}
+
+			data, err := json.Marshal(msg)
+			require.NoError(t, err)
+
+			var decoded UserMessage
+			require.NoError(t, json.Unmarshal(data, &decoded))
+			require.NotNil(t, decoded.Priority)
+			assert.Equal(t, priority, *decoded.Priority)
+		})
+	}
+
+	data, err := json.Marshal(UserMessage{Type: "user", SessionID: "sess_user_123"})
+	require.NoError(t, err)
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.NotContains(t, got, "priority")
+}
+
+func TestUserMessageReplayPriorityRoundTrip(t *testing.T) {
+	for _, priority := range []UserMessagePriority{
+		UserMessagePriorityNow,
+		UserMessagePriorityNext,
+		UserMessagePriorityLater,
+	} {
+		t.Run(string(priority), func(t *testing.T) {
+			msg := UserMessageReplay{
+				Type:            "user",
+				UUID:            "550e8400-e29b-41d4-a716-446655440044",
+				SessionID:       "sess_user_123",
+				ParentToolUseID: nil,
+				IsReplay:        true,
+				Message: APIUserMessage{
+					Role:    "user",
+					Content: []UserContentBlock{{Type: "text", Text: "hello"}},
+				},
+				Priority: userMessagePriorityPtr(priority),
+			}
+
+			data, err := json.Marshal(msg)
+			require.NoError(t, err)
+
+			var decoded UserMessageReplay
+			require.NoError(t, json.Unmarshal(data, &decoded))
+			require.NotNil(t, decoded.Priority)
+			assert.Equal(t, priority, *decoded.Priority)
+		})
+	}
+
+	data, err := json.Marshal(UserMessageReplay{Type: "user", UUID: "uuid", SessionID: "sess_user_123"})
+	require.NoError(t, err)
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.NotContains(t, got, "priority")
+}
+
+func TestParseMessageDispatchWithFieldAdditions(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		check func(t *testing.T, msg Message)
+	}{
+		{
+			name: "result",
+			input: `{
+				"type": "result",
+				"status": "success",
+				"subtype": "success",
+				"session_id": "sess_result_123",
+				"result": "done",
+				"stop_reason": "end_turn",
+				"terminal_reason": "completed",
+				"fast_mode_state": "cooldown"
+			}`,
+			check: func(t *testing.T, msg Message) {
+				t.Helper()
+				resultMsg, ok := msg.(ResultMessage)
+				require.True(t, ok, "expected ResultMessage")
+				require.NotNil(t, resultMsg.StopReason)
+				assert.Equal(t, "end_turn", *resultMsg.StopReason)
+				require.NotNil(t, resultMsg.TerminalReason)
+				assert.Equal(t, TerminalReasonCompleted, *resultMsg.TerminalReason)
+				require.NotNil(t, resultMsg.FastModeState)
+				assert.Equal(t, FastModeStateCooldown, *resultMsg.FastModeState)
+			},
+		},
+		{
+			name: "system",
+			input: `{
+				"type": "system",
+				"subtype": "init",
+				"uuid": "550e8400-e29b-41d4-a716-446655440045",
+				"session_id": "sess_system_123",
+				"apiKeySource": "env",
+				"cwd": "/workspace/project",
+				"tools": ["Read"],
+				"mcp_servers": [],
+				"model": "claude-sonnet-4-5-20250929",
+				"permissionMode": "default",
+				"slash_commands": [],
+				"output_style": "default",
+				"claude_code_version": "2.0.0",
+				"skills": ["go"],
+				"plugins": [{"name": "github", "path": "/plugins/github"}],
+				"agents": ["reviewer"],
+				"betas": ["beta-flag"],
+				"fast_mode_state": "on"
+			}`,
+			check: func(t *testing.T, msg Message) {
+				t.Helper()
+				systemMsg, ok := msg.(SystemMessage)
+				require.True(t, ok, "expected SystemMessage")
+				assert.Equal(t, "2.0.0", systemMsg.ClaudeCodeVersion)
+				assert.Equal(t, []string{"go"}, systemMsg.Skills)
+				assert.Equal(t, []SystemPlugin{{Name: "github", Path: "/plugins/github"}}, systemMsg.Plugins)
+				assert.Equal(t, []string{"reviewer"}, systemMsg.Agents)
+				assert.Equal(t, []string{"beta-flag"}, systemMsg.Betas)
+				require.NotNil(t, systemMsg.FastModeState)
+				assert.Equal(t, FastModeStateOn, *systemMsg.FastModeState)
+			},
+		},
+		{
+			name: "user",
+			input: `{
+				"type": "user",
+				"session_id": "sess_user_123",
+				"parent_tool_use_id": null,
+				"message": {
+					"role": "user",
+					"content": [{"type": "text", "text": "hello"}]
+				},
+				"priority": "later"
+			}`,
+			check: func(t *testing.T, msg Message) {
+				t.Helper()
+				userMsg, ok := msg.(UserMessage)
+				require.True(t, ok, "expected UserMessage")
+				require.NotNil(t, userMsg.Priority)
+				assert.Equal(t, UserMessagePriorityLater, *userMsg.Priority)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := ParseMessage([]byte(tt.input))
+			require.NoError(t, err)
+			tt.check(t, msg)
+		})
+	}
 }
 
 func TestParseMessageSystemInit(t *testing.T) {
