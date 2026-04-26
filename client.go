@@ -747,16 +747,12 @@ func (s *Stream) handleSends() {
 }
 
 // Interrupt sends an interrupt signal to stop the current generation.
+// It blocks until the CLI acknowledges the request or returns an error.
 func (s *Stream) Interrupt(ctx context.Context) error {
-	// Send interrupt control message in SDK format.
-	req := SDKControlRequest{
-		Type:      "control_request",
-		RequestID: s.client.protocol.nextRequestID(),
-		Request: SDKControlRequestBody{
-			Subtype: "interrupt",
-		},
-	}
-	return s.client.transport.Write(ctx, req)
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "interrupt",
+	})
+	return err
 }
 
 // RewindFiles restores files to a checkpoint at the specified user message.
@@ -776,44 +772,69 @@ func (s *Stream) RewindFiles(ctx context.Context, userMessageUUID string) error 
 }
 
 // SetPermissionMode dynamically changes the permission mode for this session.
+// It blocks until the CLI acknowledges the request or returns an error.
 func (s *Stream) SetPermissionMode(ctx context.Context, mode PermissionMode) error {
-	req := SDKControlRequest{
-		Type:      "control_request",
-		RequestID: s.client.protocol.nextRequestID(),
-		Request: SDKControlRequestBody{
-			Subtype: "set_permission_mode",
-			Mode:    string(mode),
-		},
-	}
-	return s.client.transport.Write(ctx, req)
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "set_permission_mode",
+		Mode:    string(mode),
+	})
+	return err
 }
 
 // SetModel dynamically changes the model for this session.
 // Pass empty string to reset to default.
+// It blocks until the CLI acknowledges the request or returns an error.
 func (s *Stream) SetModel(ctx context.Context, model string) error {
-	req := SDKControlRequest{
-		Type:      "control_request",
-		RequestID: s.client.protocol.nextRequestID(),
-		Request: SDKControlRequestBody{
-			Subtype: "set_model",
-			Model:   model,
-		},
-	}
-	return s.client.transport.Write(ctx, req)
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "set_model",
+		Model:   model,
+	})
+	return err
 }
 
 // SetMaxThinkingTokens dynamically changes the max thinking tokens limit.
 // Pass nil to remove the limit.
+// It blocks until the CLI acknowledges the request or returns an error.
 func (s *Stream) SetMaxThinkingTokens(ctx context.Context, tokens *int) error {
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype:           "set_max_thinking_tokens",
+		MaxThinkingTokens: tokens,
+	})
+	return err
+}
+
+// sendSDKControlRequest sends an SDK-format control request and waits for the
+// matching response.
+func (s *Stream) sendSDKControlRequest(
+	ctx context.Context, body SDKControlRequestBody,
+) (*SDKControlResponse, error) {
+	p := s.client.protocol
+	requestID := p.nextRequestID()
 	req := SDKControlRequest{
 		Type:      "control_request",
-		RequestID: s.client.protocol.nextRequestID(),
-		Request: SDKControlRequestBody{
-			Subtype:           "set_max_thinking_tokens",
-			MaxThinkingTokens: tokens,
-		},
+		RequestID: requestID,
+		Request:   body,
 	}
-	return s.client.transport.Write(ctx, req)
+
+	// Register before writing so a fast CLI response cannot race the waiter.
+	ch := make(chan SDKControlResponse, 1)
+	p.pendingReqs.Store(requestID, ch)
+
+	if err := s.client.transport.Write(ctx, req); err != nil {
+		p.pendingReqs.Delete(requestID)
+		return nil, fmt.Errorf("control request %q: write: %w", body.Subtype, err)
+	}
+
+	select {
+	case <-ctx.Done():
+		p.pendingReqs.Delete(requestID)
+		return nil, ctx.Err()
+	case resp := <-ch:
+		if resp.Response.Subtype == "error" {
+			return nil, fmt.Errorf("control request %q: %s", body.Subtype, resp.Response.Error)
+		}
+		return &resp, nil
+	}
 }
 
 // SupportedCommands returns the list of available slash commands.
