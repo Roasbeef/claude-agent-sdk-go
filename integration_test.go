@@ -1245,3 +1245,42 @@ func TestIntegrationHookLifecycleMessages(t *testing.T) {
 		"shape that emits hook_started/hook_progress/hook_response in v2.1.119 " +
 		"is not reproducible from this test harness; see TODO above")
 }
+
+// TestIntegrationStreamIntrospection exercises the cached-init readers added
+// in PR 18 against the live CLI. The CLI's initialize response populates
+// commands and models; we assert both are non-empty and that AccountInfo
+// returns without error.
+func TestIntegrationStreamIntrospection(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant."),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	init, err := stream.InitializationResult()
+	require.NoError(t, err)
+	require.NotNil(t, init)
+
+	commands, err := stream.SupportedCommands(ctx)
+	require.NoError(t, err)
+	assert.NotEmpty(t, commands, "expected at least one slash command from CLI")
+
+	models, err := stream.SupportedModels(ctx)
+	require.NoError(t, err)
+	assert.NotEmpty(t, models, "expected at least one model from CLI")
+
+	// Account may be empty under OAuth-token-only auth; just ensure no error.
+	_, err = stream.AccountInfo(ctx)
+	require.NoError(t, err)
+}

@@ -23,6 +23,7 @@ type Protocol struct {
 	pendingReqs   sync.Map                // requestID -> chan ControlResponse
 	hookCallbacks map[string]HookCallback // hookID -> callback
 	sdkMcpServers map[string]*McpServer   // serverName -> server (in-process MCP)
+	initResponse  atomic.Pointer[SDKControlInitializeResponse]
 	initialized   atomic.Bool
 }
 
@@ -135,8 +136,21 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 		return fmt.Errorf("initialization error: %s", resp.Response.Error)
 	}
 
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return fmt.Errorf("failed to parse initialization response: %w", err)
+	}
+	var initResp SDKControlInitializeResponse
+	if err := json.Unmarshal(bytes, &initResp); err != nil {
+		return fmt.Errorf("failed to parse initialization response: %w", err)
+	}
+	p.initResponse.Store(&initResp)
 	p.initialized.Store(true)
 	return nil
+}
+
+func (p *Protocol) initResult() *SDKControlInitializeResponse {
+	return p.initResponse.Load()
 }
 
 // SendMessage sends a user message to the CLI.
