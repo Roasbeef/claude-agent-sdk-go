@@ -234,6 +234,41 @@ func TestStreamGetContextUsageParsesCanonicalPayload(t *testing.T) {
 		"slashCommands": map[string]interface{}{
 			"totalCommands": 10, "includedCommands": 8, "tokens": 200,
 		},
+		"deferredBuiltinTools": []interface{}{
+			map[string]interface{}{"name": "Write", "tokens": 40, "isLoaded": false},
+		},
+		"systemTools": []interface{}{
+			map[string]interface{}{"name": "Read", "tokens": 25},
+		},
+		"systemPromptSections": []interface{}{
+			map[string]interface{}{"name": "preamble", "tokens": 75},
+		},
+		"skills": map[string]interface{}{
+			"totalSkills":    5,
+			"includedSkills": 3,
+			"tokens":         60,
+			"skillFrontmatter": []interface{}{
+				map[string]interface{}{"name": "init", "source": "user", "tokens": 20},
+			},
+		},
+		"autoCompactThreshold": 0.85,
+		"messageBreakdown": map[string]interface{}{
+			"toolCallTokens":          12,
+			"toolResultTokens":        18,
+			"attachmentTokens":        4,
+			"assistantMessageTokens":  300,
+			"userMessageTokens":       200,
+			"redirectedContextTokens": 0,
+			"unattributedTokens":      6,
+			"toolCallsByType": []interface{}{
+				map[string]interface{}{
+					"name": "Read", "callTokens": 4, "resultTokens": 8,
+				},
+			},
+			"attachmentsByType": []interface{}{
+				map[string]interface{}{"name": "image", "tokens": 4},
+			},
+		},
 		"isAutoCompactEnabled": true,
 		"apiUsage": map[string]interface{}{
 			"input_tokens": 100, "output_tokens": 50,
@@ -264,6 +299,31 @@ func TestStreamGetContextUsageParsesCanonicalPayload(t *testing.T) {
 	require.NotNil(t, got.APIUsage)
 	assert.Equal(t, 100, got.APIUsage.InputTokens)
 	assert.True(t, got.IsAutoCompactEnabled)
+
+	require.Len(t, got.DeferredBuiltinTools, 1)
+	assert.Equal(t, "Write", got.DeferredBuiltinTools[0].Name)
+	assert.False(t, got.DeferredBuiltinTools[0].IsLoaded)
+
+	require.Len(t, got.SystemTools, 1)
+	assert.Equal(t, "Read", got.SystemTools[0].Name)
+
+	require.Len(t, got.SystemPromptSections, 1)
+	assert.Equal(t, "preamble", got.SystemPromptSections[0].Name)
+
+	require.NotNil(t, got.Skills)
+	assert.Equal(t, 5, got.Skills.TotalSkills)
+	require.Len(t, got.Skills.SkillFrontmatter, 1)
+	assert.Equal(t, "init", got.Skills.SkillFrontmatter[0].Name)
+
+	require.NotNil(t, got.AutoCompactThreshold)
+	assert.InDelta(t, 0.85, *got.AutoCompactThreshold, 1e-9)
+
+	require.NotNil(t, got.MessageBreakdown)
+	assert.Equal(t, 300, got.MessageBreakdown.AssistantMessageTokens)
+	require.Len(t, got.MessageBreakdown.ToolCallsByType, 1)
+	assert.Equal(t, 8, got.MessageBreakdown.ToolCallsByType[0].ResultTokens)
+	require.Len(t, got.MessageBreakdown.AttachmentsByType, 1)
+	assert.Equal(t, "image", got.MessageBreakdown.AttachmentsByType[0].Name)
 }
 
 func TestStreamGetContextUsageApiUsageNullable(t *testing.T) {

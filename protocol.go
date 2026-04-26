@@ -1280,8 +1280,13 @@ func (p *Protocol) nextRequestID() string {
 	return fmt.Sprintf("req_%d", id)
 }
 
-// sendRequest sends a control request and returns a channel for the response.
-// The caller should select on both the returned channel and ctx.Done().
+// sendRequest sends a legacy-shape control request and returns a channel for
+// the response. Currently no callers remain after the v0.2.119 catchup moved
+// stream introspection to the cached-init / SDKControlRequest paths; kept so
+// a follow-up cleanup PR can remove this and the legacy ControlResponse type
+// in one focused diff.
+//
+//nolint:unused // see comment above; scheduled removal in follow-up
 func (p *Protocol) sendRequest(ctx context.Context, subtype string, payload map[string]interface{}) <-chan ControlResponse {
 	respCh := make(chan ControlResponse, 1)
 
