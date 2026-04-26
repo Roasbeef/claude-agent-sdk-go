@@ -101,6 +101,17 @@ type Options struct {
 	// When omitted, no filesystem settings are loaded (SDK default).
 	SettingSources []SettingSource
 
+	// SettingsPath loads explicit settings from the given JSON file path.
+	// Mutually exclusive with Settings.
+	SettingsPath string
+
+	// Settings supplies inline Claude Code settings as JSON.
+	// Mutually exclusive with SettingsPath.
+	Settings *Settings
+
+	// ManagedSettings supplies inline managed settings as JSON.
+	ManagedSettings *Settings
+
 	// Sandbox configures sandbox behavior programmatically.
 	Sandbox *SandboxSettings
 
@@ -238,6 +249,312 @@ const (
 	// SettingSourceLocal loads local project settings (.claude/settings.local.json).
 	SettingSourceLocal SettingSource = "local"
 )
+
+// Settings configures Claude Code settings supplied via --settings or
+// --managed-settings.
+type Settings struct {
+	Schema                            string                           `json:"$schema,omitempty"`
+	APIKeyHelper                      string                           `json:"apiKeyHelper,omitempty"`
+	ProxyAuthHelper                   string                           `json:"proxyAuthHelper,omitempty"`
+	AWSCredentialExport               string                           `json:"awsCredentialExport,omitempty"`
+	AWSAuthRefresh                    string                           `json:"awsAuthRefresh,omitempty"`
+	GCPAuthRefresh                    string                           `json:"gcpAuthRefresh,omitempty"`
+	FileSuggestion                    *SettingsFileSuggestion          `json:"fileSuggestion,omitempty"`
+	RespectGitignore                  *bool                            `json:"respectGitignore,omitempty"`
+	CleanupPeriodDays                 *int                             `json:"cleanupPeriodDays,omitempty"`
+	SkillListingMaxDescChars          *int                             `json:"skillListingMaxDescChars,omitempty"`
+	SkillListingBudgetFraction        *float64                         `json:"skillListingBudgetFraction,omitempty"`
+	WSLInheritsWindowsSettings        *bool                            `json:"wslInheritsWindowsSettings,omitempty"`
+	Env                               map[string]string                `json:"env,omitempty"`
+	Attribution                       *SettingsAttribution             `json:"attribution,omitempty"`
+	IncludeCoAuthoredBy               *bool                            `json:"includeCoAuthoredBy,omitempty"`
+	IncludeGitInstructions            *bool                            `json:"includeGitInstructions,omitempty"`
+	Permissions                       *SettingsPermissions             `json:"permissions,omitempty"`
+	Model                             string                           `json:"model,omitempty"`
+	AvailableModels                   []string                         `json:"availableModels,omitempty"`
+	ModelOverrides                    map[string]string                `json:"modelOverrides,omitempty"`
+	EnableAllProjectMCPServers        *bool                            `json:"enableAllProjectMcpServers,omitempty"`
+	EnabledMCPJSONServers             []string                         `json:"enabledMcpjsonServers,omitempty"`
+	DisabledMCPJSONServers            []string                         `json:"disabledMcpjsonServers,omitempty"`
+	SkillOverrides                    map[string]SettingsSkillOverride `json:"skillOverrides,omitempty"`
+	AllowedMCPServers                 []SettingsMCPServerMatcher       `json:"allowedMcpServers,omitempty"`
+	DeniedMCPServers                  []SettingsMCPServerMatcher       `json:"deniedMcpServers,omitempty"`
+	Hooks                             map[string][]SettingsHookMatcher `json:"hooks,omitempty"`
+	Worktree                          *SettingsWorktree                `json:"worktree,omitempty"`
+	DisableAllHooks                   *bool                            `json:"disableAllHooks,omitempty"`
+	DisableSkillShellExecution        *bool                            `json:"disableSkillShellExecution,omitempty"`
+	DefaultShell                      string                           `json:"defaultShell,omitempty"`
+	AllowManagedHooksOnly             *bool                            `json:"allowManagedHooksOnly,omitempty"`
+	AllowedHTTPHookURLs               []string                         `json:"allowedHttpHookUrls,omitempty"`
+	HTTPHookAllowedEnvVars            []string                         `json:"httpHookAllowedEnvVars,omitempty"`
+	AllowManagedPermissionRulesOnly   *bool                            `json:"allowManagedPermissionRulesOnly,omitempty"`
+	AllowManagedMCPServersOnly        *bool                            `json:"allowManagedMcpServersOnly,omitempty"`
+	StrictPluginOnlyCustomization     interface{}                      `json:"strictPluginOnlyCustomization,omitempty"`
+	StatusLine                        *SettingsCommand                 `json:"statusLine,omitempty"`
+	PRURLTemplate                     string                           `json:"prUrlTemplate,omitempty"`
+	SubagentStatusLine                *SettingsCommand                 `json:"subagentStatusLine,omitempty"`
+	EnabledPlugins                    map[string]interface{}           `json:"enabledPlugins,omitempty"`
+	ExtraKnownMarketplaces            map[string]SettingsMarketplace   `json:"extraKnownMarketplaces,omitempty"`
+	StrictKnownMarketplaces           []SettingsMarketplaceSource      `json:"strictKnownMarketplaces,omitempty"`
+	BlockedMarketplaces               []SettingsMarketplaceSource      `json:"blockedMarketplaces,omitempty"`
+	ForceLoginMethod                  string                           `json:"forceLoginMethod,omitempty"`
+	ForceLoginOrgUUID                 interface{}                      `json:"forceLoginOrgUUID,omitempty"`
+	ForceRemoteSettingsRefresh        *bool                            `json:"forceRemoteSettingsRefresh,omitempty"`
+	OtelHeadersHelper                 string                           `json:"otelHeadersHelper,omitempty"`
+	OutputStyle                       string                           `json:"outputStyle,omitempty"`
+	ViewMode                          string                           `json:"viewMode,omitempty"`
+	Language                          string                           `json:"language,omitempty"`
+	SkipWebFetchPreflight             *bool                            `json:"skipWebFetchPreflight,omitempty"`
+	Sandbox                           *SettingsSandbox                 `json:"sandbox,omitempty"`
+	FeedbackSurveyRate                *float64                         `json:"feedbackSurveyRate,omitempty"`
+	SpinnerTipsEnabled                *bool                            `json:"spinnerTipsEnabled,omitempty"`
+	SpinnerVerbs                      *SettingsSpinnerVerbs            `json:"spinnerVerbs,omitempty"`
+	SpinnerTipsOverride               *SettingsSpinnerTipsOverride     `json:"spinnerTipsOverride,omitempty"`
+	SyntaxHighlightingDisabled        *bool                            `json:"syntaxHighlightingDisabled,omitempty"`
+	TerminalTitleFromRename           *bool                            `json:"terminalTitleFromRename,omitempty"`
+	AlwaysThinkingEnabled             *bool                            `json:"alwaysThinkingEnabled,omitempty"`
+	EffortLevel                       EffortLevel                      `json:"effortLevel,omitempty"`
+	AutoCompactWindow                 *int                             `json:"autoCompactWindow,omitempty"`
+	AdvisorModel                      string                           `json:"advisorModel,omitempty"`
+	FastMode                          *bool                            `json:"fastMode,omitempty"`
+	FastModePerSessionOptIn           *bool                            `json:"fastModePerSessionOptIn,omitempty"`
+	PromptSuggestionEnabled           *bool                            `json:"promptSuggestionEnabled,omitempty"`
+	ShowClearContextOnPlanAccept      *bool                            `json:"showClearContextOnPlanAccept,omitempty"`
+	Agent                             string                           `json:"agent,omitempty"`
+	CompanyAnnouncements              []string                         `json:"companyAnnouncements,omitempty"`
+	PluginConfigs                     map[string]SettingsPluginConfig  `json:"pluginConfigs,omitempty"`
+	Remote                            *SettingsRemote                  `json:"remote,omitempty"`
+	AutoUpdatesChannel                string                           `json:"autoUpdatesChannel,omitempty"`
+	MinimumVersion                    string                           `json:"minimumVersion,omitempty"`
+	PlansDirectory                    string                           `json:"plansDirectory,omitempty"`
+	TUI                               string                           `json:"tui,omitempty"`
+	Voice                             *SettingsVoice                   `json:"voice,omitempty"`
+	ChannelsEnabled                   *bool                            `json:"channelsEnabled,omitempty"`
+	AllowedChannelPlugins             []SettingsChannelPlugin          `json:"allowedChannelPlugins,omitempty"`
+	PrefersReducedMotion              *bool                            `json:"prefersReducedMotion,omitempty"`
+	AutoMemoryEnabled                 *bool                            `json:"autoMemoryEnabled,omitempty"`
+	AutoMemoryDirectory               string                           `json:"autoMemoryDirectory,omitempty"`
+	AutoDreamEnabled                  *bool                            `json:"autoDreamEnabled,omitempty"`
+	ShowThinkingSummaries             *bool                            `json:"showThinkingSummaries,omitempty"`
+	SkipDangerousModePermissionPrompt *bool                            `json:"skipDangerousModePermissionPrompt,omitempty"`
+	DisableAutoMode                   string                           `json:"disableAutoMode,omitempty"`
+	SSHConfigs                        []SettingsSSHConfig              `json:"sshConfigs,omitempty"`
+	ClaudeMDExcludes                  []string                         `json:"claudeMdExcludes,omitempty"`
+	PluginTrustMessage                string                           `json:"pluginTrustMessage,omitempty"`
+	Theme                             string                           `json:"theme,omitempty"`
+	EditorMode                        string                           `json:"editorMode,omitempty"`
+	Verbose                           *bool                            `json:"verbose,omitempty"`
+	PreferredNotifChannel             string                           `json:"preferredNotifChannel,omitempty"`
+	AutoCompactEnabled                *bool                            `json:"autoCompactEnabled,omitempty"`
+	AutoScrollEnabled                 *bool                            `json:"autoScrollEnabled,omitempty"`
+	FileCheckpointingEnabled          *bool                            `json:"fileCheckpointingEnabled,omitempty"`
+	ShowTurnDuration                  *bool                            `json:"showTurnDuration,omitempty"`
+	ShowMessageTimestamps             *bool                            `json:"showMessageTimestamps,omitempty"`
+	TerminalProgressBarEnabled        *bool                            `json:"terminalProgressBarEnabled,omitempty"`
+	TodoFeatureEnabled                *bool                            `json:"todoFeatureEnabled,omitempty"`
+	TeammateMode                      string                           `json:"teammateMode,omitempty"`
+	RemoteControlAtStartup            *bool                            `json:"remoteControlAtStartup,omitempty"`
+	AutoUploadSessions                *bool                            `json:"autoUploadSessions,omitempty"`
+	InputNeededNotifEnabled           *bool                            `json:"inputNeededNotifEnabled,omitempty"`
+	AgentPushNotifEnabled             *bool                            `json:"agentPushNotifEnabled,omitempty"`
+}
+
+type SettingsFileSuggestion struct {
+	Type    string `json:"type"`
+	Command string `json:"command"`
+}
+
+type SettingsAttribution struct {
+	Commit *string `json:"commit,omitempty"`
+	PR     *string `json:"pr,omitempty"`
+}
+
+type SettingsPermissions struct {
+	Allow                        []string               `json:"allow,omitempty"`
+	Deny                         []string               `json:"deny,omitempty"`
+	Ask                          []string               `json:"ask,omitempty"`
+	DefaultMode                  PermissionMode         `json:"defaultMode,omitempty"`
+	DisableBypassPermissionsMode string                 `json:"disableBypassPermissionsMode,omitempty"`
+	AdditionalDirectories        []string               `json:"additionalDirectories,omitempty"`
+	Extra                        map[string]interface{} `json:"-"`
+}
+
+func (p SettingsPermissions) MarshalJSON() ([]byte, error) {
+	type alias SettingsPermissions
+	base, err := json.Marshal(alias(p))
+	if err != nil {
+		return nil, err
+	}
+	if len(p.Extra) == 0 {
+		return base, nil
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(base, &obj); err != nil {
+		return nil, err
+	}
+	for k, v := range p.Extra {
+		obj[k] = v
+	}
+	return json.Marshal(obj)
+}
+
+type SettingsSkillOverride string
+
+const (
+	SettingsSkillOverrideOn                SettingsSkillOverride = "on"
+	SettingsSkillOverrideNameOnly          SettingsSkillOverride = "name-only"
+	SettingsSkillOverrideUserInvocableOnly SettingsSkillOverride = "user-invocable-only"
+	SettingsSkillOverrideOff               SettingsSkillOverride = "off"
+)
+
+type SettingsMCPServerMatcher struct {
+	ServerName    string   `json:"serverName,omitempty"`
+	ServerCommand []string `json:"serverCommand,omitempty"`
+	ServerURL     string   `json:"serverUrl,omitempty"`
+}
+
+type SettingsHookMatcher struct {
+	Matcher string         `json:"matcher,omitempty"`
+	Hooks   []SettingsHook `json:"hooks"`
+}
+
+type SettingsHook struct {
+	Type           string                 `json:"type"`
+	Command        string                 `json:"command,omitempty"`
+	Prompt         string                 `json:"prompt,omitempty"`
+	URL            string                 `json:"url,omitempty"`
+	Server         string                 `json:"server,omitempty"`
+	Tool           string                 `json:"tool,omitempty"`
+	Input          map[string]interface{} `json:"input,omitempty"`
+	If             string                 `json:"if,omitempty"`
+	Shell          string                 `json:"shell,omitempty"`
+	Timeout        *int                   `json:"timeout,omitempty"`
+	Model          string                 `json:"model,omitempty"`
+	StatusMessage  string                 `json:"statusMessage,omitempty"`
+	Once           *bool                  `json:"once,omitempty"`
+	Async          *bool                  `json:"async,omitempty"`
+	AsyncRewake    *bool                  `json:"asyncRewake,omitempty"`
+	Headers        map[string]string      `json:"headers,omitempty"`
+	AllowedEnvVars []string               `json:"allowedEnvVars,omitempty"`
+}
+
+type SettingsWorktree struct {
+	SymlinkDirectories []string `json:"symlinkDirectories,omitempty"`
+	SparsePaths        []string `json:"sparsePaths,omitempty"`
+}
+
+type SettingsCommand struct {
+	Type            string `json:"type"`
+	Command         string `json:"command"`
+	Padding         *int   `json:"padding,omitempty"`
+	RefreshInterval *int   `json:"refreshInterval,omitempty"`
+}
+
+type SettingsMarketplace struct {
+	Source          SettingsMarketplaceSource `json:"source"`
+	InstallLocation string                    `json:"installLocation,omitempty"`
+	AutoUpdate      *bool                     `json:"autoUpdate,omitempty"`
+}
+
+type SettingsMarketplaceSource map[string]interface{}
+
+type SettingsPluginConfig struct {
+	MCPServers map[string]map[string]interface{} `json:"mcpServers,omitempty"`
+	Options    map[string]interface{}            `json:"options,omitempty"`
+}
+
+type SettingsRemote struct {
+	DefaultEnvironmentID string `json:"defaultEnvironmentId,omitempty"`
+}
+
+type SettingsVoice struct {
+	Enabled    *bool  `json:"enabled,omitempty"`
+	Mode       string `json:"mode,omitempty"`
+	AutoSubmit *bool  `json:"autoSubmit,omitempty"`
+}
+
+type SettingsChannelPlugin struct {
+	Marketplace string `json:"marketplace"`
+	Plugin      string `json:"plugin"`
+}
+
+type SettingsSSHConfig struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	SSHHost         string `json:"sshHost"`
+	SSHPort         *int   `json:"sshPort,omitempty"`
+	SSHIdentityFile string `json:"sshIdentityFile,omitempty"`
+	StartDirectory  string `json:"startDirectory,omitempty"`
+}
+
+type SettingsSpinnerVerbs struct {
+	Mode  string   `json:"mode"`
+	Verbs []string `json:"verbs"`
+}
+
+type SettingsSpinnerTipsOverride struct {
+	ExcludeDefault *bool    `json:"excludeDefault,omitempty"`
+	Tips           []string `json:"tips"`
+}
+
+type SettingsSandbox struct {
+	Enabled                      *bool                      `json:"enabled,omitempty"`
+	FailIfUnavailable            *bool                      `json:"failIfUnavailable,omitempty"`
+	AutoAllowBashIfSandboxed     *bool                      `json:"autoAllowBashIfSandboxed,omitempty"`
+	AllowUnsandboxedCommands     *bool                      `json:"allowUnsandboxedCommands,omitempty"`
+	Network                      *SettingsSandboxNetwork    `json:"network,omitempty"`
+	Filesystem                   *SettingsSandboxFilesystem `json:"filesystem,omitempty"`
+	IgnoreViolations             map[string][]string        `json:"ignoreViolations,omitempty"`
+	EnableWeakerNestedSandbox    *bool                      `json:"enableWeakerNestedSandbox,omitempty"`
+	EnableWeakerNetworkIsolation *bool                      `json:"enableWeakerNetworkIsolation,omitempty"`
+	ExcludedCommands             []string                   `json:"excludedCommands,omitempty"`
+	Ripgrep                      *SettingsSandboxRipgrep    `json:"ripgrep,omitempty"`
+	Extra                        map[string]interface{}     `json:"-"`
+}
+
+func (s SettingsSandbox) MarshalJSON() ([]byte, error) {
+	type alias SettingsSandbox
+	base, err := json.Marshal(alias(s))
+	if err != nil {
+		return nil, err
+	}
+	if len(s.Extra) == 0 {
+		return base, nil
+	}
+	var obj map[string]interface{}
+	if err := json.Unmarshal(base, &obj); err != nil {
+		return nil, err
+	}
+	for k, v := range s.Extra {
+		obj[k] = v
+	}
+	return json.Marshal(obj)
+}
+
+type SettingsSandboxNetwork struct {
+	AllowedDomains          []string `json:"allowedDomains,omitempty"`
+	DeniedDomains           []string `json:"deniedDomains,omitempty"`
+	AllowManagedDomainsOnly *bool    `json:"allowManagedDomainsOnly,omitempty"`
+	AllowUnixSockets        []string `json:"allowUnixSockets,omitempty"`
+	AllowAllUnixSockets     *bool    `json:"allowAllUnixSockets,omitempty"`
+	AllowLocalBinding       *bool    `json:"allowLocalBinding,omitempty"`
+	AllowMachLookup         []string `json:"allowMachLookup,omitempty"`
+	HTTPProxyPort           *int     `json:"httpProxyPort,omitempty"`
+	SocksProxyPort          *int     `json:"socksProxyPort,omitempty"`
+}
+
+type SettingsSandboxFilesystem struct {
+	AllowWrite                []string `json:"allowWrite,omitempty"`
+	DenyWrite                 []string `json:"denyWrite,omitempty"`
+	DenyRead                  []string `json:"denyRead,omitempty"`
+	AllowRead                 []string `json:"allowRead,omitempty"`
+	AllowManagedReadPathsOnly *bool    `json:"allowManagedReadPathsOnly,omitempty"`
+}
+
+type SettingsSandboxRipgrep struct {
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
+}
 
 // SandboxSettings configures sandbox behavior.
 type SandboxSettings struct {
@@ -1721,6 +2038,29 @@ func WithAllowDangerouslySkipPermissions(allow bool) Option {
 func WithSettingSources(sources []SettingSource) Option {
 	return func(o *Options) {
 		o.SettingSources = sources
+	}
+}
+
+// WithSettingsPath loads explicit settings from a JSON file path.
+func WithSettingsPath(path string) Option {
+	return func(o *Options) {
+		o.SettingsPath = path
+		o.Settings = nil
+	}
+}
+
+// WithSettings supplies inline Claude Code settings.
+func WithSettings(settings Settings) Option {
+	return func(o *Options) {
+		o.SettingsPath = ""
+		o.Settings = &settings
+	}
+}
+
+// WithManagedSettings supplies inline managed settings.
+func WithManagedSettings(settings Settings) Option {
+	return func(o *Options) {
+		o.ManagedSettings = &settings
 	}
 }
 

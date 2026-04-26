@@ -216,6 +216,24 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, "--setting-sources", strings.Join(t.options.SkillsConfig.SettingSources, ","))
 	}
 
+	if t.options.SettingsPath != "" {
+		args = append(args, "--settings", t.options.SettingsPath)
+	} else if t.options.Settings != nil {
+		settingsJSON, err := json.Marshal(t.options.Settings)
+		if err != nil {
+			return fmt.Errorf("failed to marshal settings: %w", err)
+		}
+		args = append(args, "--settings", string(settingsJSON))
+	}
+
+	if t.options.ManagedSettings != nil {
+		settingsJSON, err := json.Marshal(t.options.ManagedSettings)
+		if err != nil {
+			return fmt.Errorf("failed to marshal managed settings: %w", err)
+		}
+		args = append(args, "--managed-settings", string(settingsJSON))
+	}
+
 	// Add MCP server configurations.
 	// The CLI uses --mcp-config which takes JSON configuration.
 	for name, config := range t.options.MCPServers {
