@@ -3,11 +3,15 @@ package claudeagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"sync"
 	"time"
 )
+
+// ErrNotInitialized indicates stream metadata was requested before SDK init.
+var ErrNotInitialized = errors.New("sdk not initialized")
 
 // Client is the high-level API for interacting with Claude Code CLI.
 //
@@ -837,124 +841,112 @@ func (s *Stream) sendSDKControlRequest(
 	}
 }
 
-// SupportedCommands returns the list of available slash commands.
-func (s *Stream) SupportedCommands(ctx context.Context) ([]SlashCommand, error) {
-	respCh := s.client.protocol.sendRequest(ctx, "supported_commands", nil)
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case resp := <-respCh:
-		if resp.Error != nil {
-			return nil, &ErrProtocol{Message: resp.Error.Message}
-		}
-		// Parse response
-		commands, ok := resp.Result["commands"].([]interface{})
-		if !ok {
-			return nil, &ErrProtocol{Message: "invalid commands response"}
-		}
-		result := make([]SlashCommand, 0, len(commands))
-		for _, cmd := range commands {
-			cmdMap, ok := cmd.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			result = append(result, SlashCommand{
-				Name:         getString(cmdMap, "name"),
-				Description:  getString(cmdMap, "description"),
-				ArgumentHint: getString(cmdMap, "argumentHint"),
-			})
-		}
-		return result, nil
+// InitializationResult returns the cached initialize response.
+func (s *Stream) InitializationResult() (*SDKControlInitializeResponse, error) {
+	initResp := s.client.protocol.initResult()
+	if initResp == nil {
+		return nil, ErrNotInitialized
 	}
+	return cloneInitializeResponse(initResp), nil
 }
 
-// SupportedModels returns the list of available models.
-func (s *Stream) SupportedModels(ctx context.Context) ([]ModelInfo, error) {
-	respCh := s.client.protocol.sendRequest(ctx, "supported_models", nil)
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case resp := <-respCh:
-		if resp.Error != nil {
-			return nil, &ErrProtocol{Message: resp.Error.Message}
-		}
-		// Parse response
-		models, ok := resp.Result["models"].([]interface{})
-		if !ok {
-			return nil, &ErrProtocol{Message: "invalid models response"}
-		}
-		result := make([]ModelInfo, 0, len(models))
-		for _, model := range models {
-			modelMap, ok := model.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			result = append(result, ModelInfo{
-				Value:       getString(modelMap, "value"),
-				DisplayName: getString(modelMap, "displayName"),
-				Description: getString(modelMap, "description"),
-			})
-		}
-		return result, nil
+// SupportedCommands returns the cached list of available slash commands.
+// The context is accepted for API compatibility and is not used.
+func (s *Stream) SupportedCommands(ctx context.Context) ([]SlashCommand, error) {
+	_ = ctx
+	initResp := s.client.protocol.initResult()
+	if initResp == nil {
+		return nil, ErrNotInitialized
 	}
+	return append([]SlashCommand(nil), initResp.Commands...), nil
+}
+
+// SupportedModels returns the cached list of available models.
+// The context is accepted for API compatibility and is not used.
+func (s *Stream) SupportedModels(ctx context.Context) ([]ModelInfo, error) {
+	_ = ctx
+	initResp := s.client.protocol.initResult()
+	if initResp == nil {
+		return nil, ErrNotInitialized
+	}
+	return append([]ModelInfo(nil), initResp.Models...), nil
+}
+
+// SupportedAgents returns the cached list of available agents.
+// The context is accepted for API compatibility and is not used.
+func (s *Stream) SupportedAgents(ctx context.Context) ([]AgentInfo, error) {
+	_ = ctx
+	initResp := s.client.protocol.initResult()
+	if initResp == nil {
+		return nil, ErrNotInitialized
+	}
+	return append([]AgentInfo(nil), initResp.Agents...), nil
 }
 
 // McpServerStatus returns the connection status of all MCP servers.
 func (s *Stream) McpServerStatus(ctx context.Context) ([]McpServerStatus, error) {
-	respCh := s.client.protocol.sendRequest(ctx, "mcp_server_status", nil)
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case resp := <-respCh:
-		if resp.Error != nil {
-			return nil, &ErrProtocol{Message: resp.Error.Message}
-		}
-		// Parse response
-		servers, ok := resp.Result["servers"].([]interface{})
-		if !ok {
-			return nil, &ErrProtocol{Message: "invalid mcp_server_status response"}
-		}
-		result := make([]McpServerStatus, 0, len(servers))
-		for _, srv := range servers {
-			srvMap, ok := srv.(map[string]interface{})
-			if !ok {
-				continue
-			}
-			status := McpServerStatus{
-				Name:   getString(srvMap, "name"),
-				Status: McpServerState(getString(srvMap, "status")),
-			}
-			if info, ok := srvMap["serverInfo"].(map[string]interface{}); ok {
-				status.ServerInfo = &McpServerInfo{
-					Name:    getString(info, "name"),
-					Version: getString(info, "version"),
-				}
-			}
-			result = append(result, status)
-		}
-		return result, nil
+	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "mcp_status",
+	})
+	if err != nil {
+		return nil, err
 	}
+	raw, ok := resp.Response.Response["mcpServers"]
+	if !ok {
+		return nil, fmt.Errorf("mcp_status: missing mcpServers in response")
+	}
+	bytes, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("mcp_status: marshal: %w", err)
+	}
+	var out []McpServerStatus
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return nil, fmt.Errorf("mcp_status: unmarshal: %w", err)
+	}
+	return out, nil
 }
 
 // AccountInfo returns account information for the current session.
 func (s *Stream) AccountInfo(ctx context.Context) (*AccountInfo, error) {
-	respCh := s.client.protocol.sendRequest(ctx, "account_info", nil)
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case resp := <-respCh:
-		if resp.Error != nil {
-			return nil, &ErrProtocol{Message: resp.Error.Message}
-		}
-		// Parse response
-		return &AccountInfo{
-			Email:            getString(resp.Result, "email"),
-			Organization:     getString(resp.Result, "organization"),
-			SubscriptionType: getString(resp.Result, "subscriptionType"),
-			TokenSource:      getString(resp.Result, "tokenSource"),
-			APIKeySource:     getString(resp.Result, "apiKeySource"),
-		}, nil
+	_ = ctx
+	initResp := s.client.protocol.initResult()
+	if initResp == nil {
+		return nil, ErrNotInitialized
 	}
+	account := initResp.Account
+	return &account, nil
+}
+
+// GetContextUsage fetches the current context usage from the CLI.
+func (s *Stream) GetContextUsage(
+	ctx context.Context,
+) (*SDKControlGetContextUsageResponse, error) {
+	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "get_context_usage",
+	})
+	if err != nil {
+		return nil, err
+	}
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return nil, fmt.Errorf("get_context_usage: marshal: %w", err)
+	}
+	var out SDKControlGetContextUsageResponse
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return nil, fmt.Errorf("get_context_usage: unmarshal: %w", err)
+	}
+	return &out, nil
+}
+
+func cloneInitializeResponse(
+	src *SDKControlInitializeResponse,
+) *SDKControlInitializeResponse {
+	out := *src
+	out.Commands = append([]SlashCommand(nil), src.Commands...)
+	out.Agents = append([]AgentInfo(nil), src.Agents...)
+	out.AvailableOutputStyles = append([]string(nil), src.AvailableOutputStyles...)
+	out.Models = append([]ModelInfo(nil), src.Models...)
+	return &out
 }
 
 // SessionID returns the current session ID.

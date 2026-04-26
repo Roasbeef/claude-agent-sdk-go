@@ -23,6 +23,7 @@ type Protocol struct {
 	pendingReqs   sync.Map                // requestID -> chan ControlResponse
 	hookCallbacks map[string]HookCallback // hookID -> callback
 	sdkMcpServers map[string]*McpServer   // serverName -> server (in-process MCP)
+	initResponse  atomic.Pointer[SDKControlInitializeResponse]
 	initialized   atomic.Bool
 }
 
@@ -135,8 +136,21 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 		return fmt.Errorf("initialization error: %s", resp.Response.Error)
 	}
 
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return fmt.Errorf("failed to parse initialization response: %w", err)
+	}
+	var initResp SDKControlInitializeResponse
+	if err := json.Unmarshal(bytes, &initResp); err != nil {
+		return fmt.Errorf("failed to parse initialization response: %w", err)
+	}
+	p.initResponse.Store(&initResp)
 	p.initialized.Store(true)
 	return nil
+}
+
+func (p *Protocol) initResult() *SDKControlInitializeResponse {
+	return p.initResponse.Load()
 }
 
 // SendMessage sends a user message to the CLI.
@@ -1266,8 +1280,13 @@ func (p *Protocol) nextRequestID() string {
 	return fmt.Sprintf("req_%d", id)
 }
 
-// sendRequest sends a control request and returns a channel for the response.
-// The caller should select on both the returned channel and ctx.Done().
+// sendRequest sends a legacy-shape control request and returns a channel for
+// the response. Currently no callers remain after the v0.2.119 catchup moved
+// stream introspection to the cached-init / SDKControlRequest paths; kept so
+// a follow-up cleanup PR can remove this and the legacy ControlResponse type
+// in one focused diff.
+//
+//nolint:unused // see comment above; scheduled removal in follow-up
 func (p *Protocol) sendRequest(ctx context.Context, subtype string, payload map[string]interface{}) <-chan ControlResponse {
 	respCh := make(chan ControlResponse, 1)
 
