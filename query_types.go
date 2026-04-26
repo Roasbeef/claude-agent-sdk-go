@@ -59,6 +59,13 @@ type McpServerInfo struct {
 	Version string `json:"version"` // Server version
 }
 
+// McpSetServersResult is the response from Stream.SetMcpServers.
+type McpSetServersResult struct {
+	Added   []string          `json:"added"`
+	Removed []string          `json:"removed"`
+	Errors  map[string]string `json:"errors"`
+}
+
 // AccountInfo contains user account information.
 type AccountInfo struct {
 	Email            string `json:"email,omitempty"`            // User email

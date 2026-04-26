@@ -259,7 +259,10 @@ type SDKControlRequestBody struct {
 	Model                  string                              `json:"model,omitempty"`                  // For set_model
 	MaxThinkingTokens      *int                                `json:"max_thinking_tokens,omitempty"`    // For set_max_thinking_tokens
 	UserMessageID          string                              `json:"user_message_id,omitempty"`        // For rewind_files
-	ServerName             string                              `json:"server_name,omitempty"`            // For mcp_message
+	ServerName             string                              `json:"server_name,omitempty"`            // For mcp_message (snake_case)
+	MCPServerName          string                              `json:"serverName,omitempty"`             // For mcp_reconnect/mcp_toggle/mcp_set_servers (camelCase)
+	Enabled                *bool                               `json:"enabled,omitempty"`                // For mcp_toggle (pointer so explicit false serializes)
+	Servers                *map[string]MCPServerConfig         `json:"servers,omitempty"`                // For mcp_set_servers (pointer so nil/empty round-trips as {})
 	Message                map[string]interface{}              `json:"message,omitempty"`                // For mcp_message (JSONRPC)
 }
 
