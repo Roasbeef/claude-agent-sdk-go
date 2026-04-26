@@ -1284,3 +1284,20 @@ func TestIntegrationStreamIntrospection(t *testing.T) {
 	_, err = stream.AccountInfo(ctx)
 	require.NoError(t, err)
 }
+
+// TestIntegrationStreamFileAndRuntime is a slot for the PR 20 surface
+// (RewindFiles, SeedReadState, ReadFile, ReloadPlugins, ApplyFlagSettings,
+// StopTask). Each path needs setup the integration harness does not yet
+// produce: file checkpointing must be enabled at session start with a tracked
+// edit before RewindFiles will return a usable result; ReadFile and
+// SeedReadState need a file the CLI considers in-scope; ReloadPlugins needs
+// plugins configured; StopTask needs a running task identifier surfaced over
+// the wire. Once the harness can stage one of those preconditions, drop the
+// t.Skip and assert the wire round-trip end-to-end.
+func TestIntegrationStreamFileAndRuntime(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	t.Skip("not triggerable from CLI yet: file checkpoint / read-state / " +
+		"plugin / runtime surface needs harness fixtures that don't exist; " +
+		"unit coverage in client_file_plugin_control_test.go")
+}
