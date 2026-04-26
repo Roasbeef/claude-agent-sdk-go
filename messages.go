@@ -259,7 +259,12 @@ type SDKControlRequestBody struct {
 	Model                  string                              `json:"model,omitempty"`                  // For set_model
 	MaxThinkingTokens      *int                                `json:"max_thinking_tokens,omitempty"`    // For set_max_thinking_tokens
 	UserMessageID          string                              `json:"user_message_id,omitempty"`        // For rewind_files
+	// mcp_message uses snake_case server_name; other MCP control subtypes use
+	// camelCase serverName, matching the CLI wire protocol.
 	ServerName             string                              `json:"server_name,omitempty"`            // For mcp_message
+	MCPServerName          string                              `json:"serverName,omitempty"`             // For MCP control subtypes that use camelCase
+	Enabled                *bool                               `json:"enabled,omitempty"`                // For mcp_toggle
+	Servers                *map[string]MCPServerConfig         `json:"servers,omitempty"`                // For mcp_set_servers
 	Message                map[string]interface{}              `json:"message,omitempty"`                // For mcp_message (JSONRPC)
 }
 

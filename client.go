@@ -938,6 +938,62 @@ func (s *Stream) GetContextUsage(
 	return &out, nil
 }
 
+// ReconnectMcpServer asks the CLI to reconnect the named MCP server.
+// Returns an error if the server is unknown or reconnection fails.
+func (s *Stream) ReconnectMcpServer(ctx context.Context, serverName string) error {
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype:       "mcp_reconnect",
+		MCPServerName: serverName,
+	})
+	return err
+}
+
+// ToggleMcpServer enables or disables the named MCP server.
+// Returns an error if the server is unknown or the toggle fails.
+func (s *Stream) ToggleMcpServer(
+	ctx context.Context,
+	serverName string,
+	enabled bool,
+) error {
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype:       "mcp_toggle",
+		MCPServerName: serverName,
+		Enabled:       &enabled,
+	})
+	return err
+}
+
+// SetMcpServers replaces the dynamically-added MCP servers for this session
+// with the supplied set. Servers omitted from the new map are disconnected;
+// new entries are connected.
+//
+// Process-based servers only: stdio, sse, http. In-process SDK MCP servers
+// (Options.SDKMcpServers) are static for the lifetime of the client.
+func (s *Stream) SetMcpServers(
+	ctx context.Context,
+	servers map[string]MCPServerConfig,
+) (*McpSetServersResult, error) {
+	if servers == nil {
+		servers = map[string]MCPServerConfig{}
+	}
+	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "mcp_set_servers",
+		Servers: &servers,
+	})
+	if err != nil {
+		return nil, err
+	}
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return nil, fmt.Errorf("mcp_set_servers: marshal: %w", err)
+	}
+	var out McpSetServersResult
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return nil, fmt.Errorf("mcp_set_servers: unmarshal: %w", err)
+	}
+	return &out, nil
+}
+
 func cloneInitializeResponse(
 	src *SDKControlInitializeResponse,
 ) *SDKControlInitializeResponse {
