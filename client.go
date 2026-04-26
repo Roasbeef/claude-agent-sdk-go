@@ -16,7 +16,7 @@ import (
 // iter.Seq for streaming message iteration.
 type Client struct {
 	options   Options
-	transport *SubprocessTransport
+	transport Transport
 	protocol  *Protocol
 	skills    []Skill
 	mu        sync.Mutex
@@ -87,26 +87,31 @@ func (c *Client) Connect(ctx context.Context) error {
 		return nil // Already connected
 	}
 
-	// Create transport.
-	transport, err := NewSubprocessTransport(&c.options)
-	if err != nil {
-		return err
-	}
-	c.transport = transport
+	var transport Transport
+	if c.options.Transport != nil {
+		transport = c.options.Transport
+	} else {
+		subprocess, err := NewSubprocessTransport(&c.options)
+		if err != nil {
+			return err
+		}
 
-	// Wire stderr callback to transport if configured. The Options.Stderr
-	// callback receives each line as a string, while the transport expects
-	// an io.Writer. The adapter bridges the two interfaces.
-	if c.options.Stderr != nil {
-		transport.SetStderrLogger(&stderrCallbackWriter{
-			callback: c.options.Stderr,
-		})
+		// Wire stderr callback to transport if configured. The Options.Stderr
+		// callback receives each line as a string, while the transport expects
+		// an io.Writer. The adapter bridges the two interfaces.
+		if c.options.Stderr != nil {
+			subprocess.SetStderrLogger(&stderrCallbackWriter{
+				callback: c.options.Stderr,
+			})
+		}
+		transport = subprocess
 	}
 
 	// Connect transport.
 	if err := transport.Connect(ctx); err != nil {
 		return err
 	}
+	c.transport = transport
 
 	// Create protocol handler.
 	c.protocol = NewProtocol(transport, &c.options)

@@ -175,6 +175,11 @@ type Options struct {
 	// Stderr is a callback for stderr output from the CLI.
 	Stderr func(data string)
 
+	// Transport, when non-nil, is used in place of the default subprocess
+	// transport. Primarily for testing with mock transports; real users should
+	// leave this unset.
+	Transport Transport `json:"-"`
+
 	// Verbose enables debug logging from the CLI.
 	Verbose bool
 
@@ -453,6 +458,15 @@ func WithForwardSubagentText(enable bool) Option {
 func WithCLIPath(path string) Option {
 	return func(o *Options) {
 		o.CLIPath = path
+	}
+}
+
+// WithTransport supplies a custom Transport implementation, bypassing the
+// default subprocess. The transport's Connect method will be called by the
+// client; do not call it yourself.
+func WithTransport(t Transport) Option {
+	return func(o *Options) {
+		o.Transport = t
 	}
 }
 
