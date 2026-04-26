@@ -66,6 +66,48 @@ type McpSetServersResult struct {
 	Errors  map[string]string `json:"errors"`
 }
 
+// RewindFilesOptions controls a file checkpoint rewind.
+type RewindFilesOptions struct {
+	DryRun bool `json:"dryRun,omitempty"`
+}
+
+// RewindFilesResult is the response from Stream.RewindFiles.
+type RewindFilesResult struct {
+	CanRewind    bool     `json:"canRewind"`
+	Error        string   `json:"error,omitempty"`
+	FilesChanged []string `json:"filesChanged,omitempty"`
+	Insertions   int      `json:"insertions,omitempty"`
+	Deletions    int      `json:"deletions,omitempty"`
+}
+
+// ReadFileOptions controls Stream.ReadFile.
+type ReadFileOptions struct {
+	MaxBytes int `json:"maxBytes,omitempty"`
+}
+
+// SDKControlReadFileResponse contains file contents from Stream.ReadFile.
+type SDKControlReadFileResponse struct {
+	Contents  string `json:"contents"`
+	AbsPath   string `json:"absPath"`
+	Truncated bool   `json:"truncated,omitempty"`
+}
+
+// SDKControlReloadPluginsResponse reports refreshed session components.
+type SDKControlReloadPluginsResponse struct {
+	Commands   []SlashCommand    `json:"commands"`
+	Agents     []AgentInfo       `json:"agents"`
+	Plugins    []PluginInfo      `json:"plugins"`
+	McpServers []McpServerStatus `json:"mcpServers"`
+	ErrorCount int               `json:"error_count"`
+}
+
+// PluginInfo describes a plugin loaded by the CLI.
+type PluginInfo struct {
+	Name   string `json:"name"`
+	Path   string `json:"path"`
+	Source string `json:"source,omitempty"`
+}
+
 // AccountInfo contains user account information.
 type AccountInfo struct {
 	Email            string `json:"email,omitempty"`            // User email

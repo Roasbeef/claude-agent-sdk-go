@@ -259,6 +259,12 @@ type SDKControlRequestBody struct {
 	Model                  string                              `json:"model,omitempty"`                  // For set_model
 	MaxThinkingTokens      *int                                `json:"max_thinking_tokens,omitempty"`    // For set_max_thinking_tokens
 	UserMessageID          string                              `json:"user_message_id,omitempty"`        // For rewind_files
+	DryRun                 *bool                               `json:"dry_run,omitempty"`                // For rewind_files
+	Path                   string                              `json:"path,omitempty"`                   // For read_file/seed_read_state
+	MaxBytes               *int                                `json:"max_bytes,omitempty"`              // For read_file
+	MTime                  *int64                              `json:"mtime,omitempty"`                  // For seed_read_state
+	Settings               *map[string]interface{}             `json:"settings,omitempty"`               // For apply_flag_settings
+	TaskID                 string                              `json:"task_id,omitempty"`                // For stop_task
 	ServerName             string                              `json:"server_name,omitempty"`            // For mcp_message (snake_case)
 	MCPServerName          string                              `json:"serverName,omitempty"`             // For mcp_reconnect/mcp_toggle/mcp_set_servers (camelCase)
 	Enabled                *bool                               `json:"enabled,omitempty"`                // For mcp_toggle (pointer so explicit false serializes)

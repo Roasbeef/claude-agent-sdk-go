@@ -759,22 +759,6 @@ func (s *Stream) Interrupt(ctx context.Context) error {
 	return err
 }
 
-// RewindFiles restores files to a checkpoint at the specified user message.
-//
-// This requires EnableFileCheckpointing to be true in Options.
-// The userMessageUUID should be the UUID of a previous user message.
-func (s *Stream) RewindFiles(ctx context.Context, userMessageUUID string) error {
-	req := SDKControlRequest{
-		Type:      "control_request",
-		RequestID: s.client.protocol.nextRequestID(),
-		Request: SDKControlRequestBody{
-			Subtype:       "rewind_files",
-			UserMessageID: userMessageUUID,
-		},
-	}
-	return s.client.transport.Write(ctx, req)
-}
-
 // SetPermissionMode dynamically changes the permission mode for this session.
 // It blocks until the CLI acknowledges the request or returns an error.
 func (s *Stream) SetPermissionMode(ctx context.Context, mode PermissionMode) error {
@@ -803,6 +787,123 @@ func (s *Stream) SetMaxThinkingTokens(ctx context.Context, tokens *int) error {
 	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
 		Subtype:           "set_max_thinking_tokens",
 		MaxThinkingTokens: tokens,
+	})
+	return err
+}
+
+// RewindFiles restores tracked files to their state at the specified user
+// message checkpoint. EnableFileCheckpointing must be true when the session is
+// started for the CLI to have checkpoint data.
+func (s *Stream) RewindFiles(
+	ctx context.Context,
+	userMessageID string,
+	opts *RewindFilesOptions,
+) (*RewindFilesResult, error) {
+	body := SDKControlRequestBody{
+		Subtype:       "rewind_files",
+		UserMessageID: userMessageID,
+	}
+	if opts != nil && opts.DryRun {
+		body.DryRun = &opts.DryRun
+	}
+	resp, err := s.sendSDKControlRequest(ctx, body)
+	if err != nil {
+		return nil, err
+	}
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return nil, fmt.Errorf("rewind_files: marshal: %w", err)
+	}
+	var out RewindFilesResult
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return nil, fmt.Errorf("rewind_files: unmarshal: %w", err)
+	}
+	return &out, nil
+}
+
+// SeedReadState seeds the CLI read-file cache with a path and mtime observed
+// by the caller. The CLI uses the mtime to avoid seeding stale reads.
+func (s *Stream) SeedReadState(ctx context.Context, path string, mtime int64) error {
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "seed_read_state",
+		Path:    path,
+		MTime:   &mtime,
+	})
+	return err
+}
+
+// ReadFile reads a file from the session filesystem using CLI read permissions.
+// Unlike the TypeScript SDK, CLI errors are returned to the caller instead of
+// being swallowed as a nil response.
+func (s *Stream) ReadFile(
+	ctx context.Context,
+	path string,
+	opts *ReadFileOptions,
+) (*SDKControlReadFileResponse, error) {
+	body := SDKControlRequestBody{
+		Subtype: "read_file",
+		Path:    path,
+	}
+	if opts != nil && opts.MaxBytes > 0 {
+		body.MaxBytes = &opts.MaxBytes
+	}
+	resp, err := s.sendSDKControlRequest(ctx, body)
+	if err != nil {
+		return nil, err
+	}
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return nil, fmt.Errorf("read_file: marshal: %w", err)
+	}
+	var out SDKControlReadFileResponse
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return nil, fmt.Errorf("read_file: unmarshal: %w", err)
+	}
+	return &out, nil
+}
+
+// ReloadPlugins reloads plugins from disk and returns refreshed session metadata.
+func (s *Stream) ReloadPlugins(
+	ctx context.Context,
+) (*SDKControlReloadPluginsResponse, error) {
+	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "reload_plugins",
+	})
+	if err != nil {
+		return nil, err
+	}
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return nil, fmt.Errorf("reload_plugins: marshal: %w", err)
+	}
+	var out SDKControlReloadPluginsResponse
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return nil, fmt.Errorf("reload_plugins: unmarshal: %w", err)
+	}
+	return &out, nil
+}
+
+// ApplyFlagSettings merges settings into the active flag settings layer.
+// Top-level keys are shallow-merged by the CLI across successive calls.
+func (s *Stream) ApplyFlagSettings(
+	ctx context.Context,
+	settings map[string]interface{},
+) error {
+	if settings == nil {
+		settings = map[string]interface{}{}
+	}
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype:  "apply_flag_settings",
+		Settings: &settings,
+	})
+	return err
+}
+
+// StopTask asks the CLI to stop a running task.
+func (s *Stream) StopTask(ctx context.Context, taskID string) error {
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "stop_task",
+		TaskID:  taskID,
 	})
 	return err
 }
