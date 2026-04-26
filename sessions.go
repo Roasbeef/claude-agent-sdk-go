@@ -502,7 +502,7 @@ func readSessionMessages(path string, includeSystem bool) ([]SessionMessage, err
 	out := []SessionMessage{}
 	for _, entry := range entries {
 		typ := sessionGetString(entry, "type")
-		if typ != "user" && typ != "assistant" && !(includeSystem && typ == "system") {
+		if typ != "user" && typ != "assistant" && (!includeSystem || typ != "system") {
 			continue
 		}
 		msgBytes, _ := json.Marshal(entry["message"])
