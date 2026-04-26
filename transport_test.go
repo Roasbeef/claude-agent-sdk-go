@@ -126,6 +126,72 @@ func (m *mockTransport) IsReady() bool {
 
 var _ Transport = (*mockTransport)(nil)
 
+// TestMockTransportReadMessagesRoundTrip drives the mock's iterator end-to-end:
+// pushes messages onto incoming, asserts each is yielded in order, and verifies
+// the iterator returns when context is canceled. Also covers Close idempotence
+// (the Close path closes the incoming channel; a second Close must be a no-op).
+func TestMockTransportReadMessagesRoundTrip(t *testing.T) {
+	mock := newMockTransport(4)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	require.NoError(t, mock.Connect(ctx))
+	assert.True(t, mock.IsReady())
+
+	want := []Message{
+		UserMessage{Type: "user", SessionID: "one"},
+		UserMessage{Type: "user", SessionID: "two"},
+		UserMessage{Type: "user", SessionID: "three"},
+	}
+	for _, msg := range want {
+		mock.incoming <- msg
+	}
+
+	got := make([]Message, 0, len(want))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for msg, err := range mock.ReadMessages(ctx) {
+			require.NoError(t, err)
+			got = append(got, msg)
+			if len(got) == len(want) {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ReadMessages did not yield all messages within timeout")
+	}
+	assert.Equal(t, want, got)
+
+	require.NoError(t, mock.Close())
+	require.NoError(t, mock.Close())
+	assert.False(t, mock.IsReady())
+
+	err := mock.Write(context.Background(), UserMessage{})
+	assert.IsType(t, &ErrTransportClosed{}, err)
+}
+
+// TestWithTransportOptionPlumbed verifies that WithTransport stores the
+// injected transport on Options so Client.Connect's injection branch picks it
+// up. End-to-end coverage through Client.Connect is deferred until the
+// control-channel initialize handshake is easier to fixture against a mock.
+func TestWithTransportOptionPlumbed(t *testing.T) {
+	mock := newMockTransport(1)
+
+	opts := NewOptions()
+	WithTransport(mock)(opts)
+
+	got, ok := opts.Transport.(*mockTransport)
+	require.True(t, ok, "Options.Transport should hold the injected mockTransport")
+	require.Same(t, mock, got)
+}
+
 // TestSubprocessTransportBasicCommunication tests stdin/stdout communication.
 func TestSubprocessTransportBasicCommunication(t *testing.T) {
 	// Create mock subprocess
