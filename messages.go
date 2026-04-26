@@ -19,13 +19,14 @@ type Message interface {
 // This message type initiates or continues a conversation. The ParentToolUseID
 // field links this message to a specific tool call when providing tool results.
 type UserMessage struct {
-	Type            string         `json:"type"`                      // Always "user"
-	UUID            string         `json:"uuid,omitempty"`            // Unique message ID
-	SessionID       string         `json:"session_id"`                // Session identifier
-	Message         APIUserMessage `json:"message"`                   // Message content
-	ParentToolUseID *string        `json:"parent_tool_use_id"`        // For tool results (null if not tool result)
-	IsSynthetic     bool           `json:"isSynthetic,omitempty"`     // True for system-generated messages
-	ToolUseResult   interface{}    `json:"tool_use_result,omitempty"` // Tool result JSON if applicable
+	Type            string               `json:"type"`                      // Always "user"
+	UUID            string               `json:"uuid,omitempty"`            // Unique message ID
+	SessionID       string               `json:"session_id"`                // Session identifier
+	Message         APIUserMessage       `json:"message"`                   // Message content
+	ParentToolUseID *string              `json:"parent_tool_use_id"`        // For tool results (null if not tool result)
+	IsSynthetic     bool                 `json:"isSynthetic,omitempty"`     // True for system-generated messages
+	ToolUseResult   interface{}          `json:"tool_use_result,omitempty"` // Tool result JSON if applicable
+	Priority        *UserMessagePriority `json:"priority,omitempty"`        // Scheduling priority
 }
 
 // APIUserMessage represents the message content in Anthropic API format.
@@ -42,13 +43,23 @@ type UserContentBlock struct {
 
 // UserMessageReplay represents a replayed user message during session resume.
 type UserMessageReplay struct {
-	Type            string         `json:"type"`       // Always "user"
-	UUID            string         `json:"uuid"`       // Unique message ID
-	SessionID       string         `json:"session_id"` // Session identifier
-	Message         APIUserMessage `json:"message"`    // Message content
-	ParentToolUseID *string        `json:"parent_tool_use_id"`
-	IsReplay        bool           `json:"isReplay"` // True for replayed messages
+	Type            string               `json:"type"`       // Always "user"
+	UUID            string               `json:"uuid"`       // Unique message ID
+	SessionID       string               `json:"session_id"` // Session identifier
+	Message         APIUserMessage       `json:"message"`    // Message content
+	ParentToolUseID *string              `json:"parent_tool_use_id"`
+	IsReplay        bool                 `json:"isReplay"` // True for replayed messages
+	Priority        *UserMessagePriority `json:"priority,omitempty"`
 }
+
+// UserMessagePriority indicates when a user message should be handled.
+type UserMessagePriority string
+
+const (
+	UserMessagePriorityNow   UserMessagePriority = "now"
+	UserMessagePriorityNext  UserMessagePriority = "next"
+	UserMessagePriorityLater UserMessagePriority = "later"
+)
 
 // MessageType implements Message.
 func (m UserMessage) MessageType() string { return "user" }
@@ -138,6 +149,9 @@ type ResultMessage struct {
 
 	PermissionDenials []PermissionDenial `json:"permission_denials,omitempty"` // Denied permissions
 	StructuredOutput  interface{}        `json:"structured_output,omitempty"`  // Structured output (if OutputFormat set)
+	StopReason        *string            `json:"stop_reason"`                  // Stop reason, explicitly null when absent
+	TerminalReason    *TerminalReason    `json:"terminal_reason,omitempty"`    // Terminal completion reason
+	FastModeState     *FastModeState     `json:"fast_mode_state,omitempty"`    // Fast mode state at completion
 }
 
 // MessageType implements Message.
@@ -355,6 +369,33 @@ const (
 	RateLimitStatusRejected       RateLimitStatus = "rejected"
 )
 
+// TerminalReason explains why a result message reached a terminal state.
+type TerminalReason string
+
+const (
+	TerminalReasonBlockingLimit      TerminalReason = "blocking_limit"
+	TerminalReasonRapidRefillBreaker TerminalReason = "rapid_refill_breaker"
+	TerminalReasonPromptTooLong      TerminalReason = "prompt_too_long"
+	TerminalReasonImageError         TerminalReason = "image_error"
+	TerminalReasonModelError         TerminalReason = "model_error"
+	TerminalReasonAbortedStreaming   TerminalReason = "aborted_streaming"
+	TerminalReasonAbortedTools       TerminalReason = "aborted_tools"
+	TerminalReasonStopHookPrevented  TerminalReason = "stop_hook_prevented"
+	TerminalReasonHookStopped        TerminalReason = "hook_stopped"
+	TerminalReasonToolDeferred       TerminalReason = "tool_deferred"
+	TerminalReasonMaxTurns           TerminalReason = "max_turns"
+	TerminalReasonCompleted          TerminalReason = "completed"
+)
+
+// FastModeState is the current state of Claude Code fast mode.
+type FastModeState string
+
+const (
+	FastModeStateOff      FastModeState = "off"
+	FastModeStateCooldown FastModeState = "cooldown"
+	FastModeStateOn       FastModeState = "on"
+)
+
 // RateLimitType identifies the quota window or overage bucket.
 type RateLimitType string
 
@@ -460,18 +501,24 @@ type Usage struct {
 // This message is sent at the start of a session and contains information
 // about available tools, MCP servers, models, and permissions.
 type SystemMessage struct {
-	Type           string          `json:"type"`           // Always "system"
-	Subtype        string          `json:"subtype"`        // "init" or "compact_boundary"
-	UUID           string          `json:"uuid"`           // Unique message ID
-	SessionID      string          `json:"session_id"`     // Session identifier
-	APIKeySource   string          `json:"apiKeySource"`   // Where the API key comes from
-	Cwd            string          `json:"cwd"`            // Current working directory
-	Tools          []string        `json:"tools"`          // Available tools
-	MCPServers     []MCPServerInfo `json:"mcp_servers"`    // MCP server status
-	Model          string          `json:"model"`          // Active model
-	PermissionMode PermissionMode  `json:"permissionMode"` // Current permission mode
-	SlashCommands  []string        `json:"slash_commands"` // Available slash commands
-	OutputStyle    string          `json:"output_style"`   // Output formatting style
+	Type              string          `json:"type"`                      // Always "system"
+	Subtype           string          `json:"subtype"`                   // "init" or "compact_boundary"
+	UUID              string          `json:"uuid"`                      // Unique message ID
+	SessionID         string          `json:"session_id"`                // Session identifier
+	APIKeySource      string          `json:"apiKeySource"`              // Where the API key comes from
+	Cwd               string          `json:"cwd"`                       // Current working directory
+	Tools             []string        `json:"tools"`                     // Available tools
+	MCPServers        []MCPServerInfo `json:"mcp_servers"`               // MCP server status
+	Model             string          `json:"model"`                     // Active model
+	PermissionMode    PermissionMode  `json:"permissionMode"`            // Current permission mode
+	SlashCommands     []string        `json:"slash_commands"`            // Available slash commands
+	OutputStyle       string          `json:"output_style"`              // Output formatting style
+	ClaudeCodeVersion string          `json:"claude_code_version"`       // Claude Code version
+	Skills            []string        `json:"skills"`                    // Available skills
+	Plugins           []SystemPlugin  `json:"plugins"`                   // Available plugins
+	Agents            []string        `json:"agents,omitempty"`          // Available agents
+	Betas             []string        `json:"betas,omitempty"`           // Enabled beta flags
+	FastModeState     *FastModeState  `json:"fast_mode_state,omitempty"` // Fast mode state
 }
 
 // MessageType implements Message.
@@ -481,6 +528,12 @@ func (m SystemMessage) MessageType() string { return "system" }
 type MCPServerInfo struct {
 	Name   string `json:"name"`   // Server name
 	Status string `json:"status"` // Connection status
+}
+
+// SystemPlugin contains metadata for an installed Claude Code plugin.
+type SystemPlugin struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
 }
 
 // PartialAssistantMessage represents a streaming partial message.
@@ -942,6 +995,7 @@ type ModelUsage struct {
 	WebSearchRequests        int     `json:"webSearchRequests"`        // Web search count
 	CostUSD                  float64 `json:"costUSD"`                  // Cost in USD
 	ContextWindow            int     `json:"contextWindow"`            // Context window size
+	MaxOutputTokens          int     `json:"maxOutputTokens"`          // Max output tokens for this model
 }
 
 // NonNullableUsage is like Usage but all fields are guaranteed non-zero.
