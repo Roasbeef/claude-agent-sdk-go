@@ -4,6 +4,7 @@ package claudeagent
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -1312,7 +1313,100 @@ func TestIntegrationStreamFileAndRuntime(t *testing.T) {
 func TestIntegrationSettingsOptions(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
-	t.Skip("not triggerable from CLI yet: settings and managed-settings " +
-		"flags lack a stable isolated wire effect in the integration harness; " +
-		"unit coverage in transport_test.go")
+
+	realCLI, err := DiscoverCLIPath(&Options{})
+	require.NoError(t, err)
+
+	runWithArgvCapture := func(t *testing.T, opts ...Option) []string {
+		t.Helper()
+
+		tmp := t.TempDir()
+		argvLog := filepath.Join(tmp, "argv.json")
+		shimPath := filepath.Join(tmp, "claude-shim.sh")
+		shimBody := fmt.Sprintf(`#!/usr/bin/env bash
+argv_log=%q
+real_cli=%q
+python3 - "$argv_log" "$@" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as f:
+    json.dump(sys.argv[2:], f)
+PY
+exec "$real_cli" "$@"
+`, argvLog, realCLI)
+		require.NoError(t, os.WriteFile(shimPath, []byte(shimBody), 0o755))
+
+		clientOpts := append(isolatedClientOptions(t), WithCLIPath(shimPath))
+		clientOpts = append(clientOpts, opts...)
+
+		client, err := NewClient(clientOpts...)
+		require.NoError(t, err)
+		defer client.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+
+		stream, err := client.Stream(ctx)
+		require.NoError(t, err)
+		defer stream.Close()
+
+		init, err := stream.InitializationResult()
+		require.NoError(t, err)
+		require.NotNil(t, init)
+
+		data, err := os.ReadFile(argvLog)
+		require.NoError(t, err)
+
+		var argv []string
+		require.NoError(t, json.Unmarshal(data, &argv))
+		return argv
+	}
+
+	argValue := func(t *testing.T, argv []string, flag string) string {
+		t.Helper()
+		for i, arg := range argv {
+			if arg == flag {
+				require.Less(t, i+1, len(argv), "expected value after %s in %v", flag, argv)
+				return argv[i+1]
+			}
+		}
+		require.Failf(t, "missing flag", "expected %s in %v", flag, argv)
+		return ""
+	}
+
+	t.Run("settings_path", func(t *testing.T) {
+		tmp := t.TempDir()
+		settingsPath := filepath.Join(tmp, "user-settings.json")
+		require.NoError(t, os.WriteFile(settingsPath, []byte("{}"), 0o644))
+
+		argv := runWithArgvCapture(t, WithSettingsPath(settingsPath))
+		assert.Equal(t, settingsPath, argValue(t, argv, "--settings"))
+	})
+
+	t.Run("inline_settings", func(t *testing.T) {
+		want := Settings{
+			Env: map[string]string{
+				"CLAUDE_AGENT_SDK_GO_INTEGRATION": "settings",
+			},
+		}
+
+		argv := runWithArgvCapture(t, WithSettings(want))
+		var got Settings
+		require.NoError(t, json.Unmarshal([]byte(argValue(t, argv, "--settings")), &got))
+		assert.Equal(t, want.Env, got.Env)
+	})
+
+	t.Run("managed_settings", func(t *testing.T) {
+		want := Settings{
+			Env: map[string]string{
+				"CLAUDE_AGENT_SDK_GO_INTEGRATION": "managed-settings",
+			},
+		}
+
+		argv := runWithArgvCapture(t, WithManagedSettings(want))
+		var got Settings
+		require.NoError(t, json.Unmarshal([]byte(argValue(t, argv, "--managed-settings")), &got))
+		assert.Equal(t, want.Env, got.Env)
+	})
 }
