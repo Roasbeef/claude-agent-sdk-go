@@ -11,6 +11,9 @@ the CLI as a subprocess. It communicates via line-delimited JSON over
 stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
+This repository tracks the official TypeScript Agent SDK surface through the
+v0.2.119 catchup work, using Go idioms where the API shape differs.
+
 ```mermaid
 flowchart TB
     subgraph SDK[Go SDK]
@@ -116,6 +119,23 @@ client, _ := claudeagent.NewClient(
 )
 ```
 
+Settings can be supplied either as a settings file path or as inline JSON:
+
+```go
+client, _ := claudeagent.NewClient(
+    claudeagent.WithSettingsPath("/path/to/settings.json"),
+)
+
+client, _ = claudeagent.NewClient(
+    claudeagent.WithSettings(claudeagent.Settings{
+        Model: "claude-sonnet-4-5-20250929",
+        Permissions: &claudeagent.SettingsPermissions{
+            Allow: []string{"Bash(git status)"},
+        },
+    }),
+)
+```
+
 ## Custom Tools (MCP)
 
 Define tools that Claude can use during conversations:
@@ -186,6 +206,26 @@ For detailed guides and examples, see [docs/examples/](docs/examples/):
 - [Skills](docs/examples/skills.md) - Filesystem-based capability extensions
 - [Ralph Loop](docs/examples/ralph.md) - Iterative task completion pattern
 - [Task Lists](docs/TASKS.md) - Multi-agent task coordination system
+
+## TypeScript SDK Parity
+
+The v0.2.119 catchup adds coverage for recent Agent SDK and Claude Code CLI
+surfaces, including:
+
+- thinking effort, task budgets, debug files, extra CLI args, agent selection,
+  and prompt/agent progress toggles
+- programmatic subagents, richer hook inputs/outputs, permission updates, and
+  MCP HTTP/SSE configuration
+- stream control and introspection helpers, runtime MCP server updates,
+  file/read-state/plugin control, and local JSONL session helpers
+- explicit settings support via `WithSettingsPath`, `WithSettings`, and
+  `WithManagedSettings`
+
+Some areas remain intentionally limited by the CLI or integration harness:
+desktop/IDE-only settings are not modeled exhaustively, several runtime control
+paths have unit coverage plus skipped integration slots until stable live CLI
+fixtures exist, and alpha task/agent behavior should still be checked against
+the installed Claude Code CLI version.
 
 For internal architecture, see [DESIGN.md](docs/DESIGN.md). For CLI protocol
 details (how this and the official Typescript SDK actually work), see
