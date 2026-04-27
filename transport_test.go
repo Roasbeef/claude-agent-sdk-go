@@ -62,6 +62,15 @@ func stringPtr(s string) *string {
 	return &s
 }
 
+func argIndex(args []string, flag string) int {
+	for i, arg := range args {
+		if arg == flag {
+			return i
+		}
+	}
+	return -1
+}
+
 type mockTransport struct {
 	mu       sync.Mutex
 	written  []Message
@@ -927,6 +936,122 @@ func TestSubprocessTransportExtraArgs(t *testing.T) {
 			assert.Equal(t, tt.wantTail, runner.StartArgs[len(runner.StartArgs)-len(tt.wantTail):])
 		})
 	}
+}
+
+func TestSubprocessTransportSettingsPath(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	WithSettingsPath("/tmp/claude-settings.json")(opts)
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	assertArgValue(t, runner.StartArgs, "--settings", "/tmp/claude-settings.json")
+	assertArgAbsent(t, runner.StartArgs, "--managed-settings")
+}
+
+func TestSubprocessTransportInlineSettings(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	WithSettings(Settings{
+		Model: "claude-sonnet-4-5-20250929",
+		Permissions: &SettingsPermissions{
+			Allow:       []string{"Bash(git status)"},
+			DefaultMode: PermissionModePlan,
+		},
+		EnabledPlugins: map[string]interface{}{
+			"formatter@anthropic-tools": true,
+		},
+		ExtraKnownMarketplaces: map[string]SettingsMarketplace{
+			"team-tools": {
+				Source: SettingsMarketplaceSource{
+					"source": "github",
+					"repo":   "example/tools",
+				},
+			},
+		},
+	})(opts)
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	settingsIndex := argIndex(runner.StartArgs, "--settings")
+	require.NotEqual(t, -1, settingsIndex, "expected --settings in %v", runner.StartArgs)
+	require.Less(t, settingsIndex+1, len(runner.StartArgs))
+
+	var got Settings
+	require.NoError(t, json.Unmarshal([]byte(runner.StartArgs[settingsIndex+1]), &got))
+	assert.Equal(t, "claude-sonnet-4-5-20250929", got.Model)
+	require.NotNil(t, got.Permissions)
+	assert.Equal(t, []string{"Bash(git status)"}, got.Permissions.Allow)
+	assert.Equal(t, PermissionModePlan, got.Permissions.DefaultMode)
+
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(runner.StartArgs[settingsIndex+1]), &raw))
+	assert.Equal(t, true, raw["enabledPlugins"].(map[string]interface{})["formatter@anthropic-tools"])
+	assert.Equal(t, "github",
+		raw["extraKnownMarketplaces"].(map[string]interface{})["team-tools"].(map[string]interface{})["source"].(map[string]interface{})["source"])
+}
+
+func TestSubprocessTransportManagedSettings(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	WithManagedSettings(Settings{
+		AvailableModels: []string{"opus", "sonnet"},
+		Sandbox: &SettingsSandbox{
+			Enabled:           boolPtr(true),
+			FailIfUnavailable: boolPtr(false),
+		},
+	})(opts)
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	managedIndex := argIndex(runner.StartArgs, "--managed-settings")
+	require.NotEqual(t, -1, managedIndex, "expected --managed-settings in %v", runner.StartArgs)
+	require.Less(t, managedIndex+1, len(runner.StartArgs))
+
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal([]byte(runner.StartArgs[managedIndex+1]), &raw))
+	assert.Equal(t, []interface{}{"opus", "sonnet"}, raw["availableModels"])
+	assert.Equal(t, true, raw["sandbox"].(map[string]interface{})["enabled"])
+	assert.Equal(t, false, raw["sandbox"].(map[string]interface{})["failIfUnavailable"])
+	assertArgAbsent(t, runner.StartArgs, "--settings")
+}
+
+func TestSubprocessTransportSettingsBeforeExtraArgs(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	WithSettings(Settings{Model: "claude-opus-4-5-20250929"})(opts)
+	WithManagedSettings(Settings{ForceRemoteSettingsRefresh: boolPtr(true)})(opts)
+	WithExtraArgs(map[string]*string{
+		"zz-extra": stringPtr("tail"),
+	})(opts)
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	settingsIndex := argIndex(runner.StartArgs, "--settings")
+	managedIndex := argIndex(runner.StartArgs, "--managed-settings")
+	extraIndex := argIndex(runner.StartArgs, "--zz-extra")
+	require.NotEqual(t, -1, settingsIndex)
+	require.NotEqual(t, -1, managedIndex)
+	require.NotEqual(t, -1, extraIndex)
+	assert.Less(t, settingsIndex, extraIndex)
+	assert.Less(t, managedIndex, extraIndex)
+	assert.Equal(t, []string{"--zz-extra", "tail"}, runner.StartArgs[len(runner.StartArgs)-2:])
 }
 
 func TestSubprocessTransportMainAgentArguments(t *testing.T) {

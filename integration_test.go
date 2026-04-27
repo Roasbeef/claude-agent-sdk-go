@@ -1301,3 +1301,18 @@ func TestIntegrationStreamFileAndRuntime(t *testing.T) {
 		"plugin / runtime surface needs harness fixtures that don't exist; " +
 		"unit coverage in client_file_plugin_control_test.go")
 }
+
+// TestIntegrationSettingsOptions is a slot for the PR 22 settings option
+// surface. The transport unit tests assert exact --settings and
+// --managed-settings argv emission; a live assertion needs a CLI-supported
+// observable effect that is isolated from user/project settings and does not
+// depend on local account/model policy. Once the harness exposes CLI argv
+// capture or a stable settings-driven wire effect, replace this skip with an
+// end-to-end assertion.
+func TestIntegrationSettingsOptions(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	t.Skip("not triggerable from CLI yet: settings and managed-settings " +
+		"flags lack a stable isolated wire effect in the integration harness; " +
+		"unit coverage in transport_test.go")
+}
