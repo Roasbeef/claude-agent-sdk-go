@@ -1230,21 +1230,96 @@ func TestIntegrationWorkingDirectory(t *testing.T) {
 // TestIntegrationHooks): callback hooks are control-channel mediated and never
 // surface as system subtype messages. The lifecycle messages we parse here
 // only appear when the CLI runs an external command hook configured via a
-// settings file, and emission is gated on CLI behavior we have not been able
-// to reproduce locally with the v2.1.119 binary using --setting-sources
-// project + a UserPromptSubmit hook entry.
-//
-// TODO(integration): once we know the exact settings shape that triggers wire
-// hook emission in v2.1.119+ (or once a future SDK version exposes a way to
-// register subprocess hooks programmatically), drop the t.Skip and assert that
-// each lifecycle message round-trips with hook_id, hook_name, hook_event, and
-// the expected outcome.
+// settings file.
 func TestIntegrationHookLifecycleMessages(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
-	t.Skip("not triggerable from CLI yet: settings.json hook configuration " +
-		"shape that emits hook_started/hook_progress/hook_response in v2.1.119 " +
-		"is not reproducible from this test harness; see TODO above")
+
+	tmp := t.TempDir()
+	settingsPath := filepath.Join(tmp, "settings.json")
+	settings := Settings{
+		Hooks: map[string][]SettingsHookMatcher{
+			"UserPromptSubmit": {
+				{
+					Hooks: []SettingsHook{
+						{
+							Type:    "command",
+							Command: `printf '{"continue":true}\n'`,
+						},
+					},
+				},
+			},
+		},
+	}
+	settingsJSON, err := json.MarshalIndent(settings, "", "  ")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(settingsPath, settingsJSON, 0o644))
+
+	opts := append(isolatedClientOptions(t),
+		WithSettingsPath(settingsPath),
+		WithExtraArgs(map[string]*string{
+			"include-hook-events": nil,
+		}),
+		WithSystemPrompt("You are a helpful assistant. Keep responses very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	require.NoError(t, client.Connect(ctx))
+
+	startedByID := make(map[string]HookStartedMessage)
+	var responses []HookResponseMessage
+	var sawProgress bool
+	var result *ResultMessage
+
+	for msg := range client.Query(ctx, "Reply with exactly: ok") {
+		switch m := msg.(type) {
+		case HookStartedMessage:
+			t.Logf("Hook started: id=%s name=%s event=%s",
+				m.HookID, m.HookName, m.HookEvent)
+			if m.HookEvent == "UserPromptSubmit" {
+				startedByID[m.HookID] = m
+			}
+		case HookProgressMessage:
+			if m.HookEvent == "UserPromptSubmit" {
+				sawProgress = true
+				t.Logf("Hook progress: id=%s output=%q",
+					m.HookID, m.Output)
+			}
+		case HookResponseMessage:
+			t.Logf("Hook response: id=%s name=%s event=%s outcome=%s output=%q",
+				m.HookID, m.HookName, m.HookEvent, m.Outcome, m.Output)
+			if m.HookEvent == "UserPromptSubmit" {
+				responses = append(responses, m)
+			}
+		case ResultMessage:
+			result = &m
+		}
+	}
+
+	require.NotNil(t, result, "expected query to complete")
+	assert.NotEmpty(t, startedByID, "expected hook_started for UserPromptSubmit")
+	require.NotEmpty(t, responses, "expected hook_response for UserPromptSubmit")
+
+	var matched bool
+	for _, response := range responses {
+		started, ok := startedByID[response.HookID]
+		if !ok {
+			continue
+		}
+		matched = true
+		assert.NotEmpty(t, response.HookID)
+		assert.Equal(t, started.HookName, response.HookName)
+		assert.Equal(t, started.HookEvent, response.HookEvent)
+		assert.NotEmpty(t, response.Outcome)
+	}
+	assert.True(t, matched, "expected hook_response hook_id to match hook_started")
+	t.Logf("Observed hook_progress: %t", sawProgress)
 }
 
 // TestIntegrationStreamIntrospection exercises the cached-init readers added
