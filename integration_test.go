@@ -1361,21 +1361,84 @@ func TestIntegrationStreamIntrospection(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestIntegrationStreamFileAndRuntime is a slot for the PR 20 surface
-// (RewindFiles, SeedReadState, ReadFile, ReloadPlugins, ApplyFlagSettings,
-// StopTask). Each path needs setup the integration harness does not yet
-// produce: file checkpointing must be enabled at session start with a tracked
-// edit before RewindFiles will return a usable result; ReadFile and
-// SeedReadState need a file the CLI considers in-scope; ReloadPlugins needs
-// plugins configured; StopTask needs a running task identifier surfaced over
-// the wire. Once the harness can stage one of those preconditions, drop the
-// t.Skip and assert the wire round-trip end-to-end.
+// TestIntegrationStreamFileAndRuntime exercises PR 20 stream file/runtime
+// control methods against the live CLI.
 func TestIntegrationStreamFileAndRuntime(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
-	t.Skip("not triggerable from CLI yet: file checkpoint / read-state / " +
-		"plugin / runtime surface needs harness fixtures that don't exist; " +
-		"unit coverage in client_file_plugin_control_test.go")
+
+	const markerContent = "hello-stream-readfile-#57"
+
+	newFileStream := func(t *testing.T) (*Stream, string) {
+		t.Helper()
+
+		tempDir := t.TempDir()
+		markerPath := filepath.Join(tempDir, "marker.txt")
+		require.NoError(t, os.WriteFile(markerPath, []byte(markerContent), 0o644))
+
+		opts := append(isolatedClientOptions(t),
+			WithCwd(tempDir),
+			WithSystemPrompt("You are a helpful assistant."),
+			WithPermissionMode(PermissionModeBypassAll),
+			WithAllowDangerouslySkipPermissions(true),
+		)
+		client, err := NewClient(opts...)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, client.Close())
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		t.Cleanup(cancel)
+
+		stream, err := client.Stream(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, stream.Close())
+		})
+
+		return stream, markerPath
+	}
+
+	t.Run("read_file", func(t *testing.T) {
+		stream, markerPath := newFileStream(t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		got, err := stream.ReadFile(ctx, "marker.txt", &ReadFileOptions{})
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Equal(t, markerContent, got.Contents)
+		assert.Equal(t, filepath.Clean(markerPath), filepath.Clean(got.AbsPath))
+		assert.False(t, got.Truncated)
+	})
+
+	t.Run("seed_read_state", func(t *testing.T) {
+		stream, markerPath := newFileStream(t)
+		info, err := os.Stat(markerPath)
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		require.NoError(t, stream.SeedReadState(ctx, markerPath, info.ModTime().UnixMilli()))
+	})
+
+	t.Run("apply_flag_settings", func(t *testing.T) {
+		stream, _ := newFileStream(t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		require.NoError(t, stream.ApplyFlagSettings(ctx, map[string]interface{}{}))
+	})
+
+	t.Run("deferred_runtime_methods", func(t *testing.T) {
+		t.Skip("not triggerable from CLI yet: RewindFiles needs file " +
+			"checkpointing setup, ReloadPlugins needs a plugin fixture, " +
+			"and StopTask needs a running task identifier")
+	})
 }
 
 // TestIntegrationSettingsOptions is a slot for the PR 22 settings option
