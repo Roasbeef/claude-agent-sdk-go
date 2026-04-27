@@ -10,7 +10,7 @@ The SDK prioritizes three things:
 
 **Feature parity with the TypeScript SDK.** Users switching from TypeScript
 should find equivalent functionality. The API surface differs for Go idioms,
-but capabilities match.
+but the v0.2.119 catchup covers the major current CLI and Agent SDK surfaces.
 
 **Minimal dependencies.** The core SDK depends only on the standard library.
 Testing uses testify for assertions and rapid for property-based tests, but
@@ -71,6 +71,8 @@ claudeagent/
 ├── options.go         # Configuration and hook types
 ├── mcp.go             # MCP server helpers
 ├── query_types.go     # Query response types
+├── sessions.go        # Local JSONL session helpers
+├── tasks.go           # Persistent task-list helpers
 ├── tool_inputs.go     # Tool input type definitions
 ├── skills.go          # Skills loading from filesystem
 ├── errors.go          # Error types
@@ -405,7 +407,9 @@ This pattern provides:
 - Backward compatibility: new options don't break existing code
 - Sensible defaults: `DefaultOptions()` provides safe starting values
 
-The full options struct has 30+ fields matching the TypeScript SDK's capabilities.
+The full options struct has broad coverage for the TypeScript SDK's
+configuration surface, including settings, managed settings, subagents,
+skills, MCP servers, hooks, permissions, thinking controls, and runtime flags.
 
 ## Testing Strategy
 

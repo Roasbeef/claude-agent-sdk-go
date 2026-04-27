@@ -15,6 +15,8 @@ make test-race                          # Unit tests with race detector
 
 Integration tests require `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY`. Without a token, they skip (not fail). Always run `make test-integration` after changes that affect CLI communication.
 
+The SDK has been brought forward through the v0.2.119 TypeScript Agent SDK catchup. When adding new Claude Code CLI surfaces, check the installed CLI behavior and the TypeScript SDK reference before assuming an older local pattern is complete.
+
 ## Verifying Changes
 
 **All changes must pass tests and lint before committing.**
@@ -23,7 +25,7 @@ After modifying code:
 1. `go build ./...` - must pass
 2. `go test ./...` - unit tests must pass
 3. `make lint` - linter must pass (no warnings)
-4. `make test-integration` - run if touching client.go, protocol.go, transport.go, or message handling
+4. `make test-integration` - run if touching client.go, protocol.go, transport.go, settings/options, or message handling
 
 For new features, check coverage: `make coverage`
 
@@ -37,6 +39,8 @@ This SDK wraps the Claude Code CLI as a subprocess, communicating via JSON over 
 - `transport.go` - Subprocess lifecycle, stdin/stdout pipes
 - `mcp.go` - In-process MCP server with generics-based tools
 - `ask_user.go` - `QuestionMessage` for interactive Q&A
+- `sessions.go` - Local JSONL session listing, loading, and deletion helpers
+- `tasks.go` - Persistent task-list helpers shared with Claude Code task tools
 
 ## Code Style
 
