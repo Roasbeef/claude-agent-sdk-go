@@ -2293,6 +2293,64 @@ func TestBuildHookResponse_WatchPaths(t *testing.T) {
 		assert.Equal(t, "SessionStart", hso["hookEventName"])
 		assert.Equal(t, []string{"/cfg"}, hso["watchPaths"])
 	})
+
+	// Coexistence case (#35): a caller supplies its own
+	// HookSpecificOutput with event-specific fields AND sets
+	// WatchPaths on the same eligible event. The wire payload must
+	// preserve every caller-provided key and carry the watchPaths
+	// augmentation alongside, without mutating the caller's input
+	// map (the copy-on-write path inside buildHookResponse).
+	t.Run("SessionStart preserves caller HSO fields and adds watchPaths", func(t *testing.T) {
+		callerHSO := map[string]interface{}{
+			"hookEventName":     "SessionStart",
+			"additionalContext": "deployment notes",
+		}
+		result := HookResult{
+			Continue:           true,
+			WatchPaths:         []string{"/etc/app"},
+			HookSpecificOutput: callerHSO,
+		}
+
+		resp := buildHookResponse("SessionStart", result)
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "SessionStart", hso["hookEventName"])
+		assert.Equal(t, "deployment notes", hso["additionalContext"])
+		assert.Equal(t, []string{"/etc/app"}, hso["watchPaths"])
+
+		// Caller's input map must not be mutated by buildHookResponse;
+		// the watchPaths key only lives on the response copy.
+		_, leaked := callerHSO["watchPaths"]
+		assert.False(t, leaked, "caller HookSpecificOutput must not gain watchPaths")
+		assert.Len(t, callerHSO, 2, "caller map should still hold only its original keys")
+	})
+
+	t.Run("CwdChanged preserves caller HSO fields and adds watchPaths", func(t *testing.T) {
+		// Same property check on CwdChanged, which carries cwd as its
+		// event-specific field.
+		callerHSO := map[string]interface{}{
+			"hookEventName": "CwdChanged",
+			"cwd":           "/srv/work",
+		}
+		result := HookResult{
+			Continue:           true,
+			WatchPaths:         []string{"/srv/work/dist"},
+			HookSpecificOutput: callerHSO,
+		}
+
+		resp := buildHookResponse("CwdChanged", result)
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "CwdChanged", hso["hookEventName"])
+		assert.Equal(t, "/srv/work", hso["cwd"])
+		assert.Equal(t, []string{"/srv/work/dist"}, hso["watchPaths"])
+
+		_, leaked := callerHSO["watchPaths"]
+		assert.False(t, leaked)
+		assert.Len(t, callerHSO, 2)
+	})
 }
 
 // TestHandleHookCallback_ShapeCompatibleEvents covers the 12 v0.2.119 events
