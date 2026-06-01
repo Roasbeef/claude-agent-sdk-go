@@ -58,3 +58,56 @@ func TestSettingsHookArgsJSON(t *testing.T) {
 		assert.Equal(t, []interface{}{}, got["args"])
 	})
 }
+
+func TestSettingsHookContinueOnBlockJSON(t *testing.T) {
+	t.Run("marshal includes true", func(t *testing.T) {
+		continueOnBlock := true
+		data, err := json.Marshal(SettingsHook{
+			Type:            "prompt",
+			Prompt:          "verify",
+			ContinueOnBlock: &continueOnBlock,
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, true, got["continueOnBlock"])
+	})
+
+	t.Run("nil omitted", func(t *testing.T) {
+		data, err := json.Marshal(SettingsHook{
+			Type:   "prompt",
+			Prompt: "verify",
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "continueOnBlock")
+	})
+
+	t.Run("marshal includes false", func(t *testing.T) {
+		continueOnBlock := false
+		data, err := json.Marshal(SettingsHook{
+			Type:            "prompt",
+			Prompt:          "verify",
+			ContinueOnBlock: &continueOnBlock,
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, false, got["continueOnBlock"])
+	})
+
+	t.Run("unmarshal", func(t *testing.T) {
+		var cfg SettingsHook
+		require.NoError(t, json.Unmarshal(
+			[]byte(`{"type":"prompt","prompt":"verify","continueOnBlock":true}`),
+			&cfg,
+		))
+
+		require.NotNil(t, cfg.ContinueOnBlock)
+		assert.True(t, *cfg.ContinueOnBlock)
+	})
+}
