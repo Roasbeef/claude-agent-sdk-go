@@ -725,6 +725,14 @@ func TestIntegrationStopHookBackgroundTasks(t *testing.T) {
 	t.Skip("not triggerable from CLI without a long-running background task; tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+func TestIntegrationStopHookSessionCrons(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// TODO: Backfill when a deterministic session cron fixture is available.
+	t.Skip("not triggerable from CLI without scheduling a session cron; tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
 func TestIntegrationBaseHookInputEffort(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
