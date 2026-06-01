@@ -1603,6 +1603,62 @@ func TestParseMessageTaskStarted(t *testing.T) {
 	}
 }
 
+func TestParseMessageTaskStartedSubagentType(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "task_started",
+		"task_id": "t1",
+		"description": "Review changes",
+		"subagent_type": "reviewer",
+		"uuid": "u1",
+		"session_id": "s1"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	taskMsg, ok := msg.(TaskStartedMessage)
+	require.True(t, ok, "expected TaskStartedMessage")
+	assert.Equal(t, "reviewer", taskMsg.SubagentType)
+}
+
+func TestTaskStartedSubagentTypeOmitEmpty(t *testing.T) {
+	msg := TaskStartedMessage{
+		Type:        "system",
+		Subtype:     "task_started",
+		TaskID:      "t1",
+		Description: "d",
+		UUID:        "u",
+		SessionID:   "s",
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.NotContains(t, got, "subagent_type")
+}
+
+func TestTaskStartedSubagentTypeRoundTrip(t *testing.T) {
+	want := TaskStartedMessage{
+		Type:         "system",
+		Subtype:      "task_started",
+		TaskID:       "t1",
+		Description:  "d",
+		SubagentType: "explorer",
+		UUID:         "u",
+		SessionID:    "s",
+	}
+
+	data, err := json.Marshal(want)
+	require.NoError(t, err)
+
+	var got TaskStartedMessage
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, want.SubagentType, got.SubagentType)
+}
+
 func TestParseMessageTaskProgress(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -1679,6 +1735,69 @@ func TestParseMessageTaskProgress(t *testing.T) {
 			tt.check(t, taskMsg)
 		})
 	}
+}
+
+func TestParseMessageTaskProgressSubagentType(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "task_progress",
+		"task_id": "t1",
+		"description": "Review changes",
+		"subagent_type": "reviewer",
+		"usage": {
+			"total_tokens": 12,
+			"tool_uses": 1,
+			"duration_ms": 80
+		},
+		"uuid": "u1",
+		"session_id": "s1"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	taskMsg, ok := msg.(TaskProgressMessage)
+	require.True(t, ok, "expected TaskProgressMessage")
+	assert.Equal(t, "reviewer", taskMsg.SubagentType)
+}
+
+func TestTaskProgressSubagentTypeOmitEmpty(t *testing.T) {
+	msg := TaskProgressMessage{
+		Type:        "system",
+		Subtype:     "task_progress",
+		TaskID:      "t1",
+		Description: "d",
+		Usage:       TaskUsage{},
+		UUID:        "u",
+		SessionID:   "s",
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.NotContains(t, got, "subagent_type")
+}
+
+func TestTaskProgressSubagentTypeRoundTrip(t *testing.T) {
+	want := TaskProgressMessage{
+		Type:         "system",
+		Subtype:      "task_progress",
+		TaskID:       "t1",
+		Description:  "d",
+		SubagentType: "explorer",
+		Usage:        TaskUsage{},
+		UUID:         "u",
+		SessionID:    "s",
+	}
+
+	data, err := json.Marshal(want)
+	require.NoError(t, err)
+
+	var got TaskProgressMessage
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, want.SubagentType, got.SubagentType)
 }
 
 func TestParseMessageTaskUpdated(t *testing.T) {
@@ -1776,6 +1895,26 @@ func TestParseMessageTaskUpdated(t *testing.T) {
 			tt.check(t, taskMsg)
 		})
 	}
+}
+
+func TestParseMessageTaskUpdatedPausedStatus(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "task_updated",
+		"task_id": "t1",
+		"patch": {
+			"status": "paused"
+		},
+		"uuid": "u",
+		"session_id": "s"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	taskMsg, ok := msg.(TaskUpdatedMessage)
+	require.True(t, ok, "expected TaskUpdatedMessage")
+	assert.Equal(t, TaskRunStatusPaused, taskMsg.Patch.Status)
 }
 
 func TestParseMessageTaskNotification(t *testing.T) {

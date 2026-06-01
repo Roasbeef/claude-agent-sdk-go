@@ -703,6 +703,7 @@ const (
 	TaskRunStatusCompleted TaskRunStatus = "completed"
 	TaskRunStatusFailed    TaskRunStatus = "failed"
 	TaskRunStatusKilled    TaskRunStatus = "killed"
+	TaskRunStatusPaused    TaskRunStatus = "paused"
 )
 
 // TaskStartedMessage reports that a task has started executing.
@@ -712,6 +713,7 @@ type TaskStartedMessage struct {
 	TaskID         string `json:"task_id"`                   // Task identifier
 	ToolUseID      string `json:"tool_use_id,omitempty"`     // Related tool use ID
 	Description    string `json:"description"`               // Task description
+	SubagentType   string `json:"subagent_type,omitempty"`   // Subagent type for Task tool subagents
 	TaskType       string `json:"task_type,omitempty"`       // Task type
 	WorkflowName   string `json:"workflow_name,omitempty"`   // Workflow script metadata name
 	Prompt         string `json:"prompt,omitempty"`          // Task prompt
@@ -730,6 +732,7 @@ type TaskProgressMessage struct {
 	TaskID       string    `json:"task_id"`                  // Task identifier
 	ToolUseID    string    `json:"tool_use_id,omitempty"`    // Related tool use ID
 	Description  string    `json:"description"`              // Task description
+	SubagentType string    `json:"subagent_type,omitempty"`  // Subagent type for Task tool subagents
 	Usage        TaskUsage `json:"usage"`                    // Resource consumption
 	LastToolName string    `json:"last_tool_name,omitempty"` // Last tool used by task
 	Summary      string    `json:"summary,omitempty"`        // Task progress summary
