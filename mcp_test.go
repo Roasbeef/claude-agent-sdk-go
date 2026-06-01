@@ -100,6 +100,59 @@ func TestMCPServerConfigTimeoutJSON(t *testing.T) {
 	})
 }
 
+func TestMCPServerConfigAlwaysLoadJSON(t *testing.T) {
+	ptr := func(v bool) *bool { return &v }
+
+	t.Run("marshal includes alwaysLoad true", func(t *testing.T) {
+		data, err := json.Marshal(MCPServerConfig{
+			Type:       "stdio",
+			Command:    "foo",
+			AlwaysLoad: ptr(true),
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, true, got["alwaysLoad"])
+	})
+
+	t.Run("unmarshal alwaysLoad", func(t *testing.T) {
+		var cfg MCPServerConfig
+		require.NoError(t, json.Unmarshal(
+			[]byte(`{"type":"stdio","command":"foo","alwaysLoad":true}`),
+			&cfg,
+		))
+
+		require.NotNil(t, cfg.AlwaysLoad)
+		assert.True(t, *cfg.AlwaysLoad)
+	})
+
+	t.Run("nil alwaysLoad omitted", func(t *testing.T) {
+		data, err := json.Marshal(MCPServerConfig{
+			Type:    "stdio",
+			Command: "foo",
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "alwaysLoad")
+	})
+
+	t.Run("explicit false alwaysLoad included", func(t *testing.T) {
+		data, err := json.Marshal(MCPServerConfig{
+			Type:       "stdio",
+			Command:    "foo",
+			AlwaysLoad: ptr(false),
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, false, got["alwaysLoad"])
+	})
+}
+
 func TestWithMCPServers(t *testing.T) {
 	servers := map[string]MCPServerConfig{
 		"server1": {
@@ -139,6 +192,18 @@ func TestCreateMcpServerDefaultVersion(t *testing.T) {
 	})
 
 	assert.Equal(t, "1.0.0", server.Version())
+}
+
+func TestCreateMcpServerInstructions(t *testing.T) {
+	server := CreateMcpServer(McpServerOptions{
+		Name:         "test-server",
+		Instructions: "use this server for math",
+	})
+
+	assert.Equal(t, "use this server for math", server.Instructions())
+
+	defaultServer := CreateMcpServer(McpServerOptions{Name: "default"})
+	assert.Empty(t, defaultServer.Instructions())
 }
 
 // AddNumbersArgs is a test type for generics tests.

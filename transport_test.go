@@ -1276,6 +1276,23 @@ func TestSubprocessTransportMCPConfigEncoding(t *testing.T) {
 			},
 		},
 		{
+			name:       "stdio with alwaysLoad",
+			serverName: "local",
+			config: MCPServerConfig{
+				Type:    "stdio",
+				Command: "x",
+				AlwaysLoad: func() *bool {
+					v := true
+					return &v
+				}(),
+			},
+			want: map[string]interface{}{
+				"type":       "stdio",
+				"command":    "x",
+				"alwaysLoad": true,
+			},
+		},
+		{
 			name:       "stdio implicit type",
 			serverName: "local",
 			config: MCPServerConfig{

@@ -1110,21 +1110,25 @@ func (p *Protocol) handleSDKMCPMessage(ctx context.Context, req SDKControlReques
 	case "initialize":
 		// MCP protocol handshake - respond with server info and capabilities.
 		// Return the full JSONRPC response envelope.
+		result := map[string]interface{}{
+			"protocolVersion": "2025-11-25",
+			"capabilities": map[string]interface{}{
+				"tools": map[string]interface{}{
+					"listChanged": false,
+				},
+			},
+			"serverInfo": map[string]interface{}{
+				"name":    server.Name(),
+				"version": server.Version(),
+			},
+		}
+		if instr := server.Instructions(); instr != "" {
+			result["instructions"] = instr
+		}
 		responseData = map[string]interface{}{
 			"jsonrpc": "2.0",
 			"id":      messageID,
-			"result": map[string]interface{}{
-				"protocolVersion": "2025-11-25",
-				"capabilities": map[string]interface{}{
-					"tools": map[string]interface{}{
-						"listChanged": false,
-					},
-				},
-				"serverInfo": map[string]interface{}{
-					"name":    server.Name(),
-					"version": server.Version(),
-				},
-			},
+			"result":  result,
 		}
 
 	case "notifications/initialized", "notifications/cancelled": //nolint:misspell // MCP protocol uses British spelling
