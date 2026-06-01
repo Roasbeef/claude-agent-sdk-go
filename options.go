@@ -434,22 +434,28 @@ type SettingsHook struct {
 	// per-element as plain strings, so paths with quotes, $, or backticks
 	// never reach a shell parser. When absent, Command runs through a shell
 	// (bash on POSIX, PowerShell on Windows without Git Bash).
-	Args           []string               `json:"args,omitempty"`
-	Prompt         string                 `json:"prompt,omitempty"`
-	URL            string                 `json:"url,omitempty"`
-	Server         string                 `json:"server,omitempty"`
-	Tool           string                 `json:"tool,omitempty"`
-	Input          map[string]interface{} `json:"input,omitempty"`
-	If             string                 `json:"if,omitempty"`
-	Shell          string                 `json:"shell,omitempty"`
-	Timeout        *int                   `json:"timeout,omitempty"`
-	Model          string                 `json:"model,omitempty"`
-	StatusMessage  string                 `json:"statusMessage,omitempty"`
-	Once           *bool                  `json:"once,omitempty"`
-	Async          *bool                  `json:"async,omitempty"`
-	AsyncRewake    *bool                  `json:"asyncRewake,omitempty"`
-	Headers        map[string]string      `json:"headers,omitempty"`
-	AllowedEnvVars []string               `json:"allowedEnvVars,omitempty"`
+	Args    []string               `json:"args,omitempty"`
+	Prompt  string                 `json:"prompt,omitempty"`
+	URL     string                 `json:"url,omitempty"`
+	Server  string                 `json:"server,omitempty"`
+	Tool    string                 `json:"tool,omitempty"`
+	Input   map[string]interface{} `json:"input,omitempty"`
+	If      string                 `json:"if,omitempty"`
+	Shell   string                 `json:"shell,omitempty"`
+	Timeout *int                   `json:"timeout,omitempty"`
+	Model   string                 `json:"model,omitempty"`
+	// ContinueOnBlock sets the continue value for the decision:"block" produced
+	// when the hook returns ok=false. Default false (turn ends). Whether
+	// continue=true lets the turn proceed depends on the event's decision:"block"
+	// semantics: on PostToolUse, the reason is fed back to Claude and the turn
+	// continues.
+	ContinueOnBlock *bool             `json:"continueOnBlock,omitempty"`
+	StatusMessage   string            `json:"statusMessage,omitempty"`
+	Once            *bool             `json:"once,omitempty"`
+	Async           *bool             `json:"async,omitempty"`
+	AsyncRewake     *bool             `json:"asyncRewake,omitempty"`
+	Headers         map[string]string `json:"headers,omitempty"`
+	AllowedEnvVars  []string          `json:"allowedEnvVars,omitempty"`
 }
 
 func (h SettingsHook) MarshalJSON() ([]byte, error) {
