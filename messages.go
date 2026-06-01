@@ -908,6 +908,26 @@ type NotificationMessage struct {
 // MessageType implements Message.
 func (m NotificationMessage) MessageType() string { return "system" }
 
+// PermissionDeniedMessage reports a tool call denied by the permission
+// machinery. The SDK emits it for every denial path (mode, rule,
+// classifier, async-agent) so consumers can observe denials without
+// parsing the rejection text out of the assistant turn.
+type PermissionDeniedMessage struct {
+	Type               string `json:"type"`                           // Always "system"
+	Subtype            string `json:"subtype"`                        // "permission_denied"
+	ToolName           string `json:"tool_name"`                      // Denied tool name
+	ToolUseID          string `json:"tool_use_id"`                    // Denied tool_use_id
+	AgentID            string `json:"agent_id,omitempty"`             // Subagent ID when denial originated in a subagent
+	DecisionReasonType string `json:"decision_reason_type,omitempty"` // Discriminator from PermissionDecisionReason (e.g. "classifier", "asyncAgent", "mode", "rule")
+	DecisionReason     string `json:"decision_reason,omitempty"`      // Human-readable reason from the deciding component
+	Message            string `json:"message"`                        // Rejection message returned to the model in tool_result
+	UUID               string `json:"uuid"`                           // Unique message ID
+	SessionID          string `json:"session_id"`                     // Session identifier
+}
+
+// MessageType implements Message.
+func (m PermissionDeniedMessage) MessageType() string { return "system" }
+
 // PluginInstallStatus is the plugin installation progress state.
 type PluginInstallStatus string
 
@@ -1125,6 +1145,10 @@ func ParseMessage(data []byte) (Message, error) {
 			return msg, err
 		case "notification":
 			var msg NotificationMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "permission_denied":
+			var msg PermissionDeniedMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
 		case "plugin_install":
