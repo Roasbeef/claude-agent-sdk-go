@@ -747,6 +747,13 @@ func TestIntegrationAssistantMessageError(t *testing.T) {
 	t.Skip("requires an upstream API failure (e.g. auth/quota) to deterministically populate AssistantMessage.Error; tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+func TestIntegrationResultMessageOriginTTFT(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	t.Skip("requires CLI to emit origin/ttft_ms on result events (host-side multi-actor or measured TTFT); tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
 func TestIntegrationBaseHookInputEffort(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
