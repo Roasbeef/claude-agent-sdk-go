@@ -625,6 +625,14 @@ func TestIntegrationSDKMCPInstructions(t *testing.T) {
 	t.Skip("not directly assertable from CLI: MCP server instructions are consumed internally by the CLI for prompt composition")
 }
 
+func TestIntegrationHookCommandArgs(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// TODO: Backfill if the CLI exposes hook subprocess spawn details to SDK tests.
+	t.Skip("not directly assertable from CLI: hook args is a settings shape consumed by the CLI's hook spawn path, not observable on the SDK transport")
+}
+
 // TestIntegrationStopHookBlock tests that Stop hooks can block session exit
 // and reinject a new prompt using the Decision/Reason/SystemMessage fields.
 //
