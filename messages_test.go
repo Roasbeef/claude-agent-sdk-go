@@ -314,6 +314,75 @@ func TestParseMessageAssistantMessage(t *testing.T) {
 	assert.Equal(t, 0.0025, assistantMsg.Usage.Cost)
 }
 
+func TestParseMessageAssistantMessageSubagentFields(t *testing.T) {
+	input := `{
+		"type": "assistant",
+		"message": {
+			"role": "assistant",
+			"content": [
+				{
+					"type": "text",
+					"text": "Subagent response."
+				}
+			]
+		},
+		"usage": {
+			"input_tokens": 12,
+			"output_tokens": 8,
+			"total_tokens": 20
+		},
+		"request_id": "req_123",
+		"subagent_type": "general-purpose",
+		"task_description": "Inspect repository state"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	assistantMsg, ok := msg.(AssistantMessage)
+	require.True(t, ok, "expected AssistantMessage")
+
+	assert.Equal(t, "req_123", assistantMsg.RequestID)
+	assert.Equal(t, "general-purpose", assistantMsg.SubagentType)
+	assert.Equal(t, "Inspect repository state", assistantMsg.TaskDescription)
+}
+
+func TestAssistantMessageFieldsOmitEmpty(t *testing.T) {
+	msg := AssistantMessage{Type: "assistant"}
+	msg.Message.Role = "assistant"
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.NotContains(t, got, "request_id")
+	assert.NotContains(t, got, "subagent_type")
+	assert.NotContains(t, got, "task_description")
+}
+
+func TestAssistantMessageJSONRoundTrip(t *testing.T) {
+	msg := AssistantMessage{
+		Type:            "assistant",
+		RequestID:       "req_456",
+		SubagentType:    "code-reviewer",
+		TaskDescription: "Review assistant message fields",
+	}
+	msg.Message.Role = "assistant"
+	msg.Message.Content = []ContentBlock{{Type: "text", Text: "Done."}}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var got AssistantMessage
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.Equal(t, msg.RequestID, got.RequestID)
+	assert.Equal(t, msg.SubagentType, got.SubagentType)
+	assert.Equal(t, msg.TaskDescription, got.TaskDescription)
+}
+
 // TestParseMessageToolUseBlock tests parsing tool use requests.
 func TestParseMessageToolUseBlock(t *testing.T) {
 	inputJSON := `{
