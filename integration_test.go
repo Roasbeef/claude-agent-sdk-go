@@ -754,6 +754,13 @@ func TestIntegrationResultMessageOriginTTFT(t *testing.T) {
 	t.Skip("requires CLI to emit origin/ttft_ms on result events (host-side multi-actor or measured TTFT); tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+func TestIntegrationTaskLifecycleFields(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	t.Skip("requires CLI to emit a Task-tool subagent run (subagent_type) and a paused-status task_updated event; tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
 func TestIntegrationBaseHookInputEffort(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
