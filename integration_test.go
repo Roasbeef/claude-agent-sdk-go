@@ -1734,7 +1734,6 @@ func TestIntegrationBackgroundTasks(t *testing.T) {
 		case ResultMessage:
 			gotResult = true
 			t.Logf("Result: subtype=%s status=%s", m.Subtype, m.Status)
-			return
 		case TaskNotificationMessage:
 			t.Logf("Task notification: task_id=%s tool_use_id=%s status=%s",
 				m.TaskID, m.ToolUseID, m.Status)
