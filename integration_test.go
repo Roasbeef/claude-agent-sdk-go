@@ -1559,3 +1559,89 @@ exec "$real_cli" "$@"
 		assert.Equal(t, want.Env, got.Env)
 	})
 }
+
+func TestIntegrationToolAliases(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	realCLI, err := DiscoverCLIPath(&Options{})
+	require.NoError(t, err)
+
+	tmp := t.TempDir()
+	initLog := filepath.Join(tmp, "initialize.json")
+	shimPath := filepath.Join(tmp, "claude-shim.py")
+	shimBody := fmt.Sprintf(`#!/usr/bin/env python3
+import json
+import subprocess
+import sys
+import threading
+
+init_log = %q
+real_cli = %q
+
+proc = subprocess.Popen(
+    [real_cli] + sys.argv[1:],
+    stdin=subprocess.PIPE,
+    stdout=sys.stdout.buffer,
+    stderr=sys.stderr.buffer,
+)
+
+captured = False
+
+def forward_stdin():
+    global captured
+    try:
+        for line in sys.stdin.buffer:
+            if not captured:
+                try:
+                    msg = json.loads(line)
+                    request = msg.get("request", {})
+                    if (
+                        msg.get("type") == "control_request"
+                        and request.get("subtype") == "initialize"
+                    ):
+                        with open(init_log, "w", encoding="utf-8") as f:
+                            json.dump(request, f)
+                        captured = True
+                except Exception:
+                    pass
+            proc.stdin.write(line)
+            proc.stdin.flush()
+    finally:
+        proc.stdin.close()
+
+thread = threading.Thread(target=forward_stdin)
+thread.start()
+code = proc.wait()
+thread.join(timeout=1)
+sys.exit(code)
+`, initLog, realCLI)
+	require.NoError(t, os.WriteFile(shimPath, []byte(shimBody), 0o755))
+
+	opts := append(isolatedClientOptions(t),
+		WithCLIPath(shimPath),
+		WithToolAliases(map[string]string{"Bash": "Read"}),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	init, err := stream.InitializationResult()
+	require.NoError(t, err)
+	require.NotNil(t, init)
+
+	data, err := os.ReadFile(initLog)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, map[string]interface{}{"Bash": "Read"}, got["toolAliases"])
+}

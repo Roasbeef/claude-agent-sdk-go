@@ -3,6 +3,7 @@ package claudeagent
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,4 +27,14 @@ func TestNewClientAcceptsPermissionModeConstants(t *testing.T) {
 			require.Equal(t, tt.mode, client.options.PermissionMode)
 		})
 	}
+}
+
+func TestWithToolAliases(t *testing.T) {
+	opts := NewOptions()
+	require.Nil(t, opts.ToolAliases)
+
+	aliases := map[string]string{"Bash": "mcp__workspace__bash"}
+	WithToolAliases(aliases)(opts)
+
+	assert.Equal(t, aliases, opts.ToolAliases)
 }
