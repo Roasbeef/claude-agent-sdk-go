@@ -35,7 +35,7 @@ func canonicalInitResponse() *SDKControlInitializeResponse {
 			SubscriptionType: "pro",
 			TokenSource:      "oauth",
 			APIKeySource:     "user",
-			APIProvider:      "firstParty",
+			APIProvider:      APIProviderFirstParty,
 		},
 		FastModeState: "off",
 	}
@@ -52,7 +52,7 @@ func TestStreamInitializationResultClonesCachedInit(t *testing.T) {
 	assert.Equal(t, "default", got.OutputStyle)
 	require.Len(t, got.Commands, 2)
 	assert.Equal(t, "help", got.Commands[0].Name)
-	assert.Equal(t, "firstParty", got.Account.APIProvider)
+	assert.Equal(t, APIProviderFirstParty, got.Account.APIProvider)
 
 	// Mutate the returned slices/structs; second call must not see the mutation.
 	got.Commands[0].Name = "mutated"
@@ -117,7 +117,7 @@ func TestStreamAccountInfoReadsCachedInit(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, acct)
 	assert.Equal(t, "user@example.com", acct.Email)
-	assert.Equal(t, "firstParty", acct.APIProvider)
+	assert.Equal(t, APIProviderFirstParty, acct.APIProvider)
 
 	acct.Email = "mutated@example.com"
 	again, err := stream.AccountInfo(context.Background())
@@ -361,12 +361,41 @@ func TestStreamGetContextUsageApiUsageNullable(t *testing.T) {
 
 // Sanity-check that AccountInfo with apiProvider round-trips through JSON.
 func TestAccountInfoAPIProviderJSON(t *testing.T) {
-	in := AccountInfo{Email: "x@y", APIProvider: "bedrock"}
-	bytes, err := json.Marshal(in)
-	require.NoError(t, err)
-	assert.Contains(t, string(bytes), `"apiProvider":"bedrock"`)
+	tests := []struct {
+		name     string
+		provider APIProvider
+		wantJSON string
+	}{
+		{
+			name:     "bedrock",
+			provider: APIProviderBedrock,
+			wantJSON: `"apiProvider":"bedrock"`,
+		},
+		{
+			name:     "gateway",
+			provider: APIProviderGateway,
+			wantJSON: `"apiProvider":"gateway"`,
+		},
+	}
 
-	var out AccountInfo
-	require.NoError(t, json.Unmarshal(bytes, &out))
-	assert.Equal(t, "bedrock", out.APIProvider)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			in := AccountInfo{Email: "x@y", APIProvider: tt.provider}
+			bytes, err := json.Marshal(in)
+			require.NoError(t, err)
+			assert.Contains(t, string(bytes), tt.wantJSON)
+
+			var out AccountInfo
+			require.NoError(t, json.Unmarshal(bytes, &out))
+			assert.Equal(t, tt.provider, out.APIProvider)
+		})
+	}
+}
+
+func TestAccountInfoAPIProviderGatewayUnmarshal(t *testing.T) {
+	var acct AccountInfo
+	require.NoError(t, json.Unmarshal([]byte(`{"apiProvider":"gateway","apiKeySource":"oauth"}`), &acct))
+
+	assert.Equal(t, APIProviderGateway, acct.APIProvider)
+	assert.Equal(t, "oauth", acct.APIKeySource)
 }

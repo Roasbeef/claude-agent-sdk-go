@@ -108,14 +108,31 @@ type PluginInfo struct {
 	Source string `json:"source,omitempty"`
 }
 
+// APIProvider names the active CLI API backend. Anthropic OAuth login only
+// applies for APIProviderFirstParty; for 3P providers the other AccountInfo
+// fields are absent and auth is external (AWS creds, gcloud ADC, etc.).
+// APIProviderGateway means the CLI is authenticated against an enterprise
+// gateway.
+type APIProvider string
+
+const (
+	APIProviderFirstParty   APIProvider = "firstParty"
+	APIProviderBedrock      APIProvider = "bedrock"
+	APIProviderVertex       APIProvider = "vertex"
+	APIProviderFoundry      APIProvider = "foundry"
+	APIProviderAnthropicAWS APIProvider = "anthropicAws"
+	APIProviderMantle       APIProvider = "mantle"
+	APIProviderGateway      APIProvider = "gateway"
+)
+
 // AccountInfo contains user account information.
 type AccountInfo struct {
-	Email            string `json:"email,omitempty"`            // User email
-	Organization     string `json:"organization,omitempty"`     // Organization name
-	SubscriptionType string `json:"subscriptionType,omitempty"` // Subscription tier
-	TokenSource      string `json:"tokenSource,omitempty"`      // How token was obtained
-	APIKeySource     string `json:"apiKeySource,omitempty"`     // API key source
-	APIProvider      string `json:"apiProvider,omitempty"`      // Active API backend
+	Email            string      `json:"email,omitempty"`            // User email
+	Organization     string      `json:"organization,omitempty"`     // Organization name
+	SubscriptionType string      `json:"subscriptionType,omitempty"` // Subscription tier
+	TokenSource      string      `json:"tokenSource,omitempty"`      // How token was obtained
+	APIKeySource     string      `json:"apiKeySource,omitempty"`     // API key source
+	APIProvider      APIProvider `json:"apiProvider,omitempty"`      // Active API backend
 }
 
 // SDKControlGetContextUsageResponse mirrors the context usage control response.

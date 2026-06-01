@@ -1357,8 +1357,19 @@ func TestIntegrationStreamIntrospection(t *testing.T) {
 	assert.NotEmpty(t, models, "expected at least one model from CLI")
 
 	// Account may be empty under OAuth-token-only auth; just ensure no error.
-	_, err = stream.AccountInfo(ctx)
+	acct, err := stream.AccountInfo(ctx)
 	require.NoError(t, err)
+	if acct.APIProvider != "" {
+		assert.Contains(t, []APIProvider{
+			APIProviderFirstParty,
+			APIProviderBedrock,
+			APIProviderVertex,
+			APIProviderFoundry,
+			APIProviderAnthropicAWS,
+			APIProviderMantle,
+			APIProviderGateway,
+		}, acct.APIProvider)
+	}
 }
 
 // TestIntegrationStreamFileAndRuntime exercises PR 20 stream file/runtime
