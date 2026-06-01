@@ -254,7 +254,7 @@ type SDKControlRequestBody struct {
 	ToolAliases            map[string]string                   `json:"toolAliases,omitempty"`            // For initialize
 	ToolName               string                              `json:"tool_name,omitempty"`              // For can_use_tool/hook_callback
 	Input                  map[string]interface{}              `json:"input,omitempty"`                  // For can_use_tool/hook_callback
-	ToolUseID              string                              `json:"tool_use_id,omitempty"`            // For can_use_tool/hooks
+	ToolUseID              string                              `json:"tool_use_id,omitempty"`            // For can_use_tool/hooks/background_tasks
 	AgentID                string                              `json:"agent_id,omitempty"`               // For can_use_tool
 	CallbackID             string                              `json:"callback_id,omitempty"`            // For hook_callback
 	Mode                   string                              `json:"mode,omitempty"`                   // For set_permission_mode

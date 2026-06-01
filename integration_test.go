@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -1655,6 +1656,97 @@ func TestIntegrationStreamFileAndRuntime(t *testing.T) {
 			"checkpointing setup, ReloadPlugins needs a plugin fixture, " +
 			"and StopTask needs a running task identifier")
 	})
+}
+
+func TestIntegrationBackgroundTasks(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	tempDir := t.TempDir()
+	opts := append(isolatedClientOptions(t),
+		WithCwd(tempDir),
+		WithSystemPrompt(
+			"You are a helpful assistant. When asked to run a shell command, "+
+				"use Bash immediately and do not describe it first.",
+		),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(3),
+		WithStderr(func(data string) {
+			t.Logf("CLI stderr: %s", data)
+		}),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx,
+		"Run this exact Bash command and wait for it: sleep 30",
+	))
+
+	var (
+		backgrounded   bool
+		backgroundErr  error
+		backgroundSent bool
+		gotToolUse     bool
+		toolUseID      string
+		gotResult      bool
+		gotInProgress  bool
+	)
+
+	for msg := range stream.Messages() {
+		switch m := msg.(type) {
+		case AssistantMessage:
+			for _, block := range m.Message.Content {
+				if block.Type != "tool_use" {
+					continue
+				}
+				gotToolUse = true
+				toolUseID = block.ID
+				t.Logf("Tool use: name=%s id=%s", block.Name, block.ID)
+				if !backgroundSent {
+					backgroundSent = true
+					backgrounded, backgroundErr = stream.BackgroundTasks(ctx, "")
+					if backgroundErr != nil {
+						if strings.Contains(backgroundErr.Error(), "background_tasks") {
+							t.Skip("background_tasks control subtype depends on CLI build supporting v0.3.150")
+						}
+						require.NoError(t, backgroundErr)
+					}
+					assert.True(t, backgrounded)
+				}
+			}
+		case UserMessage:
+			if m.ParentToolUseID != nil && strings.Contains(
+				strings.ToLower(fmt.Sprint(m.ToolUseResult)),
+				"background",
+			) {
+				gotInProgress = true
+			}
+		case ResultMessage:
+			gotResult = true
+			t.Logf("Result: subtype=%s status=%s", m.Subtype, m.Status)
+		case TaskNotificationMessage:
+			t.Logf("Task notification: task_id=%s tool_use_id=%s status=%s",
+				m.TaskID, m.ToolUseID, m.Status)
+		}
+	}
+
+	require.True(t, gotToolUse, "expected a Bash tool_use")
+	require.NotEmpty(t, toolUseID, "expected tool_use id")
+	require.True(t, backgroundSent, "expected BackgroundTasks call")
+	require.NoError(t, backgroundErr)
+	assert.True(t, backgrounded)
+	assert.True(t, gotInProgress, "expected background tool_result")
+	assert.True(t, gotResult, "expected final result")
 }
 
 // TestIntegrationSettingsOptions is a slot for the PR 22 settings option
