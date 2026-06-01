@@ -386,6 +386,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			StopHookActive:       getBool(inputData, "stop_hook_active"),
 			LastAssistantMessage: getString(inputData, "last_assistant_message"),
 			BackgroundTasks:      getBackgroundTaskSummaries(inputData, "background_tasks"),
+			SessionCrons:         getSessionCronSummaries(inputData, "session_crons"),
 		}
 	case HookTypeSubagentStop:
 		input = SubagentStopInput{
@@ -397,6 +398,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			AgentTranscriptPath:  getString(inputData, "agent_transcript_path"),
 			LastAssistantMessage: getString(inputData, "last_assistant_message"),
 			BackgroundTasks:      getBackgroundTaskSummaries(inputData, "background_tasks"),
+			SessionCrons:         getSessionCronSummaries(inputData, "session_crons"),
 		}
 	case HookTypePreCompact:
 		input = PreCompactInput{
@@ -883,6 +885,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			StopHookActive:       getBool(hookInput, "stop_hook_active"),
 			LastAssistantMessage: getString(hookInput, "last_assistant_message"),
 			BackgroundTasks:      getBackgroundTaskSummaries(hookInput, "background_tasks"),
+			SessionCrons:         getSessionCronSummaries(hookInput, "session_crons"),
 		}
 	case "SubagentStop":
 		input = SubagentStopInput{
@@ -894,6 +897,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			AgentTranscriptPath:  getString(hookInput, "agent_transcript_path"),
 			LastAssistantMessage: getString(hookInput, "last_assistant_message"),
 			BackgroundTasks:      getBackgroundTaskSummaries(hookInput, "background_tasks"),
+			SessionCrons:         getSessionCronSummaries(hookInput, "session_crons"),
 		}
 	case "PreCompact":
 		input = PreCompactInput{
@@ -1442,6 +1446,27 @@ func getBackgroundTaskSummaries(m map[string]interface{}, key string) []Backgrou
 			Server:      getString(entry, "server"),
 			Tool:        getString(entry, "tool"),
 			Name:        getString(entry, "name"),
+		})
+	}
+	return out
+}
+
+func getSessionCronSummaries(m map[string]interface{}, key string) []SessionCronSummary {
+	raw, ok := m[key].([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]SessionCronSummary, 0, len(raw))
+	for _, v := range raw {
+		entry, ok := v.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		out = append(out, SessionCronSummary{
+			ID:        getString(entry, "id"),
+			Schedule:  getString(entry, "schedule"),
+			Recurring: getBool(entry, "recurring"),
+			Prompt:    getString(entry, "prompt"),
 		})
 	}
 	return out

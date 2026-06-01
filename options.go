@@ -1353,12 +1353,22 @@ type BackgroundTaskSummary struct {
 	Name        string `json:"name,omitempty"`
 }
 
+// SessionCronSummary is a snapshot of a session-scoped cron task that will
+// wake this session later (CronCreate, ScheduleWakeup, /loop).
+type SessionCronSummary struct {
+	ID        string `json:"id"`
+	Schedule  string `json:"schedule"`
+	Recurring bool   `json:"recurring"`
+	Prompt    string `json:"prompt"`
+}
+
 // StopInput contains data for Stop hooks.
 type StopInput struct {
 	BaseHookInput
 	StopHookActive       bool                    `json:"stop_hook_active"`
 	LastAssistantMessage string                  `json:"last_assistant_message,omitempty"`
 	BackgroundTasks      []BackgroundTaskSummary `json:"background_tasks,omitempty"`
+	SessionCrons         []SessionCronSummary    `json:"session_crons,omitempty"`
 }
 
 // HookType implements HookInput.
@@ -1380,6 +1390,7 @@ type SubagentStopInput struct {
 	AgentTranscriptPath  string                  `json:"agent_transcript_path,omitempty"`
 	LastAssistantMessage string                  `json:"last_assistant_message,omitempty"`
 	BackgroundTasks      []BackgroundTaskSummary `json:"background_tasks,omitempty"`
+	SessionCrons         []SessionCronSummary    `json:"session_crons,omitempty"`
 }
 
 // HookType implements HookInput.

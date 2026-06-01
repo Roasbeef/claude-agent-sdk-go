@@ -1859,6 +1859,19 @@ func TestHandleHookCallback_StopInputFields(t *testing.T) {
 			Description: "planning followup",
 			AgentType:   "planner",
 		}, stopInput.BackgroundTasks[1])
+		require.Len(t, stopInput.SessionCrons, 2)
+		assert.Equal(t, SessionCronSummary{
+			ID:        "cron_weekday",
+			Schedule:  "0 9 * * 1-5",
+			Recurring: true,
+			Prompt:    "weekday standup",
+		}, stopInput.SessionCrons[0])
+		assert.Equal(t, SessionCronSummary{
+			ID:        "cron_wakeup",
+			Schedule:  "15 14 1 6 *",
+			Recurring: false,
+			Prompt:    "resume investigation",
+		}, stopInput.SessionCrons[1])
 		return HookResult{Continue: true}, nil
 	}
 
@@ -1888,6 +1901,20 @@ func TestHandleHookCallback_StopInputFields(t *testing.T) {
 						"status":      "pending",
 						"description": "planning followup",
 						"agent_type":  "planner",
+					},
+				},
+				"session_crons": []interface{}{
+					map[string]interface{}{
+						"id":        "cron_weekday",
+						"schedule":  "0 9 * * 1-5",
+						"recurring": true,
+						"prompt":    "weekday standup",
+					},
+					map[string]interface{}{
+						"id":        "cron_wakeup",
+						"schedule":  "15 14 1 6 *",
+						"recurring": false,
+						"prompt":    "resume investigation",
 					},
 				},
 			},
@@ -1929,6 +1956,19 @@ func TestHandleSDKHookCallback_SubagentStopInputFields(t *testing.T) {
 			Description: "planning followup",
 			AgentType:   "builder",
 		}, subagentStopInput.BackgroundTasks[1])
+		require.Len(t, subagentStopInput.SessionCrons, 2)
+		assert.Equal(t, SessionCronSummary{
+			ID:        "cron_weekday",
+			Schedule:  "0 9 * * 1-5",
+			Recurring: true,
+			Prompt:    "weekday standup",
+		}, subagentStopInput.SessionCrons[0])
+		assert.Equal(t, SessionCronSummary{
+			ID:        "cron_wakeup",
+			Schedule:  "15 14 1 6 *",
+			Recurring: false,
+			Prompt:    "resume investigation",
+		}, subagentStopInput.SessionCrons[1])
 		return HookResult{Continue: true}, nil
 	}
 
@@ -1964,6 +2004,20 @@ func TestHandleSDKHookCallback_SubagentStopInputFields(t *testing.T) {
 						"agent_type":  "builder",
 					},
 				},
+				"session_crons": []interface{}{
+					map[string]interface{}{
+						"id":        "cron_weekday",
+						"schedule":  "0 9 * * 1-5",
+						"recurring": true,
+						"prompt":    "weekday standup",
+					},
+					map[string]interface{}{
+						"id":        "cron_wakeup",
+						"schedule":  "15 14 1 6 *",
+						"recurring": false,
+						"prompt":    "resume investigation",
+					},
+				},
 			},
 		},
 	})
@@ -1981,6 +2035,35 @@ func TestHandleHookCallback_StopInputBackgroundTasksAbsent(t *testing.T) {
 		stopInput, ok := input.(StopInput)
 		require.True(t, ok)
 		assert.Nil(t, stopInput.BackgroundTasks)
+		return HookResult{Continue: true}, nil
+	}
+
+	resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+		Type:      "control",
+		Subtype:   "hook_callback",
+		RequestID: "req_stop_absent",
+		Payload: map[string]interface{}{
+			"callback_id": "hook_stop_absent",
+			"input": map[string]interface{}{
+				"hook_event":       "Stop",
+				"stop_hook_active": false,
+			},
+		},
+	})
+
+	assert.Equal(t, "success", resp.Response.Subtype)
+	assert.Equal(t, "req_stop_absent", resp.Response.RequestID)
+}
+
+func TestHandleHookCallback_StopInputSessionCronsAbsent(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+
+	protocol.hookCallbacks["hook_stop_absent"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+		stopInput, ok := input.(StopInput)
+		require.True(t, ok)
+		assert.Nil(t, stopInput.SessionCrons)
 		return HookResult{Continue: true}, nil
 	}
 
@@ -2031,6 +2114,38 @@ func TestStopInputBackgroundTasksJSONRoundTrip(t *testing.T) {
 	assert.Contains(t, string(data), `"background_tasks"`)
 	assert.NotContains(t, string(data), `"agent_type":""`)
 	assert.NotContains(t, string(data), `"command":""`)
+
+	var got StopInput
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, input, got)
+}
+
+func TestStopInputSessionCronsJSONRoundTrip(t *testing.T) {
+	input := StopInput{
+		BaseHookInput: BaseHookInput{
+			SessionID: "session_123",
+		},
+		StopHookActive:       true,
+		LastAssistantMessage: "done",
+		SessionCrons: []SessionCronSummary{
+			{
+				ID:        "cron_weekday",
+				Schedule:  "0 9 * * 1-5",
+				Recurring: true,
+				Prompt:    "weekday standup",
+			},
+			{
+				ID:        "cron_wakeup",
+				Schedule:  "15 14 1 6 *",
+				Recurring: false,
+				Prompt:    "resume investigation",
+			},
+		},
+	}
+
+	data, err := json.Marshal(input)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"session_crons"`)
 
 	var got StopInput
 	require.NoError(t, json.Unmarshal(data, &got))
