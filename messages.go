@@ -82,6 +82,19 @@ type AssistantMessage struct {
 	} `json:"message"`
 	ParentToolUseID *string `json:"parent_tool_use_id,omitempty"` // Parent tool use if in subagent
 	Usage           *Usage  `json:"usage,omitempty"`              // Token usage for this message
+
+	// RequestID is the upstream API request id that produced this message,
+	// when available. Optional.
+	RequestID string `json:"request_id,omitempty"`
+
+	// SubagentType is the subagent type that produced this message, when
+	// the message originated from a subagent task. Empty for top-level
+	// assistant turns.
+	SubagentType string `json:"subagent_type,omitempty"`
+
+	// TaskDescription is a short description of the subagent task that
+	// produced this message. Set alongside SubagentType.
+	TaskDescription string `json:"task_description,omitempty"`
 }
 
 // MessageType implements Message.

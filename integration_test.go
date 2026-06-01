@@ -733,6 +733,13 @@ func TestIntegrationStopHookSessionCrons(t *testing.T) {
 	t.Skip("not triggerable from CLI without scheduling a session cron; tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+func TestIntegrationAssistantMessageSubagentFields(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	t.Skip("requires running a subagent task end-to-end; tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
 func TestIntegrationBaseHookInputEffort(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
