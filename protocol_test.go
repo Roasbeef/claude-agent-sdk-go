@@ -119,6 +119,9 @@ func TestProtocolInitializeOptions(t *testing.T) {
 				WithPromptSuggestions(false)(opts)
 				WithAgentProgressSummaries(true)(opts)
 				WithForwardSubagentText(false)(opts)
+				WithToolAliases(map[string]string{
+					"Bash": "mcp__workspace__bash",
+				})(opts)
 				WithExcludeDynamicSystemPromptSections(true)(opts)
 			},
 			expected: map[string]interface{}{
@@ -128,8 +131,21 @@ func TestProtocolInitializeOptions(t *testing.T) {
 				"promptSuggestions":      false,
 				"agentProgressSummaries": true,
 				"forwardSubagentText":    false,
+				"toolAliases":            map[string]interface{}{"Bash": "mcp__workspace__bash"},
 				"excludeDynamicSections": true,
 			},
+		},
+		{
+			name: "empty tool aliases omitted",
+			configure: func(opts *Options) {
+				WithToolAliases(map[string]string{})(opts)
+			},
+			unexpected: []string{"toolAliases"},
+		},
+		{
+			name:       "nil tool aliases omitted",
+			configure:  func(opts *Options) {},
+			unexpected: []string{"toolAliases"},
 		},
 		{
 			name: "exclude dynamic false omitted",

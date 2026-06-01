@@ -22,6 +22,7 @@ func TestSDKControlRequestBodyInitializeOptions(t *testing.T) {
 		PromptSuggestions:      &falseVal,
 		AgentProgressSummaries: &trueVal,
 		ForwardSubagentText:    &falseVal,
+		ToolAliases:            map[string]string{"Bash": "mcp__workspace__bash"},
 	}
 
 	data, err := json.Marshal(body)
@@ -38,6 +39,7 @@ func TestSDKControlRequestBodyInitializeOptions(t *testing.T) {
 	assert.Equal(t, false, got["promptSuggestions"])
 	assert.Equal(t, true, got["agentProgressSummaries"])
 	assert.Equal(t, false, got["forwardSubagentText"])
+	assert.Equal(t, map[string]interface{}{"Bash": "mcp__workspace__bash"}, got["toolAliases"])
 }
 
 func TestSDKControlRequestBodyInitializeOptionsOmitUnset(t *testing.T) {
@@ -55,6 +57,7 @@ func TestSDKControlRequestBodyInitializeOptionsOmitUnset(t *testing.T) {
 		"promptSuggestions",
 		"agentProgressSummaries",
 		"forwardSubagentText",
+		"toolAliases",
 	} {
 		assert.NotContains(t, got, key)
 	}

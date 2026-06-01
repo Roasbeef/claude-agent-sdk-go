@@ -118,6 +118,7 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 			PromptSuggestions:      p.options.PromptSuggestions,
 			AgentProgressSummaries: p.options.AgentProgressSummaries,
 			ForwardSubagentText:    p.options.ForwardSubagentText,
+			ToolAliases:            p.options.ToolAliases,
 		},
 	}
 

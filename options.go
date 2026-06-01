@@ -87,6 +87,13 @@ type Options struct {
 	// ForwardSubagentText surfaces subagent text in the main stream.
 	ForwardSubagentText *bool
 
+	// ToolAliases maps a tool name to a redirect target. When the model
+	// emits a `tool_use` whose name is a key in the map, the execution path
+	// resolves the mapped value instead. Single-hop (cycles do not loop).
+	// Complementary to DisallowedTools; alias only affects name-based
+	// lookup of model-emitted tool_use blocks.
+	ToolAliases map[string]string
+
 	// SessionOptions configure session behavior (create/resume/fork).
 	SessionOptions SessionOptions
 
@@ -766,6 +773,13 @@ func WithAgentProgressSummaries(enable bool) Option {
 func WithForwardSubagentText(enable bool) Option {
 	return func(o *Options) {
 		o.ForwardSubagentText = &enable
+	}
+}
+
+// WithToolAliases sets the tool-name alias map (see Options.ToolAliases).
+func WithToolAliases(aliases map[string]string) Option {
+	return func(o *Options) {
+		o.ToolAliases = aliases
 	}
 }
 
