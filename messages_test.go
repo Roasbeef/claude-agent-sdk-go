@@ -261,6 +261,67 @@ func TestParseMessageUserMessage(t *testing.T) {
 	assert.Equal(t, "sess_123", userMsg.SessionID)
 }
 
+func TestParseMessageUserMessageSubagentFields(t *testing.T) {
+	input := `{
+		"type": "user",
+		"session_id": "s1",
+		"message": {
+			"role": "user",
+			"content": [{"type": "text", "text": "Tool result"}]
+		},
+		"parent_tool_use_id": null,
+		"subagent_type": "general-purpose",
+		"task_description": "Inspect repo"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	userMsg, ok := msg.(UserMessage)
+	require.True(t, ok, "expected UserMessage")
+
+	assert.Equal(t, "general-purpose", userMsg.SubagentType)
+	assert.Equal(t, "Inspect repo", userMsg.TaskDescription)
+}
+
+func TestUserMessageSubagentFieldsOmitEmpty(t *testing.T) {
+	msg := UserMessage{Type: "user", SessionID: "s1"}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.NotContains(t, got, "subagent_type")
+	assert.NotContains(t, got, "task_description")
+}
+
+func TestUserMessageSubagentFieldsRoundTrip(t *testing.T) {
+	msg := UserMessage{
+		Type:            "user",
+		SessionID:       "s1",
+		SubagentType:    "code-reviewer",
+		TaskDescription: "Review changes",
+		Message: APIUserMessage{
+			Role:    "user",
+			Content: []UserContentBlock{{Type: "text", Text: "Tool result"}},
+		},
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	parsed, err := ParseMessage(data)
+	require.NoError(t, err)
+
+	got, ok := parsed.(UserMessage)
+	require.True(t, ok, "expected UserMessage")
+
+	assert.Equal(t, msg.SubagentType, got.SubagentType)
+	assert.Equal(t, msg.TaskDescription, got.TaskDescription)
+}
+
 // TestParseMessageAssistantMessage tests parsing assistant messages.
 func TestParseMessageAssistantMessage(t *testing.T) {
 	input := `{

@@ -19,14 +19,16 @@ type Message interface {
 // This message type initiates or continues a conversation. The ParentToolUseID
 // field links this message to a specific tool call when providing tool results.
 type UserMessage struct {
-	Type            string               `json:"type"`                      // Always "user"
-	UUID            string               `json:"uuid,omitempty"`            // Unique message ID
-	SessionID       string               `json:"session_id"`                // Session identifier
-	Message         APIUserMessage       `json:"message"`                   // Message content
-	ParentToolUseID *string              `json:"parent_tool_use_id"`        // For tool results (null if not tool result)
-	IsSynthetic     bool                 `json:"isSynthetic,omitempty"`     // True for system-generated messages
-	ToolUseResult   interface{}          `json:"tool_use_result,omitempty"` // Tool result JSON if applicable
-	Priority        *UserMessagePriority `json:"priority,omitempty"`        // Scheduling priority
+	Type            string               `json:"type"`                       // Always "user"
+	UUID            string               `json:"uuid,omitempty"`             // Unique message ID
+	SessionID       string               `json:"session_id"`                 // Session identifier
+	Message         APIUserMessage       `json:"message"`                    // Message content
+	ParentToolUseID *string              `json:"parent_tool_use_id"`         // For tool results (null if not tool result)
+	IsSynthetic     bool                 `json:"isSynthetic,omitempty"`      // True for system-generated messages
+	ToolUseResult   interface{}          `json:"tool_use_result,omitempty"`  // Tool result JSON if applicable
+	Priority        *UserMessagePriority `json:"priority,omitempty"`         // Scheduling priority
+	SubagentType    string               `json:"subagent_type,omitempty"`    // Subagent type that produced this message
+	TaskDescription string               `json:"task_description,omitempty"` // Description of the subagent task that produced this message
 }
 
 // APIUserMessage represents the message content in Anthropic API format.
