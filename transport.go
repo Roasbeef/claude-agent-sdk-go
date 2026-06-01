@@ -245,6 +245,9 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		mcpConfig := map[string]interface{}{
 			"type": serverType,
 		}
+		if config.Timeout != nil {
+			mcpConfig["timeout"] = *config.Timeout
+		}
 		switch serverType {
 		case "stdio":
 			mcpConfig["command"] = config.Command

@@ -148,6 +148,28 @@ func TestProtocolInitializeOptions(t *testing.T) {
 			unexpected: []string{"toolAliases"},
 		},
 		{
+			name: "mcp server timeout wired through",
+			configure: func(opts *Options) {
+				timeout := 5000
+				WithMCPServers(map[string]MCPServerConfig{
+					"local": {
+						Type:    "stdio",
+						Command: "foo",
+						Timeout: &timeout,
+					},
+				})(opts)
+			},
+			expected: map[string]interface{}{
+				"mcpServers": map[string]interface{}{
+					"local": map[string]interface{}{
+						"type":    "stdio",
+						"command": "foo",
+						"timeout": float64(5000),
+					},
+				},
+			},
+		},
+		{
 			name: "exclude dynamic false omitted",
 			configure: func(opts *Options) {
 				WithExcludeDynamicSystemPromptSections(false)(opts)
