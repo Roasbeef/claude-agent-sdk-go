@@ -426,8 +426,15 @@ type SettingsHookMatcher struct {
 }
 
 type SettingsHook struct {
-	Type           string                 `json:"type"`
-	Command        string                 `json:"command,omitempty"`
+	Type    string `json:"type"`
+	Command string `json:"command,omitempty"`
+	// Args is an argument list for hook exec form. When present, Command is
+	// resolved as an executable and spawned directly with these arguments --
+	// no shell. Path placeholders like ${CLAUDE_PLUGIN_ROOT} are substituted
+	// per-element as plain strings, so paths with quotes, $, or backticks
+	// never reach a shell parser. When absent, Command runs through a shell
+	// (bash on POSIX, PowerShell on Windows without Git Bash).
+	Args           []string               `json:"args,omitempty"`
 	Prompt         string                 `json:"prompt,omitempty"`
 	URL            string                 `json:"url,omitempty"`
 	Server         string                 `json:"server,omitempty"`
@@ -443,6 +450,26 @@ type SettingsHook struct {
 	AsyncRewake    *bool                  `json:"asyncRewake,omitempty"`
 	Headers        map[string]string      `json:"headers,omitempty"`
 	AllowedEnvVars []string               `json:"allowedEnvVars,omitempty"`
+}
+
+func (h SettingsHook) MarshalJSON() ([]byte, error) {
+	type alias SettingsHook
+
+	data, err := json.Marshal(alias(h))
+	if err != nil {
+		return nil, err
+	}
+	if h.Args == nil {
+		return data, nil
+	}
+
+	var fields map[string]interface{}
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return nil, err
+	}
+	fields["args"] = h.Args
+
+	return json.Marshal(fields)
 }
 
 type SettingsWorktree struct {
