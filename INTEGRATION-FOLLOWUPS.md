@@ -7,3 +7,4 @@
 - Backfill `TestIntegrationAssistantMessageError` when the CLI test fixture can deterministically force an upstream API failure into an `assistant` event.
 - Backfill `TestIntegrationResultMessageOriginTTFT` when the CLI test fixture can deterministically emit `origin` and/or `ttft_ms` on a result event.
 - Backfill `TestIntegrationTaskLifecycleFields` when the CLI test fixture can deterministically run a Task-tool subagent (populates `subagent_type` on `task_started`/`task_progress`) and pause a running task (emits `task_updated` with `status:"paused"`).
+- Backfill `TestIntegrationCompactBoundaryPreservedMessages` when the CLI test fixture can deterministically trigger a partial compaction with messagesToKeep so the `compact_metadata.preserved_messages` block is populated.

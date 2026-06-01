@@ -1993,3 +1993,9 @@ sys.exit(code)
 	require.NoError(t, json.Unmarshal(data, &got))
 	assert.Equal(t, map[string]interface{}{"Bash": "Read"}, got["toolAliases"])
 }
+
+func TestIntegrationCompactBoundaryPreservedMessages(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	t.Skip("requires CLI to trigger a partial compaction that emits compact_metadata.preserved_messages (messagesToKeep populated); tracked in INTEGRATION-FOLLOWUPS.md")
+}
