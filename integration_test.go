@@ -740,6 +740,13 @@ func TestIntegrationAssistantMessageSubagentFields(t *testing.T) {
 	t.Skip("requires running a subagent task end-to-end; tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+func TestIntegrationUserMessageSubagentFields(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	t.Skip("requires CLI to emit a user-side tool-result message from a Task-tool subagent (populates user message subagent_type/task_description); tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
 func TestIntegrationAssistantMessageError(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
