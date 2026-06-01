@@ -14,9 +14,10 @@ import (
 //
 // Use CreateMcpServer to create a new server and AddTool to register tools.
 type McpServer struct {
-	name    string
-	version string
-	tools   map[string]*toolEntry
+	name         string
+	version      string
+	instructions string
+	tools        map[string]*toolEntry
 }
 
 // toolEntry stores tool metadata and handler.
@@ -59,6 +60,13 @@ type McpServerOptions struct {
 	Name    string          // Server name (required).
 	Version string          // Server version (default: "1.0.0").
 	Tools   []ToolRegistrar // Tools to register (optional).
+
+	// Instructions is an MCP "instructions" block exposed by this server.
+	// When proxying a real MCP server through the SDK transport, pass the
+	// underlying server's getInstructions() here so it isn't dropped on
+	// the way through. Empty string omits the field entirely from the
+	// MCP initialize response.
+	Instructions string
 }
 
 // CreateMcpServer creates a new in-process MCP server.
@@ -80,9 +88,10 @@ func CreateMcpServer(opts McpServerOptions) *McpServer {
 	}
 
 	server := &McpServer{
-		name:    opts.Name,
-		version: version,
-		tools:   make(map[string]*toolEntry),
+		name:         opts.Name,
+		version:      version,
+		instructions: opts.Instructions,
+		tools:        make(map[string]*toolEntry),
 	}
 
 	// Register any tools from options.
@@ -339,6 +348,12 @@ func (s *McpServer) Name() string {
 // Version returns the server version.
 func (s *McpServer) Version() string {
 	return s.version
+}
+
+// Instructions returns the MCP instructions block configured for this server.
+// Empty string means no instructions block is exposed.
+func (s *McpServer) Instructions() string {
+	return s.instructions
 }
 
 // ToolNames returns the names of all registered tools.

@@ -170,6 +170,28 @@ func TestProtocolInitializeOptions(t *testing.T) {
 			},
 		},
 		{
+			name: "mcp server alwaysLoad wired through",
+			configure: func(opts *Options) {
+				alwaysLoad := true
+				WithMCPServers(map[string]MCPServerConfig{
+					"local": {
+						Type:       "stdio",
+						Command:    "foo",
+						AlwaysLoad: &alwaysLoad,
+					},
+				})(opts)
+			},
+			expected: map[string]interface{}{
+				"mcpServers": map[string]interface{}{
+					"local": map[string]interface{}{
+						"type":       "stdio",
+						"command":    "foo",
+						"alwaysLoad": true,
+					},
+				},
+			},
+		},
+		{
 			name: "exclude dynamic false omitted",
 			configure: func(opts *Options) {
 				WithExcludeDynamicSystemPromptSections(false)(opts)
@@ -1327,6 +1349,70 @@ func TestProtocolMCPMessage(t *testing.T) {
 // TestProtocolSDKMCPMessage tests in-process MCP tool routing via SDK control format.
 // This tests the actual format the CLI sends (SDKControlRequest, not legacy ControlRequest).
 func TestProtocolSDKMCPMessage(t *testing.T) {
+	t.Run("initialize instructions", func(t *testing.T) {
+		server := CreateMcpServer(McpServerOptions{
+			Name:         "docs",
+			Version:      "2.0.0",
+			Instructions: "use this server for docs",
+		})
+		opts := NewOptions()
+		opts.SDKMcpServers = map[string]*McpServer{
+			"docs": server,
+		}
+		protocol := NewProtocol(nil, opts)
+
+		resp := protocol.handleSDKMCPMessage(context.Background(), SDKControlRequest{
+			Type:      "control_request",
+			RequestID: "sdk_mcp_init",
+			Request: SDKControlRequestBody{
+				Subtype:    "mcp_message",
+				ServerName: "docs",
+				Message: map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      "msg_init",
+					"method":  "initialize",
+				},
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		mcpResponse, ok := resp.Response.Response["mcp_response"].(map[string]interface{})
+		require.True(t, ok, "mcp_response should be a map")
+		result, ok := mcpResponse["result"].(map[string]interface{})
+		require.True(t, ok, "result should be a map")
+		assert.Equal(t, "use this server for docs", result["instructions"])
+	})
+
+	t.Run("initialize omits empty instructions", func(t *testing.T) {
+		server := CreateMcpServer(McpServerOptions{Name: "docs"})
+		opts := NewOptions()
+		opts.SDKMcpServers = map[string]*McpServer{
+			"docs": server,
+		}
+		protocol := NewProtocol(nil, opts)
+
+		resp := protocol.handleSDKMCPMessage(context.Background(), SDKControlRequest{
+			Type:      "control_request",
+			RequestID: "sdk_mcp_init",
+			Request: SDKControlRequestBody{
+				Subtype:    "mcp_message",
+				ServerName: "docs",
+				Message: map[string]interface{}{
+					"jsonrpc": "2.0",
+					"id":      "msg_init",
+					"method":  "initialize",
+				},
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		mcpResponse, ok := resp.Response.Response["mcp_response"].(map[string]interface{})
+		require.True(t, ok, "mcp_response should be a map")
+		result, ok := mcpResponse["result"].(map[string]interface{})
+		require.True(t, ok, "result should be a map")
+		assert.NotContains(t, result, "instructions")
+	})
+
 	t.Run("tools/call via SDK format", func(t *testing.T) {
 		runner := NewMockSubprocessRunner()
 		opts := NewOptions()

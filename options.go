@@ -1955,6 +1955,14 @@ type MCPServerConfig struct {
 	// clock limit per call; progress notifications do not extend it.
 	// Server-side floor: 1000ms.
 	Timeout *int `json:"timeout,omitempty"`
+	// AlwaysLoad, when true, forces every tool from this server to be included
+	// in the prompt instead of deferred behind tool search. Equivalent to
+	// setting defer_loading: false on the API. Default: tools are deferred
+	// when tool search is enabled. Side effect: setting this blocks startup
+	// until the server is connected (capped at the standard 5s connect
+	// timeout), even though MCP startup is otherwise non-blocking; the tools
+	// must be present when the turn-1 prompt is built.
+	AlwaysLoad *bool `json:"alwaysLoad,omitempty"`
 }
 
 // MCPServerToolPolicy configures a per-tool permission policy for remote MCP servers.

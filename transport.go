@@ -248,6 +248,9 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		if config.Timeout != nil {
 			mcpConfig["timeout"] = *config.Timeout
 		}
+		if config.AlwaysLoad != nil {
+			mcpConfig["alwaysLoad"] = *config.AlwaysLoad
+		}
 		switch serverType {
 		case "stdio":
 			mcpConfig["command"] = config.Command

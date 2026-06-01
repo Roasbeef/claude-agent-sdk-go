@@ -609,6 +609,22 @@ func TestIntegrationMCPTimeout(t *testing.T) {
 	t.Skip("not directly triggerable from CLI without slow stdio MCP fixture: in-process SDK MCP servers are registered separately from MCPServerConfig timeout")
 }
 
+func TestIntegrationMCPAlwaysLoad(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// TODO: Backfill when the CLI exposes prompt tool-loading state to SDK tests.
+	t.Skip("not directly assertable from CLI: alwaysLoad affects prompt composition and tool-search gating, not anything observable on the SDK transport")
+}
+
+func TestIntegrationSDKMCPInstructions(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// TODO: Backfill when the CLI exposes consumed MCP instructions to SDK tests.
+	t.Skip("not directly assertable from CLI: MCP server instructions are consumed internally by the CLI for prompt composition")
+}
+
 // TestIntegrationStopHookBlock tests that Stop hooks can block session exit
 // and reinject a new prompt using the Decision/Reason/SystemMessage fields.
 //
