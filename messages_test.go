@@ -524,6 +524,70 @@ func TestParseMessageResultMessage(t *testing.T) {
 	}
 }
 
+func TestParseMessageResultMessageOriginPeer(t *testing.T) {
+	input := []byte(`{
+		"type": "result",
+		"status": "success",
+		"subtype": "success",
+		"result": "done",
+		"origin": {
+			"kind": "peer",
+			"from": "agent-42",
+			"name": "reviewer"
+		}
+	}`)
+
+	msg, err := ParseMessage(input)
+	require.NoError(t, err)
+
+	resultMsg, ok := msg.(ResultMessage)
+	require.True(t, ok)
+	require.NotNil(t, resultMsg.Origin)
+	assert.Equal(t, MessageOriginKindPeer, resultMsg.Origin.Kind)
+	assert.Equal(t, "agent-42", resultMsg.Origin.From)
+	assert.Equal(t, "reviewer", resultMsg.Origin.Name)
+}
+
+func TestParseMessageResultMessageOriginHuman(t *testing.T) {
+	input := []byte(`{
+		"type": "result",
+		"status": "success",
+		"subtype": "success",
+		"result": "done",
+		"origin": {
+			"kind": "human"
+		}
+	}`)
+
+	msg, err := ParseMessage(input)
+	require.NoError(t, err)
+
+	resultMsg, ok := msg.(ResultMessage)
+	require.True(t, ok)
+	require.NotNil(t, resultMsg.Origin)
+	assert.Equal(t, MessageOriginKindHuman, resultMsg.Origin.Kind)
+	assert.Empty(t, resultMsg.Origin.From)
+	assert.Empty(t, resultMsg.Origin.Server)
+	assert.Empty(t, resultMsg.Origin.Name)
+}
+
+func TestParseMessageResultMessageTTFT(t *testing.T) {
+	input := []byte(`{
+		"type": "result",
+		"status": "success",
+		"subtype": "success",
+		"result": "done",
+		"ttft_ms": 137
+	}`)
+
+	msg, err := ParseMessage(input)
+	require.NoError(t, err)
+
+	resultMsg, ok := msg.(ResultMessage)
+	require.True(t, ok)
+	assert.Equal(t, int64(137), resultMsg.TTFTMs)
+}
+
 // TestParseMessageStreamEvent tests parsing stream events.
 func TestParseMessageStreamEvent(t *testing.T) {
 	input := `{
@@ -903,6 +967,43 @@ func TestResultMessageStopReasonNullRoundTrip(t *testing.T) {
 	var decoded ResultMessage
 	require.NoError(t, json.Unmarshal(data, &decoded))
 	assert.Nil(t, decoded.StopReason)
+}
+
+func TestResultMessageOriginTTFTOmitEmpty(t *testing.T) {
+	msg := ResultMessage{
+		Type:    "result",
+		Subtype: "success",
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.NotContains(t, got, "origin")
+	assert.NotContains(t, got, "ttft_ms")
+}
+
+func TestResultMessageOriginRoundTrip(t *testing.T) {
+	msg := ResultMessage{
+		Type:    "result",
+		Subtype: "success",
+		Origin: &MessageOrigin{
+			Kind:   MessageOriginKindChannel,
+			Server: "gateway-prod",
+		},
+		TTFTMs: 250,
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var decoded ResultMessage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NotNil(t, decoded.Origin)
+	assert.Equal(t, MessageOriginKindChannel, decoded.Origin.Kind)
+	assert.Equal(t, "gateway-prod", decoded.Origin.Server)
+	assert.Equal(t, int64(250), decoded.TTFTMs)
 }
 
 func TestResultMessageFieldAdditionsBackwardCompat(t *testing.T) {

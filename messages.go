@@ -157,6 +157,7 @@ type ResultMessage struct {
 
 	DurationMs    int64 `json:"duration_ms,omitempty"`     // Total duration in milliseconds
 	DurationAPIMs int64 `json:"duration_api_ms,omitempty"` // API call duration in milliseconds
+	TTFTMs        int64 `json:"ttft_ms,omitempty"`         // Time-to-first-token in milliseconds
 	IsError       bool  `json:"is_error,omitempty"`        // Whether this is an error result
 	NumTurns      int   `json:"num_turns,omitempty"`       // Number of conversation turns
 
@@ -169,11 +170,31 @@ type ResultMessage struct {
 	StructuredOutput  interface{}        `json:"structured_output,omitempty"`  // Structured output (if OutputFormat set)
 	StopReason        *string            `json:"stop_reason"`                  // Stop reason, explicitly null when absent
 	TerminalReason    *TerminalReason    `json:"terminal_reason,omitempty"`    // Terminal completion reason
+	Origin            *MessageOrigin     `json:"origin,omitempty"`             // Originating actor for this result
 	FastModeState     *FastModeState     `json:"fast_mode_state,omitempty"`    // Fast mode state at completion
 }
 
 // MessageType implements Message.
 func (m ResultMessage) MessageType() string { return "result" }
+
+// MessageOriginKind discriminates a MessageOrigin.
+type MessageOriginKind string
+
+const (
+	MessageOriginKindHuman            MessageOriginKind = "human"
+	MessageOriginKindChannel          MessageOriginKind = "channel"
+	MessageOriginKindPeer             MessageOriginKind = "peer"
+	MessageOriginKindTaskNotification MessageOriginKind = "task-notification"
+	MessageOriginKindCoordinator      MessageOriginKind = "coordinator"
+)
+
+// MessageOrigin describes the originating actor for a message.
+type MessageOrigin struct {
+	Kind   MessageOriginKind `json:"kind"`
+	Server string            `json:"server,omitempty"`
+	From   string            `json:"from,omitempty"`
+	Name   string            `json:"name,omitempty"`
+}
 
 // StreamEvent represents a progressive delta update during streaming.
 //
