@@ -1339,11 +1339,26 @@ func (UserPromptSubmitInput) HookType() HookType { return HookTypeUserPromptSubm
 // Base implements HookInput.
 func (i UserPromptSubmitInput) Base() BaseHookInput { return i.BaseHookInput }
 
+// BackgroundTaskSummary is a snapshot of an in-flight background task
+// registered in the session.
+type BackgroundTaskSummary struct {
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	Status      string `json:"status"`
+	Description string `json:"description"`
+	Command     string `json:"command,omitempty"`
+	AgentType   string `json:"agent_type,omitempty"`
+	Server      string `json:"server,omitempty"`
+	Tool        string `json:"tool,omitempty"`
+	Name        string `json:"name,omitempty"`
+}
+
 // StopInput contains data for Stop hooks.
 type StopInput struct {
 	BaseHookInput
-	StopHookActive       bool   `json:"stop_hook_active"`
-	LastAssistantMessage string `json:"last_assistant_message,omitempty"`
+	StopHookActive       bool                    `json:"stop_hook_active"`
+	LastAssistantMessage string                  `json:"last_assistant_message,omitempty"`
+	BackgroundTasks      []BackgroundTaskSummary `json:"background_tasks,omitempty"`
 }
 
 // HookType implements HookInput.
@@ -1358,12 +1373,13 @@ func (i StopInput) Base() BaseHookInput { return i.BaseHookInput }
 // base hook fields) — read them via i.Base() or i.BaseHookInput.AgentID.
 type SubagentStopInput struct {
 	BaseHookInput
-	AgentName            string `json:"agent_name"`
-	Status               string `json:"status"`
-	Result               string `json:"result"`
-	StopHookActive       bool   `json:"stop_hook_active"`
-	AgentTranscriptPath  string `json:"agent_transcript_path,omitempty"`
-	LastAssistantMessage string `json:"last_assistant_message,omitempty"`
+	AgentName            string                  `json:"agent_name"`
+	Status               string                  `json:"status"`
+	Result               string                  `json:"result"`
+	StopHookActive       bool                    `json:"stop_hook_active"`
+	AgentTranscriptPath  string                  `json:"agent_transcript_path,omitempty"`
+	LastAssistantMessage string                  `json:"last_assistant_message,omitempty"`
+	BackgroundTasks      []BackgroundTaskSummary `json:"background_tasks,omitempty"`
 }
 
 // HookType implements HookInput.

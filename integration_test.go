@@ -717,6 +717,14 @@ func TestIntegrationHookContinueOnBlock(t *testing.T) {
 	t.Skip("not directly assertable from CLI: continueOnBlock affects the CLI's turn-continuation decision after a blocking hook, not anything observable on the SDK transport")
 }
 
+func TestIntegrationStopHookBackgroundTasks(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// TODO: Backfill when a deterministic long-running background task fixture is available.
+	t.Skip("not triggerable from CLI without a long-running background task; tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
 func TestIntegrationBaseHookInputEffort(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)

@@ -385,6 +385,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			BaseHookInput:        base,
 			StopHookActive:       getBool(inputData, "stop_hook_active"),
 			LastAssistantMessage: getString(inputData, "last_assistant_message"),
+			BackgroundTasks:      getBackgroundTaskSummaries(inputData, "background_tasks"),
 		}
 	case HookTypeSubagentStop:
 		input = SubagentStopInput{
@@ -395,6 +396,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			StopHookActive:       getBool(inputData, "stop_hook_active"),
 			AgentTranscriptPath:  getString(inputData, "agent_transcript_path"),
 			LastAssistantMessage: getString(inputData, "last_assistant_message"),
+			BackgroundTasks:      getBackgroundTaskSummaries(inputData, "background_tasks"),
 		}
 	case HookTypePreCompact:
 		input = PreCompactInput{
@@ -880,6 +882,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			BaseHookInput:        base,
 			StopHookActive:       getBool(hookInput, "stop_hook_active"),
 			LastAssistantMessage: getString(hookInput, "last_assistant_message"),
+			BackgroundTasks:      getBackgroundTaskSummaries(hookInput, "background_tasks"),
 		}
 	case "SubagentStop":
 		input = SubagentStopInput{
@@ -890,6 +893,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			StopHookActive:       getBool(hookInput, "stop_hook_active"),
 			AgentTranscriptPath:  getString(hookInput, "agent_transcript_path"),
 			LastAssistantMessage: getString(hookInput, "last_assistant_message"),
+			BackgroundTasks:      getBackgroundTaskSummaries(hookInput, "background_tasks"),
 		}
 	case "PreCompact":
 		input = PreCompactInput{
@@ -1413,6 +1417,32 @@ func getPostToolBatchToolCalls(m map[string]interface{}) []PostToolBatchToolCall
 			call.ToolResponse = marshalJSON(resp)
 		}
 		out = append(out, call)
+	}
+	return out
+}
+
+func getBackgroundTaskSummaries(m map[string]interface{}, key string) []BackgroundTaskSummary {
+	raw, ok := m[key].([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]BackgroundTaskSummary, 0, len(raw))
+	for _, v := range raw {
+		entry, ok := v.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		out = append(out, BackgroundTaskSummary{
+			ID:          getString(entry, "id"),
+			Type:        getString(entry, "type"),
+			Status:      getString(entry, "status"),
+			Description: getString(entry, "description"),
+			Command:     getString(entry, "command"),
+			AgentType:   getString(entry, "agent_type"),
+			Server:      getString(entry, "server"),
+			Tool:        getString(entry, "tool"),
+			Name:        getString(entry, "name"),
+		})
 	}
 	return out
 }
