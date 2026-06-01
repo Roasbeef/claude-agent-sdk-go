@@ -908,6 +908,37 @@ func (s *Stream) StopTask(ctx context.Context, taskID string) error {
 	return err
 }
 
+// BackgroundTasks backgrounds in-flight foreground tasks (Bash commands and
+// subagents). When toolUseID is non-empty, only the task started by that
+// tool_use block is backgrounded; when empty, all foreground tasks are
+// backgrounded, equivalent to pressing Ctrl+B in the terminal.
+//
+// Each blocking tool call returns immediately with a "running in the
+// background" tool_result and the turn continues; the task keeps running
+// and emits a task_notification when it settles.
+//
+// Returns true when at least one task was backgrounded; returns false only
+// when toolUseID was non-empty and matched no foreground task.
+func (s *Stream) BackgroundTasks(
+	ctx context.Context, toolUseID string,
+) (bool, error) {
+	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype:   "background_tasks",
+		ToolUseID: toolUseID,
+	})
+	if err != nil {
+		return false, err
+	}
+
+	backgrounded := true
+	if v, ok := resp.Response.Response["backgrounded"]; ok {
+		if b, ok := v.(bool); ok {
+			backgrounded = b
+		}
+	}
+	return backgrounded, nil
+}
+
 // sendSDKControlRequest sends an SDK-format control request and waits for the
 // matching response.
 func (s *Stream) sendSDKControlRequest(

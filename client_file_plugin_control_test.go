@@ -335,3 +335,70 @@ func TestStreamStopTaskWireShape(t *testing.T) {
 		rawWrittenSDKControlRequest(t, transport),
 	)
 }
+
+func TestStreamBackgroundTasksWireShape(t *testing.T) {
+	t.Run("with tool_use_id", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"backgrounded": true,
+			}),
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		ok, err := stream.BackgroundTasks(ctx, "tool_use_42")
+		require.NoError(t, err)
+		assert.True(t, ok)
+
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1",`+
+				`"request":{"subtype":"background_tasks",`+
+				`"tool_use_id":"tool_use_42"}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+	})
+
+	t.Run("without tool_use_id", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"backgrounded": true,
+			}),
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		ok, err := stream.BackgroundTasks(ctx, "")
+		require.NoError(t, err)
+		assert.True(t, ok)
+
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1",`+
+				`"request":{"subtype":"background_tasks"}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+	})
+
+	t.Run("no match returns false", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"backgrounded": false,
+			}),
+		)
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		ok, err := stream.BackgroundTasks(ctx, "tool_use_does_not_exist")
+		require.NoError(t, err)
+		assert.False(t, ok)
+	})
+
+	t.Run("absent backgrounded key defaults to true", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(successSDKControlResponse)
+
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		ok, err := stream.BackgroundTasks(ctx, "")
+		require.NoError(t, err)
+		assert.True(t, ok)
+	})
+}
