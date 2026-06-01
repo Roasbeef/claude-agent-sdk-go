@@ -1616,9 +1616,11 @@ type AssistantMessageError string
 
 const (
 	AssistantMessageErrorAuthenticationFailed AssistantMessageError = "authentication_failed"
+	AssistantMessageErrorOAuthOrgNotAllowed   AssistantMessageError = "oauth_org_not_allowed"
 	AssistantMessageErrorBillingError         AssistantMessageError = "billing_error"
 	AssistantMessageErrorRateLimit            AssistantMessageError = "rate_limit"
 	AssistantMessageErrorInvalidRequest       AssistantMessageError = "invalid_request"
+	AssistantMessageErrorModelNotFound        AssistantMessageError = "model_not_found"
 	AssistantMessageErrorServerError          AssistantMessageError = "server_error"
 	AssistantMessageErrorUnknown              AssistantMessageError = "unknown"
 	AssistantMessageErrorMaxOutputTokens      AssistantMessageError = "max_output_tokens"

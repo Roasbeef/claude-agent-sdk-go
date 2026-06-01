@@ -95,6 +95,11 @@ type AssistantMessage struct {
 	// TaskDescription is a short description of the subagent task that
 	// produced this message. Set alongside SubagentType.
 	TaskDescription string `json:"task_description,omitempty"`
+
+	// Error is the upstream API error code, if the assistant turn failed.
+	// Empty for a successful turn. See AssistantMessageError for known
+	// variants.
+	Error AssistantMessageError `json:"error,omitempty"`
 }
 
 // MessageType implements Message.
