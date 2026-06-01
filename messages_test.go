@@ -1956,6 +1956,86 @@ func TestParseMessageMirrorError(t *testing.T) {
 	}
 }
 
+func TestParseMessagePermissionDenied(t *testing.T) {
+	t.Run("all optional fields present", func(t *testing.T) {
+		input := `{
+			"type": "system",
+			"subtype": "permission_denied",
+			"tool_name": "Bash",
+			"tool_use_id": "toolu_01abc",
+			"agent_id": "agent_123",
+			"decision_reason_type": "classifier",
+			"decision_reason": "Command accesses a protected path",
+			"message": "Permission denied",
+			"uuid": "550e8400-e29b-41d4-a716-446655440252",
+			"session_id": "sess_misc_007"
+		}`
+
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+
+		deniedMsg, ok := msg.(PermissionDeniedMessage)
+		require.True(t, ok, "expected PermissionDeniedMessage")
+
+		assert.Equal(t, "system", deniedMsg.MessageType())
+		assert.Equal(t, "permission_denied", deniedMsg.Subtype)
+		assert.Equal(t, "Bash", deniedMsg.ToolName)
+		assert.Equal(t, "toolu_01abc", deniedMsg.ToolUseID)
+		assert.Equal(t, "agent_123", deniedMsg.AgentID)
+		assert.Equal(t, "classifier", deniedMsg.DecisionReasonType)
+		assert.Equal(t, "Command accesses a protected path", deniedMsg.DecisionReason)
+		assert.Equal(t, "Permission denied", deniedMsg.Message)
+	})
+
+	t.Run("optionals omitted for top-level call", func(t *testing.T) {
+		input := `{
+			"type": "system",
+			"subtype": "permission_denied",
+			"tool_name": "Read",
+			"tool_use_id": "toolu_02def",
+			"message": "Tool use denied",
+			"uuid": "550e8400-e29b-41d4-a716-446655440253",
+			"session_id": "sess_misc_008"
+		}`
+
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+
+		deniedMsg, ok := msg.(PermissionDeniedMessage)
+		require.True(t, ok, "expected PermissionDeniedMessage")
+
+		assert.Equal(t, "system", deniedMsg.MessageType())
+		assert.Equal(t, "permission_denied", deniedMsg.Subtype)
+		assert.Equal(t, "Read", deniedMsg.ToolName)
+		assert.Equal(t, "toolu_02def", deniedMsg.ToolUseID)
+		assert.Empty(t, deniedMsg.AgentID)
+		assert.Empty(t, deniedMsg.DecisionReasonType)
+		assert.Empty(t, deniedMsg.DecisionReason)
+		assert.Equal(t, "Tool use denied", deniedMsg.Message)
+		assert.Equal(t, "550e8400-e29b-41d4-a716-446655440253", deniedMsg.UUID)
+		assert.Equal(t, "sess_misc_008", deniedMsg.SessionID)
+	})
+
+	t.Run("marshal back omits absent optionals", func(t *testing.T) {
+		msg := PermissionDeniedMessage{
+			Type:      "system",
+			Subtype:   "permission_denied",
+			ToolName:  "Bash",
+			ToolUseID: "toolu_03ghi",
+			Message:   "Permission denied",
+			UUID:      "550e8400-e29b-41d4-a716-446655440254",
+			SessionID: "sess_misc_009",
+		}
+
+		data, err := json.Marshal(msg)
+		require.NoError(t, err)
+
+		assert.NotContains(t, string(data), `"agent_id"`)
+		assert.NotContains(t, string(data), `"decision_reason_type"`)
+		assert.NotContains(t, string(data), `"decision_reason"`)
+	})
+}
+
 func TestParseMessageNotification(t *testing.T) {
 	tests := []struct {
 		name          string

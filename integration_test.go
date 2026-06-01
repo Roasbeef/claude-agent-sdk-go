@@ -237,6 +237,81 @@ func TestIntegrationPermissionCallback(t *testing.T) {
 	}
 }
 
+func TestIntegrationPermissionDeniedMessage(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	mcpServerPath := filepath.Join(t.TempDir(), "example-mcp-server")
+	buildCmd := exec.Command("go", "build", "-o", mcpServerPath, "./cmd/example-mcp-server")
+	buildCmd.Dir = "."
+	out, err := buildCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("failed to build MCP server: %v\n%s", err, out)
+	}
+
+	permissionCalled := false
+	canUseTool := func(ctx context.Context,
+		req ToolPermissionRequest) PermissionResult {
+
+		permissionCalled = true
+		t.Logf("Permission requested for tool: %s", req.ToolName)
+		return PermissionDeny{Reason: "integration test denied tool use"}
+	}
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt(
+			"You are a helpful assistant. When asked to add numbers, "+
+				"you MUST use the add_numbers tool. Do not calculate manually.",
+		),
+		WithMCPServers(map[string]MCPServerConfig{
+			"example": {
+				Type:    "stdio",
+				Command: mcpServerPath,
+			},
+		}),
+		WithStrictMCPConfig(true),
+		WithPermissionMode(PermissionModeDefault),
+		WithCanUseTool(canUseTool),
+		WithMaxTurns(5),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	var deniedMessages []PermissionDeniedMessage
+	for msg := range client.Query(ctx, "Use the add_numbers tool to add 7 and 5.") {
+		switch m := msg.(type) {
+		case PermissionDeniedMessage:
+			deniedMessages = append(deniedMessages, m)
+		case AssistantMessage:
+			t.Logf("Response: %s", m.ContentText())
+		case ResultMessage:
+			t.Logf("Result: status=%s, cost=$%.4f", m.Status, m.TotalCostUSD)
+		}
+	}
+
+	require.True(t, permissionCalled, "expected permission callback to be called")
+	if len(deniedMessages) == 0 {
+		t.Skip("permission_denied emission depends on CLI build supporting v0.3.150 SDKPermissionDeniedMessage")
+	}
+
+	var found bool
+	for _, msg := range deniedMessages {
+		if msg.ToolName != "add_numbers" {
+			continue
+		}
+		found = true
+		assert.NotEmpty(t, msg.ToolUseID)
+		assert.NotEmpty(t, msg.Message)
+		assert.NotEmpty(t, msg.UUID)
+		assert.NotEmpty(t, msg.SessionID)
+	}
+	assert.True(t, found, "expected permission_denied message for add_numbers")
+}
+
 // TestIntegrationHooks tests hook callback invocation.
 func TestIntegrationHooks(t *testing.T) {
 	skipIfNoToken(t)
