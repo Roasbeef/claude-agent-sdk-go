@@ -1844,6 +1844,21 @@ func TestHandleHookCallback_StopInputFields(t *testing.T) {
 		assert.Equal(t, "final answer", stopInput.LastAssistantMessage)
 		assert.Equal(t, "agent_stop", stopInput.Base().AgentID)
 		assert.Equal(t, "planner", stopInput.Base().AgentType)
+		require.Len(t, stopInput.BackgroundTasks, 2)
+		assert.Equal(t, BackgroundTaskSummary{
+			ID:          "task_shell",
+			Type:        "shell",
+			Status:      "running",
+			Description: "running make test",
+			Command:     "make test",
+		}, stopInput.BackgroundTasks[0])
+		assert.Equal(t, BackgroundTaskSummary{
+			ID:          "task_agent",
+			Type:        "subagent",
+			Status:      "pending",
+			Description: "planning followup",
+			AgentType:   "planner",
+		}, stopInput.BackgroundTasks[1])
 		return HookResult{Continue: true}, nil
 	}
 
@@ -1859,6 +1874,22 @@ func TestHandleHookCallback_StopInputFields(t *testing.T) {
 				"last_assistant_message": "final answer",
 				"agent_id":               "agent_stop",
 				"agent_type":             "planner",
+				"background_tasks": []interface{}{
+					map[string]interface{}{
+						"id":          "task_shell",
+						"type":        "shell",
+						"status":      "running",
+						"description": "running make test",
+						"command":     "make test",
+					},
+					map[string]interface{}{
+						"id":          "task_agent",
+						"type":        "subagent",
+						"status":      "pending",
+						"description": "planning followup",
+						"agent_type":  "planner",
+					},
+				},
 			},
 		},
 	})
@@ -1883,6 +1914,21 @@ func TestHandleSDKHookCallback_SubagentStopInputFields(t *testing.T) {
 		assert.Equal(t, "legacy result", subagentStopInput.Result)
 		assert.Equal(t, "agent_sdk", subagentStopInput.Base().AgentID)
 		assert.Equal(t, "builder", subagentStopInput.Base().AgentType)
+		require.Len(t, subagentStopInput.BackgroundTasks, 2)
+		assert.Equal(t, BackgroundTaskSummary{
+			ID:          "task_shell",
+			Type:        "shell",
+			Status:      "running",
+			Description: "running make test",
+			Command:     "make test",
+		}, subagentStopInput.BackgroundTasks[0])
+		assert.Equal(t, BackgroundTaskSummary{
+			ID:          "task_agent",
+			Type:        "subagent",
+			Status:      "pending",
+			Description: "planning followup",
+			AgentType:   "builder",
+		}, subagentStopInput.BackgroundTasks[1])
 		return HookResult{Continue: true}, nil
 	}
 
@@ -1902,12 +1948,93 @@ func TestHandleSDKHookCallback_SubagentStopInputFields(t *testing.T) {
 				"agent_name":             "legacy-name",
 				"status":                 "done",
 				"result":                 "legacy result",
+				"background_tasks": []interface{}{
+					map[string]interface{}{
+						"id":          "task_shell",
+						"type":        "shell",
+						"status":      "running",
+						"description": "running make test",
+						"command":     "make test",
+					},
+					map[string]interface{}{
+						"id":          "task_agent",
+						"type":        "subagent",
+						"status":      "pending",
+						"description": "planning followup",
+						"agent_type":  "builder",
+					},
+				},
 			},
 		},
 	})
 
 	assert.Equal(t, "success", resp.Response.Subtype)
 	assert.Equal(t, "sdk_subagent_stop", resp.Response.RequestID)
+}
+
+func TestHandleHookCallback_StopInputBackgroundTasksAbsent(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+
+	protocol.hookCallbacks["hook_stop_absent"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+		stopInput, ok := input.(StopInput)
+		require.True(t, ok)
+		assert.Nil(t, stopInput.BackgroundTasks)
+		return HookResult{Continue: true}, nil
+	}
+
+	resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+		Type:      "control",
+		Subtype:   "hook_callback",
+		RequestID: "req_stop_absent",
+		Payload: map[string]interface{}{
+			"callback_id": "hook_stop_absent",
+			"input": map[string]interface{}{
+				"hook_event":       "Stop",
+				"stop_hook_active": false,
+			},
+		},
+	})
+
+	assert.Equal(t, "success", resp.Response.Subtype)
+	assert.Equal(t, "req_stop_absent", resp.Response.RequestID)
+}
+
+func TestStopInputBackgroundTasksJSONRoundTrip(t *testing.T) {
+	input := StopInput{
+		BaseHookInput: BaseHookInput{
+			SessionID: "session_123",
+		},
+		StopHookActive:       true,
+		LastAssistantMessage: "done",
+		BackgroundTasks: []BackgroundTaskSummary{
+			{
+				ID:          "task_shell",
+				Type:        "shell",
+				Status:      "running",
+				Description: "running make test",
+				Command:     "make test",
+			},
+			{
+				ID:          "task_agent",
+				Type:        "subagent",
+				Status:      "pending",
+				Description: "planning followup",
+				AgentType:   "planner",
+			},
+		},
+	}
+
+	data, err := json.Marshal(input)
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"background_tasks"`)
+	assert.NotContains(t, string(data), `"agent_type":""`)
+	assert.NotContains(t, string(data), `"command":""`)
+
+	var got StopInput
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, input, got)
 }
 
 func TestHandleSDKHookCallback_MissingHookAuditFields(t *testing.T) {
