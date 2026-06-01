@@ -239,6 +239,7 @@ type SDKControlRequestBody struct {
 	Subtype                string                              `json:"subtype"`                          // Request subtype
 	Hooks                  map[string][]SDKHookCallbackMatcher `json:"hooks,omitempty"`                  // For initialize
 	SDKMCPServers          []string                            `json:"sdkMcpServers,omitempty"`          // For initialize
+	MCPServers             map[string]MCPServerConfig          `json:"mcpServers,omitempty"`             // For initialize
 	JSONSchema             map[string]interface{}              `json:"jsonSchema,omitempty"`             // For initialize
 	SystemPrompt           string                              `json:"systemPrompt,omitempty"`           // For initialize
 	AppendSystemPrompt     string                              `json:"appendSystemPrompt,omitempty"`     // For initialize

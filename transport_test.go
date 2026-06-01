@@ -1259,6 +1259,23 @@ func TestSubprocessTransportMCPConfigEncoding(t *testing.T) {
 			},
 		},
 		{
+			name:       "stdio with timeout",
+			serverName: "local",
+			config: MCPServerConfig{
+				Type:    "stdio",
+				Command: "x",
+				Timeout: func() *int {
+					v := 5000
+					return &v
+				}(),
+			},
+			want: map[string]interface{}{
+				"type":    "stdio",
+				"command": "x",
+				"timeout": float64(5000),
+			},
+		},
+		{
 			name:       "stdio implicit type",
 			serverName: "local",
 			config: MCPServerConfig{

@@ -1950,6 +1950,11 @@ type MCPServerConfig struct {
 	Headers map[string]string     `json:"headers,omitempty"` // Remote server headers (for sse/http)
 	Tools   []MCPServerToolPolicy `json:"tools,omitempty"`   // Remote server tool permission policies
 	Address string                `json:"address,omitempty"` // Socket address (for socket type)
+	// Timeout is the per-server tool-call timeout in milliseconds. Overrides
+	// the MCP_TOOL_TIMEOUT environment variable for this server. Hard wall-
+	// clock limit per call; progress notifications do not extend it.
+	// Server-side floor: 1000ms.
+	Timeout *int `json:"timeout,omitempty"`
 }
 
 // MCPServerToolPolicy configures a per-tool permission policy for remote MCP servers.

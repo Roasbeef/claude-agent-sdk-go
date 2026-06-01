@@ -109,6 +109,7 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 			Subtype:                "initialize",
 			Hooks:                  hooks,
 			SDKMCPServers:          sdkMcpServers,
+			MCPServers:             p.options.MCPServers,
 			SystemPrompt:           p.options.SystemPrompt,
 			PlanModeInstructions:   p.options.PlanModeInstructions,
 			ExcludeDynamicSections: excludeDynamicSections,

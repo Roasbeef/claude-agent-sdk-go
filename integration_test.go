@@ -602,6 +602,13 @@ func TestIntegrationSDKMCPServer(t *testing.T) {
 		"expected response to contain the sum 11 (7 + 4)")
 }
 
+func TestIntegrationMCPTimeout(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	t.Skip("not directly triggerable from CLI without slow stdio MCP fixture: in-process SDK MCP servers are registered separately from MCPServerConfig timeout")
+}
+
 // TestIntegrationStopHookBlock tests that Stop hooks can block session exit
 // and reinject a new prompt using the Decision/Reason/SystemMessage fields.
 //

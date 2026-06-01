@@ -46,6 +46,60 @@ func TestMCPServerConfigEnv(t *testing.T) {
 	assert.Equal(t, "true", config.Env["DEBUG"])
 }
 
+func TestMCPServerConfigTimeoutJSON(t *testing.T) {
+	ptr := func(v int) *int { return &v }
+
+	t.Run("marshal includes timeout", func(t *testing.T) {
+		data, err := json.Marshal(MCPServerConfig{
+			Type:    "stdio",
+			Command: "foo",
+			Timeout: ptr(5000),
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, float64(5000), got["timeout"])
+	})
+
+	t.Run("unmarshal timeout", func(t *testing.T) {
+		var cfg MCPServerConfig
+		require.NoError(t, json.Unmarshal(
+			[]byte(`{"type":"stdio","command":"foo","timeout":3000}`),
+			&cfg,
+		))
+
+		require.NotNil(t, cfg.Timeout)
+		assert.Equal(t, 3000, *cfg.Timeout)
+	})
+
+	t.Run("nil timeout omitted", func(t *testing.T) {
+		data, err := json.Marshal(MCPServerConfig{
+			Type:    "stdio",
+			Command: "foo",
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "timeout")
+	})
+
+	t.Run("explicit zero timeout included", func(t *testing.T) {
+		data, err := json.Marshal(MCPServerConfig{
+			Type:    "stdio",
+			Command: "foo",
+			// A zero pointee is still explicit; only nil is omitted.
+			Timeout: ptr(0),
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, float64(0), got["timeout"])
+	})
+}
+
 func TestWithMCPServers(t *testing.T) {
 	servers := map[string]MCPServerConfig{
 		"server1": {
