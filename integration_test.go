@@ -641,6 +641,97 @@ func TestIntegrationHookContinueOnBlock(t *testing.T) {
 	t.Skip("not directly assertable from CLI: continueOnBlock affects the CLI's turn-continuation decision after a blocking hook, not anything observable on the SDK transport")
 }
 
+func TestIntegrationBaseHookInputEffort(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	type AddArgs struct {
+		A int `json:"a"`
+		B int `json:"b"`
+	}
+
+	server := CreateMcpServer(McpServerOptions{
+		Name:    "calculator",
+		Version: "1.0.0",
+		Tools: []ToolRegistrar{
+			ToolWithSchema("add_numbers", "Add two numbers together and return the sum",
+				map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"a": map[string]interface{}{
+							"type":        "integer",
+							"description": "First number",
+						},
+						"b": map[string]interface{}{
+							"type":        "integer",
+							"description": "Second number",
+						},
+					},
+					"required": []string{"a", "b"},
+				},
+				func(ctx context.Context, args AddArgs) (ToolResult, error) {
+					return TextResult(fmt.Sprintf("%d", args.A+args.B)), nil
+				},
+			),
+		},
+	})
+
+	var capturedEffort *HookEffort
+	preToolUseHook := func(ctx context.Context, input HookInput) (HookResult, error) {
+		capturedEffort = input.Base().Effort
+		return HookResult{Continue: true}, nil
+	}
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt(
+			"You are a helpful assistant. When asked to add numbers, "+
+				"you MUST use the add_numbers tool. Do not calculate manually.",
+		),
+		WithMcpServer("calculator", server),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithEffort(EffortHigh),
+		WithHooks(map[HookType][]HookConfig{
+			HookTypePreToolUse: {
+				{Matcher: "*", Callback: preToolUseHook},
+			},
+		}),
+		WithMaxTurns(5),
+		WithStderr(func(data string) {
+			t.Logf("CLI stderr: %s", data)
+		}),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	for msg := range client.Query(ctx, "Please use the add_numbers tool to add 7 and 4.") {
+		switch m := msg.(type) {
+		case AssistantMessage:
+			t.Logf("Assistant: %s", m.ContentText())
+		case ResultMessage:
+			t.Logf("Result: status=%s, cost=$%.4f", m.Status, m.TotalCostUSD)
+		}
+	}
+
+	if capturedEffort == nil {
+		// TODO(PR-10): Backfill once the integration fixture uses a CLI/model
+		// combination that emits effort on PreToolUse hook payloads.
+		t.Skip("PreToolUse hook fired without BaseHookInput.effort; current CLI/model fixture does not expose effort on hook callbacks")
+	}
+
+	assert.Contains(t, []EffortLevel{
+		EffortLow,
+		EffortMedium,
+		EffortHigh,
+		EffortXHigh,
+		EffortMax,
+	}, capturedEffort.Level)
+}
+
 // TestIntegrationStopHookBlock tests that Stop hooks can block session exit
 // and reinject a new prompt using the Decision/Reason/SystemMessage fields.
 //

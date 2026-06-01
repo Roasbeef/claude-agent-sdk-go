@@ -340,6 +340,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 		PermissionMode: getString(inputData, "permission_mode"),
 		AgentID:        getString(inputData, "agent_id"),
 		AgentType:      getString(inputData, "agent_type"),
+		Effort:         getHookEffort(inputData),
 	}
 
 	// Build hook input based on type.
@@ -832,6 +833,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 		PermissionMode: getString(hookInput, "permission_mode"),
 		AgentID:        getString(hookInput, "agent_id"),
 		AgentType:      getString(hookInput, "agent_type"),
+		Effort:         getHookEffort(hookInput),
 	}
 
 	// Build hook input based on hook_event_name.
@@ -1349,6 +1351,20 @@ func getBool(m map[string]interface{}, key string) bool {
 		return false
 	}
 	return v
+}
+
+func getHookEffort(m map[string]interface{}) *HookEffort {
+	effort, ok := m["effort"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	level := getString(effort, "level")
+	if level == "" {
+		return nil
+	}
+
+	return &HookEffort{Level: EffortLevel(level)}
 }
 
 func marshalJSON(v interface{}) []byte {

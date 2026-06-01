@@ -111,3 +111,67 @@ func TestSettingsHookContinueOnBlockJSON(t *testing.T) {
 		assert.True(t, *cfg.ContinueOnBlock)
 	})
 }
+
+func TestBaseHookInputEffortJSON(t *testing.T) {
+	t.Run("marshal includes effort", func(t *testing.T) {
+		data, err := json.Marshal(PreToolUseInput{
+			BaseHookInput: BaseHookInput{
+				SessionID:      "s",
+				TranscriptPath: "/t",
+				Cwd:            "/c",
+				Effort:         &HookEffort{Level: EffortHigh},
+			},
+			ToolName: "Read",
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, map[string]interface{}{"level": "high"}, got["effort"])
+	})
+
+	t.Run("nil omitted", func(t *testing.T) {
+		data, err := json.Marshal(PreToolUseInput{
+			BaseHookInput: BaseHookInput{
+				SessionID:      "s",
+				TranscriptPath: "/t",
+				Cwd:            "/c",
+			},
+			ToolName: "Read",
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "effort")
+	})
+
+	t.Run("marshal includes xhigh", func(t *testing.T) {
+		data, err := json.Marshal(PreToolUseInput{
+			BaseHookInput: BaseHookInput{
+				SessionID:      "s",
+				TranscriptPath: "/t",
+				Cwd:            "/c",
+				Effort:         &HookEffort{Level: EffortXHigh},
+			},
+			ToolName: "Read",
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, map[string]interface{}{"level": "xhigh"}, got["effort"])
+	})
+
+	t.Run("unmarshal round-trip", func(t *testing.T) {
+		var input PreToolUseInput
+		require.NoError(t, json.Unmarshal(
+			[]byte(`{"session_id":"s","transcript_path":"/t","cwd":"/c","tool_name":"Read","effort":{"level":"high"}}`),
+			&input,
+		))
+
+		require.NotNil(t, input.Effort)
+		assert.Equal(t, EffortHigh, input.Effort.Level)
+		assert.Equal(t, EffortHigh, input.Base().Effort.Level)
+	})
+}

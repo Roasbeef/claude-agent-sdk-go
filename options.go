@@ -1245,6 +1245,16 @@ type HookInput interface {
 	Base() BaseHookInput
 }
 
+// HookEffort is the shape of BaseHookInput.effort: the reasoning effort
+// applied to the current turn, after any silent downgrade for the selected
+// model.
+type HookEffort struct {
+	// Level is the active effort level for the current turn
+	// (e.g., "low", "medium", "high", "xhigh", "max"). Also exposed to
+	// hook commands and Bash as the CLAUDE_EFFORT env var.
+	Level EffortLevel `json:"level"`
+}
+
 // BaseHookInput contains common fields for all hook inputs.
 type BaseHookInput struct {
 	SessionID      string `json:"session_id"`
@@ -1253,6 +1263,11 @@ type BaseHookInput struct {
 	PermissionMode string `json:"permission_mode,omitempty"`
 	AgentID        string `json:"agent_id,omitempty"`
 	AgentType      string `json:"agent_type,omitempty"`
+	// Effort is the reasoning effort applied to the current turn. Present for
+	// hooks that fire within a tool-use context (PreToolUse, PostToolUse, Stop,
+	// SubagentStop, etc.) on a model that supports the effort parameter; absent
+	// for session-lifecycle hooks and models without effort support.
+	Effort *HookEffort `json:"effort,omitempty"`
 }
 
 // ConfigChangeInput contains data for ConfigChange hooks.
