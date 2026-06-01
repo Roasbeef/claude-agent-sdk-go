@@ -1048,10 +1048,20 @@ type StatusMessage struct {
 // MessageType implements Message.
 func (m StatusMessage) MessageType() string { return "system" }
 
+// PreservedMessages identifies the ordered list of messagesToKeep UUIDs
+// that survived a compaction.
+//
+// Supersedes preserved_segment when present.
+type PreservedMessages struct {
+	AnchorUUID string   `json:"anchor_uuid"` // Anchor message UUID
+	UUIDs      []string `json:"uuids"`       // Ordered messagesToKeep UUIDs
+}
+
 // CompactMetadata contains details about a compaction event.
 type CompactMetadata struct {
-	Trigger   string `json:"trigger"`    // "manual" or "auto"
-	PreTokens int    `json:"pre_tokens"` // Token count before compaction
+	Trigger           string             `json:"trigger"`                      // "manual" or "auto"
+	PreTokens         int                `json:"pre_tokens"`                   // Token count before compaction
+	PreservedMessages *PreservedMessages `json:"preserved_messages,omitempty"` // Ordered messagesToKeep UUIDs
 }
 
 // PermissionDenial tracks a denied permission request.

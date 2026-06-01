@@ -1440,6 +1440,90 @@ func TestParseMessageCompactBoundary(t *testing.T) {
 	assert.Equal(t, 198732, compactMsg.CompactMetadata.PreTokens)
 }
 
+func TestParseMessageCompactBoundaryPreservedMessages(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "compact_boundary",
+		"uuid": "550e8400-e29b-41d4-a716-446655440010",
+		"session_id": "sess_compact_123",
+		"compact_metadata": {
+			"trigger": "auto",
+			"pre_tokens": 198732,
+			"preserved_messages": {
+				"anchor_uuid": "550e8400-e29b-41d4-a716-446655440100",
+				"uuids": [
+					"550e8400-e29b-41d4-a716-446655440101",
+					"550e8400-e29b-41d4-a716-446655440102"
+				]
+			}
+		}
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	compactMsg, ok := msg.(CompactBoundaryMessage)
+	require.True(t, ok, "expected CompactBoundaryMessage")
+
+	require.NotNil(t, compactMsg.CompactMetadata.PreservedMessages)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440100", compactMsg.CompactMetadata.PreservedMessages.AnchorUUID)
+	require.Len(t, compactMsg.CompactMetadata.PreservedMessages.UUIDs, 2)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440101", compactMsg.CompactMetadata.PreservedMessages.UUIDs[0])
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440102", compactMsg.CompactMetadata.PreservedMessages.UUIDs[1])
+}
+
+func TestCompactBoundaryPreservedMessagesOmitEmpty(t *testing.T) {
+	compactMsg := CompactBoundaryMessage{
+		Type:      "system",
+		Subtype:   "compact_boundary",
+		UUID:      "550e8400-e29b-41d4-a716-446655440010",
+		SessionID: "sess_compact_123",
+		CompactMetadata: CompactMetadata{
+			Trigger:   "auto",
+			PreTokens: 100,
+		},
+	}
+
+	data, err := json.Marshal(compactMsg)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	metadata, ok := got["compact_metadata"].(map[string]interface{})
+	require.True(t, ok, "expected compact_metadata object")
+	assert.NotContains(t, metadata, "preserved_messages")
+}
+
+func TestCompactBoundaryPreservedMessagesRoundTrip(t *testing.T) {
+	compactMsg := CompactBoundaryMessage{
+		Type:      "system",
+		Subtype:   "compact_boundary",
+		UUID:      "550e8400-e29b-41d4-a716-446655440010",
+		SessionID: "sess_compact_123",
+		CompactMetadata: CompactMetadata{
+			Trigger:   "manual",
+			PreTokens: 100,
+			PreservedMessages: &PreservedMessages{
+				AnchorUUID: "anchor-uuid-1",
+				UUIDs:      []string{"u-1", "u-2", "u-3"},
+			},
+		},
+	}
+
+	data, err := json.Marshal(compactMsg)
+	require.NoError(t, err)
+
+	msg, err := ParseMessage(data)
+	require.NoError(t, err)
+
+	got, ok := msg.(CompactBoundaryMessage)
+	require.True(t, ok, "expected CompactBoundaryMessage")
+	require.NotNil(t, got.CompactMetadata.PreservedMessages)
+	assert.Equal(t, compactMsg.CompactMetadata.PreservedMessages.AnchorUUID, got.CompactMetadata.PreservedMessages.AnchorUUID)
+	assert.Equal(t, compactMsg.CompactMetadata.PreservedMessages.UUIDs, got.CompactMetadata.PreservedMessages.UUIDs)
+}
+
 func TestParseMessageHookStarted(t *testing.T) {
 	input := `{
 		"type": "system",
