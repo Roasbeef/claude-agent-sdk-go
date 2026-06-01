@@ -347,6 +347,30 @@ func TestParseMessageAssistantMessageSubagentFields(t *testing.T) {
 	assert.Equal(t, "Inspect repository state", assistantMsg.TaskDescription)
 }
 
+func TestParseMessageAssistantMessageError(t *testing.T) {
+	input := `{
+		"type": "assistant",
+		"message": {
+			"role": "assistant",
+			"content": [
+				{
+					"type": "text",
+					"text": "Authentication failed."
+				}
+			]
+		},
+		"error": "oauth_org_not_allowed"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	assistantMsg, ok := msg.(AssistantMessage)
+	require.True(t, ok, "expected AssistantMessage")
+
+	assert.Equal(t, AssistantMessageErrorOAuthOrgNotAllowed, assistantMsg.Error)
+}
+
 func TestAssistantMessageFieldsOmitEmpty(t *testing.T) {
 	msg := AssistantMessage{Type: "assistant"}
 	msg.Message.Role = "assistant"
@@ -360,6 +384,19 @@ func TestAssistantMessageFieldsOmitEmpty(t *testing.T) {
 	assert.NotContains(t, got, "request_id")
 	assert.NotContains(t, got, "subagent_type")
 	assert.NotContains(t, got, "task_description")
+}
+
+func TestAssistantMessageErrorOmitEmpty(t *testing.T) {
+	msg := AssistantMessage{Type: "assistant"}
+	msg.Message.Role = "assistant"
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.NotContains(t, got, "error")
 }
 
 func TestAssistantMessageJSONRoundTrip(t *testing.T) {
@@ -381,6 +418,23 @@ func TestAssistantMessageJSONRoundTrip(t *testing.T) {
 	assert.Equal(t, msg.RequestID, got.RequestID)
 	assert.Equal(t, msg.SubagentType, got.SubagentType)
 	assert.Equal(t, msg.TaskDescription, got.TaskDescription)
+}
+
+func TestAssistantMessageErrorRoundTrip(t *testing.T) {
+	msg := AssistantMessage{
+		Type:  "assistant",
+		Error: AssistantMessageErrorModelNotFound,
+	}
+	msg.Message.Role = "assistant"
+	msg.Message.Content = []ContentBlock{{Type: "text", Text: "Model unavailable."}}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var got AssistantMessage
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.Equal(t, msg.Error, got.Error)
 }
 
 // TestParseMessageToolUseBlock tests parsing tool use requests.

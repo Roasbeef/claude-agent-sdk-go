@@ -740,6 +740,13 @@ func TestIntegrationAssistantMessageSubagentFields(t *testing.T) {
 	t.Skip("requires running a subagent task end-to-end; tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+func TestIntegrationAssistantMessageError(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	t.Skip("requires an upstream API failure (e.g. auth/quota) to deterministically populate AssistantMessage.Error; tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
 func TestIntegrationBaseHookInputEffort(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
