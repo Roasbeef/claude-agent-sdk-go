@@ -1780,6 +1780,26 @@ func TestTaskProgressSubagentTypeOmitEmpty(t *testing.T) {
 	assert.NotContains(t, got, "subagent_type")
 }
 
+func TestTaskProgressSubagentTypeRoundTrip(t *testing.T) {
+	want := TaskProgressMessage{
+		Type:         "system",
+		Subtype:      "task_progress",
+		TaskID:       "t1",
+		Description:  "d",
+		SubagentType: "explorer",
+		Usage:        TaskUsage{},
+		UUID:         "u",
+		SessionID:    "s",
+	}
+
+	data, err := json.Marshal(want)
+	require.NoError(t, err)
+
+	var got TaskProgressMessage
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, want.SubagentType, got.SubagentType)
+}
+
 func TestParseMessageTaskUpdated(t *testing.T) {
 	tests := []struct {
 		name  string
