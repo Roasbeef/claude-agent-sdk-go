@@ -670,6 +670,83 @@ func TestParseMessageStreamEvent(t *testing.T) {
 	assert.False(t, streamEvent.Timestamp.IsZero())
 }
 
+// TestParseMessagePartialAssistantParentToolUseID exercises the
+// parent_tool_use_id wire-shape contract on PartialAssistantMessage:
+// the key is always present (string or null), never omitted.
+func TestParseMessagePartialAssistantParentToolUseID(t *testing.T) {
+	t.Run("parses string value", func(t *testing.T) {
+		input := `{
+			"type": "stream_event",
+			"event": {"type":"text_delta","delta":"hi"},
+			"parent_tool_use_id": "toolu_parent",
+			"uuid": "550e8400-e29b-41d4-a716-446655440301",
+			"session_id": "sess_partial_001"
+		}`
+
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+
+		partial, ok := msg.(PartialAssistantMessage)
+		require.True(t, ok)
+		require.NotNil(t, partial.ParentToolUseID)
+		assert.Equal(t, "toolu_parent", *partial.ParentToolUseID)
+	})
+
+	t.Run("parses null value", func(t *testing.T) {
+		input := `{
+			"type": "stream_event",
+			"event": {"type":"text_delta","delta":"hi"},
+			"parent_tool_use_id": null,
+			"uuid": "550e8400-e29b-41d4-a716-446655440302",
+			"session_id": "sess_partial_002"
+		}`
+
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+
+		partial, ok := msg.(PartialAssistantMessage)
+		require.True(t, ok)
+		assert.Nil(t, partial.ParentToolUseID)
+	})
+
+	t.Run("nil marshals as explicit null (not omitted)", func(t *testing.T) {
+		in := PartialAssistantMessage{
+			Type:            "stream_event",
+			Event:           json.RawMessage(`{"type":"text_delta","delta":"hi"}`),
+			ParentToolUseID: nil,
+			UUID:            "550e8400-e29b-41d4-a716-446655440303",
+			SessionID:       "sess_partial_003",
+		}
+
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		assert.Contains(t, string(data), `"parent_tool_use_id":null`)
+	})
+
+	t.Run("string round-trip", func(t *testing.T) {
+		parent := "toolu_parent_roundtrip"
+		in := PartialAssistantMessage{
+			Type:            "stream_event",
+			Event:           json.RawMessage(`{"type":"text_delta","delta":"hi"}`),
+			ParentToolUseID: &parent,
+			UUID:            "550e8400-e29b-41d4-a716-446655440304",
+			SessionID:       "sess_partial_004",
+		}
+
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		parsed, err := ParseMessage(data)
+		require.NoError(t, err)
+
+		out, ok := parsed.(PartialAssistantMessage)
+		require.True(t, ok)
+		require.NotNil(t, out.ParentToolUseID)
+		assert.Equal(t, parent, *out.ParentToolUseID)
+	})
+}
+
 // TestParseMessageTodoUpdate tests parsing todo updates.
 func TestParseMessageTodoUpdate(t *testing.T) {
 	input := `{
