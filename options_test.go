@@ -442,6 +442,82 @@ func TestSettingsSandboxFieldsJSON(t *testing.T) {
 	})
 }
 
+func TestSettingsWorktreeFieldsJSON(t *testing.T) {
+	t.Run("baseRef and bgIsolation zero omits keys", func(t *testing.T) {
+		in := Settings{
+			Worktree: &SettingsWorktree{
+				SymlinkDirectories: []string{"node_modules"},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		wt, ok := got["worktree"].(map[string]interface{})
+		require.True(t, ok)
+		assert.NotContains(t, wt, "baseRef")
+		assert.NotContains(t, wt, "bgIsolation")
+	})
+
+	t.Run("baseRef set round-trip", func(t *testing.T) {
+		in := Settings{
+			Worktree: &SettingsWorktree{BaseRef: "head"},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		wt := got["worktree"].(map[string]interface{})
+		assert.Equal(t, "head", wt["baseRef"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.Worktree)
+		assert.Equal(t, "head", out.Worktree.BaseRef)
+	})
+
+	t.Run("bgIsolation set round-trip", func(t *testing.T) {
+		in := Settings{
+			Worktree: &SettingsWorktree{BgIsolation: "none"},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		wt := got["worktree"].(map[string]interface{})
+		assert.Equal(t, "none", wt["bgIsolation"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.Worktree)
+		assert.Equal(t, "none", out.Worktree.BgIsolation)
+	})
+
+	t.Run("all worktree fields round-trip together", func(t *testing.T) {
+		in := Settings{
+			Worktree: &SettingsWorktree{
+				SymlinkDirectories: []string{"node_modules", ".cache"},
+				SparsePaths:        []string{"src", "tests"},
+				BaseRef:            "fresh",
+				BgIsolation:        "worktree",
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.Worktree)
+		assert.Equal(t, []string{"node_modules", ".cache"}, out.Worktree.SymlinkDirectories)
+		assert.Equal(t, []string{"src", "tests"}, out.Worktree.SparsePaths)
+		assert.Equal(t, "fresh", out.Worktree.BaseRef)
+		assert.Equal(t, "worktree", out.Worktree.BgIsolation)
+	})
+}
+
 func TestBaseHookInputEffortJSON(t *testing.T) {
 	t.Run("marshal includes effort", func(t *testing.T) {
 		data, err := json.Marshal(PreToolUseInput{

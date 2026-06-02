@@ -513,6 +513,10 @@ func (h SettingsHook) MarshalJSON() ([]byte, error) {
 type SettingsWorktree struct {
 	SymlinkDirectories []string `json:"symlinkDirectories,omitempty"`
 	SparsePaths        []string `json:"sparsePaths,omitempty"`
+	// BaseRef selects which ref new worktrees branch from. Mirrors sdk.d.ts v0.3.150 L4364.
+	BaseRef string `json:"baseRef,omitempty"`
+	// BgIsolation selects the isolation mode for background sessions. Mirrors sdk.d.ts v0.3.150 L4368.
+	BgIsolation string `json:"bgIsolation,omitempty"`
 }
 
 type SettingsCommand struct {
