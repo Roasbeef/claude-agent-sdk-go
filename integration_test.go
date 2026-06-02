@@ -718,6 +718,14 @@ func TestIntegrationHookContinueOnBlock(t *testing.T) {
 	t.Skip("not directly assertable from CLI: continueOnBlock affects the CLI's turn-continuation decision after a blocking hook, not anything observable on the SDK transport")
 }
 
+func TestIntegrationPostToolUseUpdatedToolOutput(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// TODO: Backfill when a deterministic PostToolUse rewrite fixture is available.
+	t.Skip("not triggerable from CLI without a deterministic tool call whose output a PostToolUse hook rewrites; tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
 func TestIntegrationStopHookBackgroundTasks(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)

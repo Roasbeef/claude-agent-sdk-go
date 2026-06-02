@@ -2591,7 +2591,7 @@ func TestBuildHookResponse_PreToolUseUpdatedInput(t *testing.T) {
 		assert.Equal(t, "ls /tmp", updatedInput["command"])
 	})
 
-	t.Run("PostToolUse falls through to legacy modify", func(t *testing.T) {
+	t.Run("PostToolUse without UpdatedToolOutput falls through to legacy modify", func(t *testing.T) {
 		result := HookResult{
 			Continue: true,
 			Modify: map[string]interface{}{
@@ -2640,6 +2640,77 @@ func TestBuildHookResponse_PreToolUseUpdatedInput(t *testing.T) {
 		// Legacy modify should NOT be present.
 		_, hasModify := resp["modify"]
 		assert.False(t, hasModify)
+	})
+}
+
+// TestBuildHookResponse_PostToolUseUpdatedToolOutput verifies that
+// HookResult.UpdatedToolOutput auto-translates into
+// hookSpecificOutput.updatedToolOutput for PostToolUse hooks.
+func TestBuildHookResponse_PostToolUseUpdatedToolOutput(t *testing.T) {
+	t.Run("string output translates", func(t *testing.T) {
+		result := HookResult{
+			Continue:          true,
+			UpdatedToolOutput: "rewritten output",
+		}
+
+		resp := buildHookResponse("PostToolUse", result)
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok, "PostToolUse should emit hookSpecificOutput")
+		assert.Equal(t, "PostToolUse", hso["hookEventName"])
+		assert.Equal(t, "rewritten output", hso["updatedToolOutput"])
+		_, hasModify := resp["modify"]
+		assert.False(t, hasModify, "modify key should not be present")
+	})
+
+	t.Run("structured output translates", func(t *testing.T) {
+		result := HookResult{
+			Continue: true,
+			UpdatedToolOutput: map[string]interface{}{
+				"status": "ok",
+				"lines":  3,
+			},
+		}
+
+		resp := buildHookResponse("PostToolUse", result)
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		out, ok := hso["updatedToolOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "ok", out["status"])
+		assert.Equal(t, 3, out["lines"])
+	})
+
+	t.Run("nil UpdatedToolOutput falls through to legacy modify", func(t *testing.T) {
+		result := HookResult{
+			Continue: true,
+			Modify:   map[string]interface{}{"key": "value"},
+		}
+
+		resp := buildHookResponse("PostToolUse", result)
+
+		modify, ok := resp["modify"].(map[string]interface{})
+		require.True(t, ok, "should fall through to legacy modify when UpdatedToolOutput is nil")
+		assert.Equal(t, "value", modify["key"])
+		_, hasHSO := resp["hookSpecificOutput"]
+		assert.False(t, hasHSO)
+	})
+
+	t.Run("UpdatedToolOutput wins over Modify", func(t *testing.T) {
+		result := HookResult{
+			Continue:          true,
+			UpdatedToolOutput: "winner",
+			Modify:            map[string]interface{}{"loser": true},
+		}
+
+		resp := buildHookResponse("PostToolUse", result)
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "winner", hso["updatedToolOutput"])
+		_, hasModify := resp["modify"]
+		assert.False(t, hasModify, "Modify should be ignored when UpdatedToolOutput is set")
 	})
 }
 

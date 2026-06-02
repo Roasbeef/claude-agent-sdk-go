@@ -1827,8 +1827,10 @@ const (
 // the session exits or continues with a new prompt (Ralph Wiggum pattern).
 //
 // For PreToolUse hooks, Modify is automatically translated into the
-// hookSpecificOutput.updatedInput format expected by the CLI. Set
-// HookSpecificOutput directly for finer control over the response.
+// hookSpecificOutput.updatedInput format expected by the CLI. For
+// PostToolUse hooks, UpdatedToolOutput is automatically translated
+// into hookSpecificOutput.updatedToolOutput. Set HookSpecificOutput
+// directly for finer control over the response.
 type HookResult struct {
 	Continue bool                   // Continue execution (false = abort)
 	Modify   map[string]interface{} // Modifications to apply
@@ -1851,6 +1853,14 @@ type HookResult struct {
 	// SystemMessage is displayed to Claude as context when blocking exit.
 	// Use this to provide iteration counts or other status information.
 	SystemMessage string
+
+	// UpdatedToolOutput replaces the tool output sent to the model on
+	// PostToolUse hooks. The value is forwarded verbatim as
+	// hookSpecificOutput.updatedToolOutput; any JSON-encodable value is
+	// accepted. Ignored for non-PostToolUse hooks. Set HookSpecificOutput
+	// directly for finer control or to address the deprecated MCP-only
+	// updatedMCPToolOutput field.
+	UpdatedToolOutput interface{}
 
 	// HookSpecificOutput provides raw hookSpecificOutput for the CLI
 	// response. When set, this takes precedence over auto-translation

@@ -2,6 +2,7 @@
 
 - Backfill `TestIntegrationStopHookBackgroundTasks` when the CLI test fixture can deterministically create a long-running background task.
 - Backfill `TestIntegrationStopHookSessionCrons` when the CLI test fixture can deterministically create a session cron.
+- Backfill `TestIntegrationPostToolUseUpdatedToolOutput` when the CLI test fixture can deterministically run a tool whose output a PostToolUse hook rewrites, so the model receives the rewritten value rather than the original tool response.
 - Backfill `TestIntegrationAssistantMessageSubagentFields` when the CLI test fixture can deterministically run a subagent task end-to-end.
 - Backfill `TestIntegrationUserMessageSubagentFields` when the CLI test fixture can deterministically run a Task-tool subagent whose tool-result user message round-trips `subagent_type` + `task_description`.
 - Backfill `TestIntegrationAssistantMessageError` when the CLI test fixture can deterministically force an upstream API failure into an `assistant` event.
