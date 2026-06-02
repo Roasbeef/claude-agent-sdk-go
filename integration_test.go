@@ -1999,3 +1999,9 @@ func TestIntegrationCompactBoundaryPreservedMessages(t *testing.T) {
 	skipIfNoCLI(t)
 	t.Skip("requires CLI to trigger a partial compaction that emits compact_metadata.preserved_messages (messagesToKeep populated); tracked in INTEGRATION-FOLLOWUPS.md")
 }
+
+func TestIntegrationMemoryRecallOrganizationScope(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	t.Skip("requires CLI to surface an organization-scoped memory (https URL + inline content); tracked in INTEGRATION-FOLLOWUPS.md")
+}

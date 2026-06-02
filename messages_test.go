@@ -2380,6 +2380,22 @@ func TestParseMessageMemoryRecall(t *testing.T) {
 			wantEntries:      1,
 			wantContentEntry: 0,
 		},
+		{
+			name: "select mode with organization scope",
+			input: `{
+				"type": "system",
+				"subtype": "memory_recall",
+				"mode": "select",
+				"memories": [
+					{ "path": "https://memories.example.com/org/policy.md", "scope": "organization", "content": "Org-wide policy body." }
+				],
+				"uuid": "550e8400-e29b-41d4-a716-446655440242",
+				"session_id": "sess_misc_005"
+			}`,
+			wantMode:         MemoryRecallModeSelect,
+			wantEntries:      1,
+			wantContentEntry: 0,
+		},
 	}
 
 	for _, tt := range tests {
@@ -2406,6 +2422,31 @@ func TestParseMessageMemoryRecall(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMemoryRecallEntryOrganizationScopeRoundTrip(t *testing.T) {
+	in := MemoryRecallMessage{
+		Type:      "system",
+		Subtype:   "memory_recall",
+		Mode:      MemoryRecallModeSelect,
+		Memories:  []MemoryRecallEntry{{Path: "https://memories.example.com/org/policy.md", Scope: MemoryScopeOrganization, Content: "Org-wide policy body."}},
+		UUID:      "550e8400-e29b-41d4-a716-446655440243",
+		SessionID: "sess_misc_006",
+	}
+
+	data, err := json.Marshal(in)
+	require.NoError(t, err)
+
+	parsed, err := ParseMessage(data)
+	require.NoError(t, err)
+
+	out, ok := parsed.(MemoryRecallMessage)
+	require.True(t, ok)
+	require.Len(t, out.Memories, 1)
+	assert.Equal(t, MemoryScopeOrganization, out.Memories[0].Scope)
+	assert.Equal(t, "organization", string(out.Memories[0].Scope))
+	assert.Equal(t, "https://memories.example.com/org/policy.md", out.Memories[0].Path)
+	assert.Equal(t, "Org-wide policy body.", out.Memories[0].Content)
 }
 
 func TestParseMessageMirrorError(t *testing.T) {

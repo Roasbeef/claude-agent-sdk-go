@@ -882,15 +882,26 @@ const (
 type MemoryScope string
 
 const (
-	MemoryScopePersonal MemoryScope = "personal"
-	MemoryScopeTeam     MemoryScope = "team"
+	MemoryScopePersonal     MemoryScope = "personal"
+	MemoryScopeTeam         MemoryScope = "team"
+	MemoryScopeOrganization MemoryScope = "organization"
 )
 
 // MemoryRecallEntry describes one recalled memory or synthesis.
 type MemoryRecallEntry struct {
-	Path    string      `json:"path"`
-	Scope   MemoryScope `json:"scope"`
-	Content string      `json:"content,omitempty"`
+	// Path is the absolute path to the memory file, a synthesis sentinel
+	// of the form "<synthesis:DIR>" when mode is "synthesize", or an
+	// https URL when scope is "organization".
+	Path string `json:"path"`
+
+	// Scope identifies the source of the memory.
+	Scope MemoryScope `json:"scope"`
+
+	// Content is the surfaced memory body. Always present for
+	// "synthesize" mode and for "organization" scope (neither has an
+	// on-disk path to lazy-load from); absent for file-backed "select"
+	// entries.
+	Content string `json:"content,omitempty"`
 }
 
 // MemoryRecallMessage reports memories surfaced into the current turn.
