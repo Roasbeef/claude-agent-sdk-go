@@ -2001,6 +2001,16 @@ exec "$real_cli" "$@"
 	})
 }
 
+func TestIntegrationSettingsManagedOrgFields(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// TODO: Backfill when the CLI test fixture can deterministically inject a
+	// managed-settings.json / MDM policy tier so the SDK can observe these
+	// admin-controlled settings through the resolved-settings transport.
+	t.Skip("not directly assertable from CLI: managed-org settings are honored only from admin-controlled policy sources, not surfaced on user CLI flag entry points")
+}
+
 func TestIntegrationToolAliases(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
