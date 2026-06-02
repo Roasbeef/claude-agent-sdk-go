@@ -1863,6 +1863,15 @@ type HookResult struct {
 	// Honored on any hook return, sync or async.
 	TerminalSequence string
 
+	// SuppressOriginalPrompt, when set on a UserPromptSubmit hook return,
+	// asks the CLI to omit the original user prompt from the block message
+	// it returns when the hook blocks. Honored only on UserPromptSubmit
+	// hooks; nil (the default) leaves the wire field unset; a pointer to
+	// false explicitly opts out. Translates into hookSpecificOutput.
+	// suppressOriginalPrompt per sdk.d.ts v0.3.150 L5808. Useful when the
+	// prompt itself was the reason for the block (PII, credentials, etc.).
+	SuppressOriginalPrompt *bool
+
 	// UpdatedToolOutput replaces the tool output sent to the model on
 	// PostToolUse hooks. The value is forwarded verbatim as
 	// hookSpecificOutput.updatedToolOutput; any JSON-encodable value is
