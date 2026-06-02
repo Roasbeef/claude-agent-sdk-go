@@ -10,3 +10,4 @@
 - Backfill `TestIntegrationCompactBoundaryPreservedMessages` when the CLI test fixture can deterministically trigger a partial compaction with messagesToKeep so the `compact_metadata.preserved_messages` block is populated.
 - Backfill `TestIntegrationMemoryRecallOrganizationScope` when the CLI test fixture can deterministically surface an organization-scoped memory (https URL + inline content) on a `memory_recall` system event.
 - Backfill `TestIntegrationPartialAssistantParentToolUseID` when the CLI test fixture can deterministically emit a streaming partial event nested under a Task-tool subagent so `parent_tool_use_id` carries a non-null tool_use id.
+- Backfill `TestIntegrationHostAuthTokenRefresh` when a real auth-failure path or a CLI-side fixture flag can deterministically trigger the `host_auth_token_refresh` control request. Currently not triggerable from the CLI in standard integration runs; verified via unit test.

@@ -923,6 +923,30 @@ func (s *Stream) StopTask(ctx context.Context, taskID string) error {
 	return err
 }
 
+// SubmitFeedbackOptions configures Stream.SubmitFeedback.
+type SubmitFeedbackOptions struct {
+	// Surface identifies the UI surface that originated the feedback.
+	Surface string
+}
+
+// SubmitFeedback sends free-form session feedback to the CLI.
+//
+// Only available in streaming input mode.
+func (s *Stream) SubmitFeedback(
+	ctx context.Context, description string, opts ...SubmitFeedbackOptions,
+) error {
+	var o SubmitFeedbackOptions
+	if len(opts) > 0 {
+		o = opts[0]
+	}
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype:     "submit_feedback",
+		Description: description,
+		Surface:     o.Surface,
+	})
+	return err
+}
+
 // BackgroundTasks backgrounds in-flight foreground tasks (Bash commands and
 // subagents). When toolUseID is non-empty, only the task started by that
 // tool_use block is backgrounded; when empty, all foreground tasks are

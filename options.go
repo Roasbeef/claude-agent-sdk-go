@@ -63,6 +63,10 @@ type Options struct {
 	// OnElicitation handles MCP server requests for user input.
 	OnElicitation OnElicitationFunc
 
+	// GetHostAuthToken handles host-auth-token refresh requests from the CLI.
+	// If unset, the SDK replies with an error response.
+	GetHostAuthToken GetHostAuthTokenFunc
+
 	// Hooks register lifecycle callbacks for events like tool use.
 	Hooks map[HookType][]HookConfig
 
@@ -881,6 +885,17 @@ func WithOnElicitation(fn OnElicitationFunc) Option {
 	}
 }
 
+// WithGetHostAuthToken registers a callback that refreshes host auth tokens on
+// CLI request.
+//
+// If unset, the SDK responds with an error to any host_auth_token_refresh
+// control request.
+func WithGetHostAuthToken(fn GetHostAuthTokenFunc) Option {
+	return func(o *Options) {
+		o.GetHostAuthToken = fn
+	}
+}
+
 // WithHooks registers lifecycle callbacks.
 //
 // Example:
@@ -1053,6 +1068,11 @@ type CanUseToolFunc func(ctx context.Context, req ToolPermissionRequest) Permiss
 //
 // Returning a non-nil error converts the response to action="cancel".
 type OnElicitationFunc func(ctx context.Context, req ElicitationRequest) (ElicitationResult, error)
+
+// GetHostAuthTokenFunc returns a fresh host auth token.
+//
+// The context is canceled when the CLI cancels the refresh request.
+type GetHostAuthTokenFunc func(ctx context.Context) (string, error)
 
 // ElicitationRequest is the input to the OnElicitation callback.
 type ElicitationRequest struct {

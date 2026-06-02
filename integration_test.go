@@ -1754,6 +1754,17 @@ func TestIntegrationStreamFileAndRuntime(t *testing.T) {
 		}))
 	})
 
+	t.Run("submit_feedback", func(t *testing.T) {
+		stream, _ := newFileStream(t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		require.NoError(t, stream.SubmitFeedback(ctx, "integration test ping"))
+		require.NoError(t, stream.SubmitFeedback(ctx,
+			"with surface", SubmitFeedbackOptions{Surface: "integration"}))
+	})
+
 	t.Run("deferred_runtime_methods", func(t *testing.T) {
 		t.Skip("not triggerable from CLI yet: RewindFiles needs file " +
 			"checkpointing setup, ReloadPlugins needs a plugin fixture, " +

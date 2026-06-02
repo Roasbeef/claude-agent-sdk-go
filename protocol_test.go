@@ -850,6 +850,62 @@ func TestProtocolHandleElicitationRequest(t *testing.T) {
 	})
 }
 
+func TestProtocolHandleHostAuthTokenRefresh(t *testing.T) {
+	t.Run("callback returns token", func(t *testing.T) {
+		opts := NewOptions()
+		opts.GetHostAuthToken = func(ctx context.Context) (string, error) {
+			return "abc", nil
+		}
+		protocol := NewProtocol(nil, opts)
+
+		resp := protocol.handleHostAuthTokenRefresh(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "host_auth_token_refresh",
+			RequestID: "req_host_auth",
+		})
+
+		assert.Equal(t, "control_response", resp.Type)
+		assert.Equal(t, "success", resp.Response.Subtype)
+		assert.Equal(t, "req_host_auth", resp.Response.RequestID)
+		assert.Equal(t, map[string]interface{}{"authToken": "abc"}, resp.Response.Response)
+	})
+
+	t.Run("callback absent errors", func(t *testing.T) {
+		opts := NewOptions()
+		protocol := NewProtocol(nil, opts)
+
+		resp := protocol.handleHostAuthTokenRefresh(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "host_auth_token_refresh",
+			RequestID: "req_host_auth",
+		})
+
+		assert.Equal(t, "control_response", resp.Type)
+		assert.Equal(t, "error", resp.Response.Subtype)
+		assert.Equal(t, "req_host_auth", resp.Response.RequestID)
+		assert.Contains(t, resp.Response.Error, "GetHostAuthToken")
+	})
+
+	t.Run("callback returns error", func(t *testing.T) {
+		opts := NewOptions()
+		opts.GetHostAuthToken = func(ctx context.Context) (string, error) {
+			return "", errors.New("refresh failed")
+		}
+		protocol := NewProtocol(nil, opts)
+
+		resp := protocol.handleHostAuthTokenRefresh(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "host_auth_token_refresh",
+			RequestID: "req_host_auth",
+		})
+
+		assert.Equal(t, "control_response", resp.Type)
+		assert.Equal(t, "error", resp.Response.Subtype)
+		assert.Equal(t, "req_host_auth", resp.Response.RequestID)
+		assert.Equal(t, "refresh failed", resp.Response.Error)
+	})
+}
+
 // TestProtocolHookCallback tests hook invocation.
 func TestProtocolHookCallback(t *testing.T) {
 	t.Run("PreToolUse hook", func(t *testing.T) {

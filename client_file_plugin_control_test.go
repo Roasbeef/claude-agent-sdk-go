@@ -439,6 +439,49 @@ func TestStreamApplyFlagSettingsMixedNullValues(t *testing.T) {
 	)
 }
 
+func TestStreamSubmitFeedbackMinimal(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		return stream.SubmitFeedback(ctx, "ship it")
+	})
+	require.NoError(t, err)
+
+	assert.JSONEq(t,
+		`{"type":"control_request","request_id":"req_1","request":{"subtype":"submit_feedback","description":"ship it"}}`,
+		rawWrittenSDKControlRequest(t, transport),
+	)
+}
+
+func TestStreamSubmitFeedbackWithSurface(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		return stream.SubmitFeedback(ctx, "looks good",
+			SubmitFeedbackOptions{Surface: "rating-thumb"})
+	})
+	require.NoError(t, err)
+
+	assert.JSONEq(t,
+		`{"type":"control_request","request_id":"req_1","request":{"subtype":"submit_feedback","description":"looks good","surface":"rating-thumb"}}`,
+		rawWrittenSDKControlRequest(t, transport),
+	)
+}
+
+func TestStreamSubmitFeedbackOmitsEmptySurface(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		return stream.SubmitFeedback(ctx, "hi", SubmitFeedbackOptions{})
+	})
+	require.NoError(t, err)
+
+	assert.JSONEq(t,
+		`{"type":"control_request","request_id":"req_1","request":{"subtype":"submit_feedback","description":"hi"}}`,
+		rawWrittenSDKControlRequest(t, transport),
+	)
+}
+
 func TestStreamStopTaskWireShape(t *testing.T) {
 	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
 
