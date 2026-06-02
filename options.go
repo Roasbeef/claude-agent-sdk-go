@@ -524,6 +524,8 @@ type SettingsCommand struct {
 	Command         string `json:"command"`
 	Padding         *int   `json:"padding,omitempty"`
 	RefreshInterval *int   `json:"refreshInterval,omitempty"`
+	// HideVimModeIndicator hides the built-in -- INSERT -- / -- VISUAL -- indicator below the prompt. Mirrors sdk.d.ts v0.3.150 L4432.
+	HideVimModeIndicator *bool `json:"hideVimModeIndicator,omitempty"`
 }
 
 type SettingsMarketplace struct {
@@ -533,6 +535,30 @@ type SettingsMarketplace struct {
 }
 
 type SettingsMarketplaceSource map[string]interface{}
+
+// SettingsMarketplaceSourceKind is the discriminator value stored in a SettingsMarketplaceSource "source" entry.
+type SettingsMarketplaceSourceKind string
+
+const (
+	// SettingsMarketplaceSourceGithub identifies a GitHub marketplace source. Mirrors sdk.d.ts v0.3.150 L4459.
+	SettingsMarketplaceSourceGithub SettingsMarketplaceSourceKind = "github"
+	// SettingsMarketplaceSourceGit identifies a Git marketplace source. Mirrors sdk.d.ts v0.3.150 L4466.
+	SettingsMarketplaceSourceGit SettingsMarketplaceSourceKind = "git"
+	// SettingsMarketplaceSourceNPM identifies an npm marketplace source. Mirrors sdk.d.ts v0.3.150 L4484.
+	SettingsMarketplaceSourceNPM SettingsMarketplaceSourceKind = "npm"
+	// SettingsMarketplaceSourceFile identifies a file marketplace source. Mirrors sdk.d.ts v0.3.150 L4500.
+	SettingsMarketplaceSourceFile SettingsMarketplaceSourceKind = "file"
+	// SettingsMarketplaceSourceDirectory identifies a directory marketplace source. Mirrors sdk.d.ts v0.3.150 L4515.
+	SettingsMarketplaceSourceDirectory SettingsMarketplaceSourceKind = "directory"
+	// SettingsMarketplaceSourceSkillsDir identifies a bare-tag skills-dir marketplace source. Mirrors sdk.d.ts v0.3.150 L4528.
+	SettingsMarketplaceSourceSkillsDir SettingsMarketplaceSourceKind = "skills-dir"
+	// SettingsMarketplaceSourceHostPattern identifies a hostPattern marketplace source. Mirrors sdk.d.ts v0.3.150 L4537.
+	SettingsMarketplaceSourceHostPattern SettingsMarketplaceSourceKind = "hostPattern"
+	// SettingsMarketplaceSourcePathPattern identifies a pathPattern marketplace source. Mirrors sdk.d.ts v0.3.150 L4555.
+	SettingsMarketplaceSourcePathPattern SettingsMarketplaceSourceKind = "pathPattern"
+	// SettingsMarketplaceSourceUnsupported identifies a bare-tag unsupported marketplace source. Mirrors sdk.d.ts v0.3.150 L4619.
+	SettingsMarketplaceSourceUnsupported SettingsMarketplaceSourceKind = "unsupported"
+)
 
 type SettingsPluginConfig struct {
 	MCPServers map[string]map[string]interface{} `json:"mcpServers,omitempty"`
