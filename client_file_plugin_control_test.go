@@ -205,6 +205,82 @@ func TestStreamReadFileMaxBytesZeroOmitted(t *testing.T) {
 	)
 }
 
+// TestStreamReadFileWithEncoding asserts the encoding option threads into the
+// wire request and that a base64 response is parsed back onto the struct.
+func TestStreamReadFileWithEncoding(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(
+		successSDKControlResponseWithPayload(map[string]interface{}{
+			"contents": "aGVsbG8=",
+			"absPath":  "/tmp/example.bin",
+			"encoding": "base64",
+		}),
+	)
+
+	var got *SDKControlReadFileResponse
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		var err error
+		got, err = stream.ReadFile(ctx, "example.bin", &ReadFileOptions{
+			Encoding: "base64",
+		})
+		return err
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "aGVsbG8=", got.Contents)
+	assert.Equal(t, "/tmp/example.bin", got.AbsPath)
+	assert.Equal(t, "base64", got.Encoding)
+
+	assert.JSONEq(t,
+		`{"type":"control_request","request_id":"req_1","request":{"subtype":"read_file","path":"example.bin","encoding":"base64"}}`,
+		rawWrittenSDKControlRequest(t, transport),
+	)
+}
+
+// TestStreamReadFileEncodingEmptyOmitted asserts an empty Encoding string
+// elides the key on the wire.
+func TestStreamReadFileEncodingEmptyOmitted(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(
+		successSDKControlResponseWithPayload(map[string]interface{}{}),
+	)
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		_, err := stream.ReadFile(ctx, "example.txt", &ReadFileOptions{
+			Encoding: "",
+		})
+		return err
+	})
+	require.NoError(t, err)
+
+	assert.JSONEq(t,
+		`{"type":"control_request","request_id":"req_1","request":{"subtype":"read_file","path":"example.txt"}}`,
+		rawWrittenSDKControlRequest(t, transport),
+	)
+}
+
+// TestStreamReadFileResponseEncodingDefaultsUTF8 asserts a response missing the
+// encoding field unmarshals to an empty Encoding string.
+func TestStreamReadFileResponseEncodingDefaultsUTF8(t *testing.T) {
+	stream, _, _ := newStreamControlTest(
+		successSDKControlResponseWithPayload(map[string]interface{}{
+			"contents": "hello",
+			"absPath":  "/tmp/example.txt",
+		}),
+	)
+
+	var got *SDKControlReadFileResponse
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		var err error
+		got, err = stream.ReadFile(ctx, "example.txt", &ReadFileOptions{
+			Encoding: "utf-8",
+		})
+		return err
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, "hello", got.Contents)
+	assert.Empty(t, got.Encoding)
+}
+
 func TestStreamReloadPluginsParsesResponse(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		stream, transport, _ := newStreamControlTest(

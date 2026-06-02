@@ -83,6 +83,11 @@ type RewindFilesResult struct {
 // ReadFileOptions controls Stream.ReadFile.
 type ReadFileOptions struct {
 	MaxBytes int `json:"maxBytes,omitempty"`
+	// Encoding selects how the CLI encodes file bytes in the response.
+	// Valid values are "utf-8" (default; lossy for binary) and "base64"
+	// (required for arbitrary binary). Empty string lets the CLI pick its
+	// default.
+	Encoding string `json:"encoding,omitempty"`
 }
 
 // SDKControlReadFileResponse contains file contents from Stream.ReadFile.
@@ -90,6 +95,9 @@ type SDKControlReadFileResponse struct {
 	Contents  string `json:"contents"`
 	AbsPath   string `json:"absPath"`
 	Truncated bool   `json:"truncated,omitempty"`
+	// Encoding is set to "base64" when the CLI honored a base64 request.
+	// Empty string means utf-8, including when older CLIs ignore the request.
+	Encoding string `json:"encoding,omitempty"`
 }
 
 // SDKControlReloadPluginsResponse reports refreshed session components.
