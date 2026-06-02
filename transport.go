@@ -524,8 +524,17 @@ func (t *SubprocessTransport) EndInput() error {
 
 // Close terminates the CLI subprocess and cleans up resources.
 //
-// Close attempts a graceful shutdown by closing stdin, which signals the
-// CLI to exit. If the process doesn't exit within a timeout, it is killed.
+// Close performs a graceful shutdown: stdin is closed (signaling EOF to
+// the CLI), the SDK waits up to 5 seconds for the process to exit on its
+// own, and only on timeout is the process force-killed. This mirrors the
+// TS SDK's stdin-EOF + grace-window contract (sdk.d.ts v0.3.150
+// L5531-L5547): cancellation signals - in Go, the context plumbed through
+// Connect/Write/ReadMessages - only translate into a hard kill after the
+// CLI has had its graceful chance. Anything you hang off the same context
+// (HTTP cancellation, in-flight tool teardown) inherits the same ordering
+// guarantee.
+//
+// Close is idempotent. After Close, Write returns ErrTransportClosed.
 func (t *SubprocessTransport) Close() error {
 	if !t.closed.CompareAndSwap(false, true) {
 		return nil // Already closed

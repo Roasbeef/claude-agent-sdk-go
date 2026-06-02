@@ -44,8 +44,19 @@ type Options struct {
 	// AdditionalDirectories are additional directories Claude can access.
 	AdditionalDirectories []string
 
-	// Environment variables to pass to the CLI subprocess.
-	// ANTHROPIC_API_KEY should be set here or in the parent environment.
+	// Env is a map of environment variables to overlay onto the CLI
+	// subprocess environment. Entries are appended to os.Environ()
+	// before spawn, so parent-process variables like PATH and HOME
+	// remain visible to the subprocess by default.
+	//
+	// Note: this is the inverse of the TypeScript SDK's Options.env,
+	// which REPLACES the subprocess environment entirely (sdk.d.ts
+	// v0.3.150 L1326-L1332). Callers porting from TS that relied on
+	// the replace-semantics must clear inherited variables themselves;
+	// there is no opt-in flag for replace mode.
+	//
+	// ANTHROPIC_API_KEY should be set here or in the parent
+	// environment.
 	Env map[string]string
 
 	// PermissionMode controls tool execution permissions.
@@ -155,6 +166,13 @@ type Options struct {
 
 	// AllowedTools is a list of allowed tool names.
 	// If empty, all tools are allowed.
+	//
+	// Note: passing "Skill" here is deprecated as of TS SDK v0.3.150
+	// (sdk.d.ts L1265-L1268). Per-agent skill preloading lives on
+	// AgentDefinition.Skills; a top-level user-facing skills option
+	// is tracked separately and is not yet exposed by the Go SDK
+	// (the existing Options.Skills field mirrors the control-init
+	// loading allowlist, which is a different surface).
 	AllowedTools []string
 
 	// DisallowedTools is a list of disallowed tool names.
@@ -800,9 +818,14 @@ const (
 	EffortMedium EffortLevel = "medium"
 	// EffortHigh applies deep reasoning.
 	EffortHigh EffortLevel = "high"
-	// EffortXHigh applies deeper reasoning than high.
+	// EffortXHigh applies deeper reasoning than high. Supported only
+	// on Opus 4.7; silently falls back to "high" on other models per
+	// TS SDK v0.3.150 (sdk.d.ts L519-L522, L1511-L1512).
 	EffortXHigh EffortLevel = "xhigh"
-	// EffortMax applies maximum effort.
+	// EffortMax applies maximum effort. Supported on Opus 4.6, Opus
+	// 4.7, and Sonnet 4.6 per TS SDK v0.3.150 (sdk.d.ts L519-L522,
+	// L1511-L1512). On unsupported models the CLI falls back per its
+	// own downgrade policy.
 	EffortMax EffortLevel = "max"
 )
 
@@ -1969,9 +1992,15 @@ type HookResult struct {
 
 // AgentDefinition defines a specialized subagent.
 type AgentDefinition struct {
-	Name                               string               `json:"-"` // Agent identifier
-	Description                        string               `json:"description"`
-	Prompt                             string               `json:"prompt"`
+	Name        string `json:"-"` // Agent identifier
+	Description string `json:"description"`
+	Prompt      string `json:"prompt"`
+	// Tools is the array of allowed tool names for this agent. When
+	// omitted, the agent inherits all tools from its parent.
+	//
+	// Note: passing "Skill" here is deprecated as of TS SDK v0.3.150
+	// (sdk.d.ts L44). Use AgentDefinition.Skills for per-agent skill
+	// preload instead.
 	Tools                              []string             `json:"tools,omitempty"`
 	Model                              string               `json:"model,omitempty"`
 	DisallowedTools                    []string             `json:"disallowedTools,omitempty"`
