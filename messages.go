@@ -305,6 +305,7 @@ type SDKControlRequestBody struct {
 	DryRun                 *bool                               `json:"dry_run,omitempty"`                // For rewind_files
 	Path                   string                              `json:"path,omitempty"`                   // For read_file/seed_read_state
 	MaxBytes               *int                                `json:"max_bytes,omitempty"`              // For read_file
+	Encoding               string                              `json:"encoding,omitempty"`               // For read_file ("utf-8"|"base64")
 	MTime                  *int64                              `json:"mtime,omitempty"`                  // For seed_read_state
 	Settings               *map[string]interface{}             `json:"settings,omitempty"`               // For apply_flag_settings
 	TaskID                 string                              `json:"task_id,omitempty"`                // For stop_task

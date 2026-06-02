@@ -833,6 +833,7 @@ func (s *Stream) SeedReadState(ctx context.Context, path string, mtime int64) er
 }
 
 // ReadFile reads a file from the session filesystem using CLI read permissions.
+// Use ReadFileOptions.Encoding="base64" when reading binary content.
 // Unlike the TypeScript SDK, CLI errors are returned to the caller instead of
 // being swallowed as a nil response.
 func (s *Stream) ReadFile(
@@ -844,8 +845,13 @@ func (s *Stream) ReadFile(
 		Subtype: "read_file",
 		Path:    path,
 	}
-	if opts != nil && opts.MaxBytes > 0 {
-		body.MaxBytes = &opts.MaxBytes
+	if opts != nil {
+		if opts.MaxBytes > 0 {
+			body.MaxBytes = &opts.MaxBytes
+		}
+		if opts.Encoding != "" {
+			body.Encoding = opts.Encoding
+		}
 	}
 	resp, err := s.sendSDKControlRequest(ctx, body)
 	if err != nil {

@@ -4,6 +4,7 @@ package claudeagent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -1680,6 +1681,47 @@ func TestIntegrationStreamFileAndRuntime(t *testing.T) {
 		assert.Equal(t, markerContent, got.Contents)
 		assert.Equal(t, filepath.Clean(markerPath), filepath.Clean(got.AbsPath))
 		assert.False(t, got.Truncated)
+	})
+
+	t.Run("read_file_base64", func(t *testing.T) {
+		tempDir := t.TempDir()
+		binaryPath := filepath.Join(tempDir, "marker.bin")
+		binaryBytes := []byte{0x00, 0x01, 0x02, 0xFF, 0xFE, 'h', 'i'}
+		require.NoError(t, os.WriteFile(binaryPath, binaryBytes, 0o644))
+
+		opts := append(isolatedClientOptions(t),
+			WithCwd(tempDir),
+			WithSystemPrompt("You are a helpful assistant."),
+			WithPermissionMode(PermissionModeBypassAll),
+			WithAllowDangerouslySkipPermissions(true),
+		)
+		client, err := NewClient(opts...)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, client.Close())
+		})
+
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+		defer cancel()
+
+		stream, err := client.Stream(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, stream.Close())
+		})
+
+		got, err := stream.ReadFile(ctx, "marker.bin", &ReadFileOptions{
+			Encoding: "base64",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Equal(t, "base64", got.Encoding,
+			"CLI should echo encoding=base64 when honored")
+
+		decoded, err := base64.StdEncoding.DecodeString(got.Contents)
+		require.NoError(t, err)
+		assert.Equal(t, binaryBytes, decoded)
+		assert.Equal(t, filepath.Clean(binaryPath), filepath.Clean(got.AbsPath))
 	})
 
 	t.Run("seed_read_state", func(t *testing.T) {
