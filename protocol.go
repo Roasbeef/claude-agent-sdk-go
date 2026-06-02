@@ -195,6 +195,10 @@ func (p *Protocol) handleControlRequest(ctx context.Context, req ControlRequest)
 	case "hook_callback":
 		resp = p.handleHookCallback(ctx, req)
 
+	// Host auth token refresh from CLI.
+	case "host_auth_token_refresh":
+		resp = p.handleHostAuthTokenRefresh(ctx, req)
+
 	// MCP message from CLI (mcp_message) - routes to in-process MCP server.
 	case "mcp_message":
 		resp = p.handleMCPMessage(ctx, req)
@@ -266,6 +270,42 @@ func (p *Protocol) handlePermissionRequest(ctx context.Context, req ControlReque
 			Subtype:   "success",
 			RequestID: req.RequestID,
 			Response:  respData,
+		},
+	}
+}
+
+// handleHostAuthTokenRefresh services a host_auth_token_refresh control
+// request by invoking the configured callback.
+func (p *Protocol) handleHostAuthTokenRefresh(
+	ctx context.Context, req ControlRequest,
+) SDKControlResponse {
+	if p.options.GetHostAuthToken == nil {
+		return SDKControlResponse{
+			Type: "control_response",
+			Response: SDKControlResponseBody{
+				Subtype:   "error",
+				RequestID: req.RequestID,
+				Error:     "GetHostAuthToken callback is not provided",
+			},
+		}
+	}
+	token, err := p.options.GetHostAuthToken(ctx)
+	if err != nil {
+		return SDKControlResponse{
+			Type: "control_response",
+			Response: SDKControlResponseBody{
+				Subtype:   "error",
+				RequestID: req.RequestID,
+				Error:     err.Error(),
+			},
+		}
+	}
+	return SDKControlResponse{
+		Type: "control_response",
+		Response: SDKControlResponseBody{
+			Subtype:   "success",
+			RequestID: req.RequestID,
+			Response:  map[string]interface{}{"authToken": token},
 		},
 	}
 }

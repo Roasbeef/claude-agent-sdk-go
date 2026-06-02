@@ -308,6 +308,8 @@ type SDKControlRequestBody struct {
 	Encoding               string                              `json:"encoding,omitempty"`               // For read_file ("utf-8"|"base64")
 	MTime                  *int64                              `json:"mtime,omitempty"`                  // For seed_read_state
 	Settings               *map[string]interface{}             `json:"settings,omitempty"`               // For apply_flag_settings
+	Description            string                              `json:"description,omitempty"`            // For submit_feedback
+	Surface                string                              `json:"surface,omitempty"`                // For submit_feedback
 	TaskID                 string                              `json:"task_id,omitempty"`                // For stop_task
 	ServerName             string                              `json:"server_name,omitempty"`            // For mcp_message (snake_case)
 	MCPServerName          string                              `json:"serverName,omitempty"`             // For mcp_reconnect/mcp_toggle/mcp_set_servers (camelCase)
