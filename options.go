@@ -581,7 +581,15 @@ type SettingsSandbox struct {
 	EnableWeakerNetworkIsolation *bool                      `json:"enableWeakerNetworkIsolation,omitempty"`
 	ExcludedCommands             []string                   `json:"excludedCommands,omitempty"`
 	Ripgrep                      *SettingsSandboxRipgrep    `json:"ripgrep,omitempty"`
-	Extra                        map[string]interface{}     `json:"-"`
+	// BwrapPath is the absolute path to the bwrap (bubblewrap) binary on
+	// Linux/WSL. Overrides auto-detection via PATH. Honored only from
+	// admin-controlled managed settings. Mirrors sdk.d.ts v0.3.150 L5133.
+	BwrapPath string `json:"bwrapPath,omitempty"`
+	// SocatPath is the absolute path to the socat binary used by the sandbox
+	// network proxy on Linux/WSL. Overrides auto-detection via PATH. Honored
+	// only from admin-controlled managed settings. Mirrors sdk.d.ts v0.3.150 L5137.
+	SocatPath string                 `json:"socatPath,omitempty"`
+	Extra     map[string]interface{} `json:"-"`
 }
 
 func (s SettingsSandbox) MarshalJSON() ([]byte, error) {
@@ -613,6 +621,11 @@ type SettingsSandboxNetwork struct {
 	AllowMachLookup         []string `json:"allowMachLookup,omitempty"`
 	HTTPProxyPort           *int     `json:"httpProxyPort,omitempty"`
 	SocksProxyPort          *int     `json:"socksProxyPort,omitempty"`
+	// TLSTerminate enables in-process TLS termination so the per-request
+	// filter can inspect HTTPS request bodies. Provide a CA cert+key, or
+	// leave both empty so sandbox-runtime generates an ephemeral pair for
+	// the session. Experimental. Mirrors sdk.d.ts v0.3.150 L5086.
+	TLSTerminate *SettingsSandboxTLSTerminate `json:"tlsTerminate,omitempty"`
 }
 
 type SettingsSandboxFilesystem struct {
@@ -626,6 +639,15 @@ type SettingsSandboxFilesystem struct {
 type SettingsSandboxRipgrep struct {
 	Command string   `json:"command"`
 	Args    []string `json:"args,omitempty"`
+}
+
+// SettingsSandboxTLSTerminate enables in-process TLS termination so the
+// per-request filter can see HTTPS request bodies. Provide a CA cert+key, or
+// omit both to have sandbox-runtime generate an ephemeral one for the session.
+// Experimental. Mirrors sdk.d.ts v0.3.150 L5086-L5092.
+type SettingsSandboxTLSTerminate struct {
+	CACertPath string `json:"caCertPath,omitempty"`
+	CAKeyPath  string `json:"caKeyPath,omitempty"`
 }
 
 // SandboxSettings configures sandbox behavior.
