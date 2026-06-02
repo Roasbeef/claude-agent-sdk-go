@@ -518,6 +518,136 @@ func TestSettingsWorktreeFieldsJSON(t *testing.T) {
 	})
 }
 
+func TestSettingsCommandHideVimModeIndicatorJSON(t *testing.T) {
+	t.Run("nil omits key", func(t *testing.T) {
+		in := Settings{
+			StatusLine: &SettingsCommand{
+				Type:    "command",
+				Command: "/usr/bin/statusline",
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		sl, ok := got["statusLine"].(map[string]interface{})
+		require.True(t, ok)
+		assert.NotContains(t, sl, "hideVimModeIndicator")
+	})
+
+	t.Run("explicit false emits", func(t *testing.T) {
+		hide := false
+		in := Settings{
+			StatusLine: &SettingsCommand{
+				Type:                 "command",
+				Command:              "/usr/bin/statusline",
+				HideVimModeIndicator: &hide,
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		sl := got["statusLine"].(map[string]interface{})
+		assert.Equal(t, false, sl["hideVimModeIndicator"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.StatusLine)
+		require.NotNil(t, out.StatusLine.HideVimModeIndicator)
+		assert.False(t, *out.StatusLine.HideVimModeIndicator)
+	})
+
+	t.Run("explicit true round-trip", func(t *testing.T) {
+		hide := true
+		in := Settings{
+			StatusLine: &SettingsCommand{
+				Type:                 "command",
+				Command:              "/usr/bin/statusline",
+				HideVimModeIndicator: &hide,
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.StatusLine)
+		require.NotNil(t, out.StatusLine.HideVimModeIndicator)
+		assert.True(t, *out.StatusLine.HideVimModeIndicator)
+	})
+}
+
+func TestSettingsMarketplaceSourceVariants(t *testing.T) {
+	t.Run("skills-dir bare tag round-trip", func(t *testing.T) {
+		in := Settings{
+			ExtraKnownMarketplaces: map[string]SettingsMarketplace{
+				"my-skills": {
+					Source: SettingsMarketplaceSource{
+						"source": string(SettingsMarketplaceSourceSkillsDir),
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		got := out.ExtraKnownMarketplaces["my-skills"].Source
+		assert.Equal(t, "skills-dir", got["source"])
+		assert.Len(t, got, 1)
+	})
+
+	t.Run("unsupported bare tag round-trip", func(t *testing.T) {
+		in := Settings{
+			ExtraKnownMarketplaces: map[string]SettingsMarketplace{
+				"legacy": {
+					Source: SettingsMarketplaceSource{
+						"source": string(SettingsMarketplaceSourceUnsupported),
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		got := out.ExtraKnownMarketplaces["legacy"].Source
+		assert.Equal(t, "unsupported", got["source"])
+		assert.Len(t, got, 1)
+	})
+
+	t.Run("github variant still round-trips alongside", func(t *testing.T) {
+		in := Settings{
+			ExtraKnownMarketplaces: map[string]SettingsMarketplace{
+				"upstream": {
+					Source: SettingsMarketplaceSource{
+						"source": string(SettingsMarketplaceSourceGithub),
+						"repo":   "anthropics/skills",
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		got := out.ExtraKnownMarketplaces["upstream"].Source
+		assert.Equal(t, "github", got["source"])
+		assert.Equal(t, "anthropics/skills", got["repo"])
+	})
+
+	t.Run("constants resolve to documented strings", func(t *testing.T) {
+		assert.Equal(t, "skills-dir", string(SettingsMarketplaceSourceSkillsDir))
+		assert.Equal(t, "unsupported", string(SettingsMarketplaceSourceUnsupported))
+	})
+}
+
 func TestBaseHookInputEffortJSON(t *testing.T) {
 	t.Run("marshal includes effort", func(t *testing.T) {
 		data, err := json.Marshal(PreToolUseInput{

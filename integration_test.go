@@ -2037,6 +2037,19 @@ func TestIntegrationSettingsWorktreeFields(t *testing.T) {
 	t.Skip("not directly assertable from CLI: worktree.baseRef and worktree.bgIsolation are consumed by CLI --worktree / EnterWorktree code paths the Go SDK does not invoke")
 }
 
+func TestIntegrationSettingsMiscFields(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// TODO: Backfill when the CLI test fixture can deterministically inject
+	// statusLine.hideVimModeIndicator and the marketplace skills-dir /
+	// unsupported source variants via managed-settings.json so the SDK can
+	// observe them round-tripping through the resolved-settings transport. Both
+	// fields are consumed by CLI renderer / registration code paths the Go SDK
+	// does not invoke directly.
+	t.Skip("not directly assertable from CLI: statusLine.hideVimModeIndicator and marketplace skills-dir/unsupported source variants are consumed by CLI code paths the Go SDK does not invoke")
+}
+
 func TestIntegrationToolAliases(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
