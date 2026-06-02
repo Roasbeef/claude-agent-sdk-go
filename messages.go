@@ -593,11 +593,14 @@ type SystemPlugin struct {
 // These messages are only emitted when IncludePartialMessages is true in Options.
 // They contain raw streaming events for real-time display.
 type PartialAssistantMessage struct {
-	Type            string          `json:"type"`  // Always "stream_event"
-	Event           json.RawMessage `json:"event"` // Raw streaming event
-	ParentToolUseID *string         `json:"parent_tool_use_id,omitempty"`
-	UUID            string          `json:"uuid"`       // Unique message ID
-	SessionID       string          `json:"session_id"` // Session identifier
+	Type  string          `json:"type"`  // Always "stream_event"
+	Event json.RawMessage `json:"event"` // Raw streaming event
+	// ParentToolUseID is the parent tool_use ID when the partial event is
+	// nested inside a subagent invocation (Task tool); nil for top-level
+	// streaming. The wire key is always present (string or null).
+	ParentToolUseID *string `json:"parent_tool_use_id"`
+	UUID            string  `json:"uuid"`       // Unique message ID
+	SessionID       string  `json:"session_id"` // Session identifier
 }
 
 // MessageType implements Message.
