@@ -889,8 +889,17 @@ func (s *Stream) ReloadPlugins(
 	return &out, nil
 }
 
-// ApplyFlagSettings merges settings into the active flag settings layer.
-// Top-level keys are shallow-merged by the CLI across successive calls.
+// ApplyFlagSettings merges the provided settings into the flag settings layer,
+// updating the active configuration. Top-level keys are shallow-merged by the
+// CLI across successive calls and fall back to lower-precedence sources when
+// absent (an omitted key is a no-op).
+//
+// To clear a previously-set top-level key from the flag layer, pass it
+// explicitly with a nil value - this marshals to JSON null on the wire, which
+// the CLI treats as a clear-this-key signal. Passing nil as the whole settings
+// map sends an empty object (no-op for all keys).
+//
+// Only available in streaming input mode.
 func (s *Stream) ApplyFlagSettings(
 	ctx context.Context,
 	settings map[string]interface{},

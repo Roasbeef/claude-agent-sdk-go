@@ -1741,7 +1741,17 @@ func TestIntegrationStreamFileAndRuntime(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
+		// Empty-map call: baseline (was the original assertion).
 		require.NoError(t, stream.ApplyFlagSettings(ctx, map[string]interface{}{}))
+
+		// Set a flag key, then clear it with an explicit nil value. The CLI is
+		// the authority on flag-key validation; there is no read-back API yet.
+		require.NoError(t, stream.ApplyFlagSettings(ctx, map[string]interface{}{
+			"verbose": true,
+		}))
+		require.NoError(t, stream.ApplyFlagSettings(ctx, map[string]interface{}{
+			"verbose": nil,
+		}))
 	})
 
 	t.Run("deferred_runtime_methods", func(t *testing.T) {

@@ -399,6 +399,46 @@ func TestStreamApplyFlagSettingsNil(t *testing.T) {
 	)
 }
 
+// TestStreamApplyFlagSettingsNullValue asserts that a nil interface{} value for
+// a top-level key marshals to JSON null on the wire - the v0.3.150 contract
+// for clearing a key from the flag layer.
+func TestStreamApplyFlagSettingsNullValue(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		return stream.ApplyFlagSettings(ctx, map[string]interface{}{
+			"clearMe": nil,
+		})
+	})
+	require.NoError(t, err)
+
+	assert.JSONEq(t,
+		`{"type":"control_request","request_id":"req_1","request":{"subtype":"apply_flag_settings","settings":{"clearMe":null}}}`,
+		rawWrittenSDKControlRequest(t, transport),
+	)
+}
+
+// TestStreamApplyFlagSettingsMixedNullValues asserts a mixed map with both
+// concrete values and explicit nils round-trips with each key preserved and
+// nil values rendered as JSON null.
+func TestStreamApplyFlagSettingsMixedNullValues(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		return stream.ApplyFlagSettings(ctx, map[string]interface{}{
+			"keep":  "value",
+			"clear": nil,
+			"num":   7,
+		})
+	})
+	require.NoError(t, err)
+
+	assert.JSONEq(t,
+		`{"type":"control_request","request_id":"req_1","request":{"subtype":"apply_flag_settings","settings":{"keep":"value","clear":null,"num":7}}}`,
+		rawWrittenSDKControlRequest(t, transport),
+	)
+}
+
 func TestStreamStopTaskWireShape(t *testing.T) {
 	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
 
