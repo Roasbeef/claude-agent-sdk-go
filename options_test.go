@@ -309,6 +309,139 @@ func TestSettingsManagedOrgFieldsJSON(t *testing.T) {
 	})
 }
 
+func TestSettingsSandboxFieldsJSON(t *testing.T) {
+	t.Run("tlsTerminate round-trips with both paths", func(t *testing.T) {
+		in := Settings{
+			Sandbox: &SettingsSandbox{
+				Network: &SettingsSandboxNetwork{
+					TLSTerminate: &SettingsSandboxTLSTerminate{
+						CACertPath: "/etc/claude/ca.crt",
+						CAKeyPath:  "/etc/claude/ca.key",
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		sb, ok := got["sandbox"].(map[string]interface{})
+		require.True(t, ok)
+		nw, ok := sb["network"].(map[string]interface{})
+		require.True(t, ok)
+		tls, ok := nw["tlsTerminate"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "/etc/claude/ca.crt", tls["caCertPath"])
+		assert.Equal(t, "/etc/claude/ca.key", tls["caKeyPath"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.Sandbox)
+		require.NotNil(t, out.Sandbox.Network)
+		require.NotNil(t, out.Sandbox.Network.TLSTerminate)
+		assert.Equal(t, "/etc/claude/ca.crt", out.Sandbox.Network.TLSTerminate.CACertPath)
+		assert.Equal(t, "/etc/claude/ca.key", out.Sandbox.Network.TLSTerminate.CAKeyPath)
+	})
+
+	t.Run("tlsTerminate empty struct emits empty object", func(t *testing.T) {
+		in := Settings{
+			Sandbox: &SettingsSandbox{
+				Network: &SettingsSandboxNetwork{
+					TLSTerminate: &SettingsSandboxTLSTerminate{},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		sb := got["sandbox"].(map[string]interface{})
+		nw := sb["network"].(map[string]interface{})
+		tls, ok := nw["tlsTerminate"].(map[string]interface{})
+		require.True(t, ok)
+		assert.NotContains(t, tls, "caCertPath")
+		assert.NotContains(t, tls, "caKeyPath")
+	})
+
+	t.Run("nil tlsTerminate omits key", func(t *testing.T) {
+		in := Settings{
+			Sandbox: &SettingsSandbox{
+				Network: &SettingsSandboxNetwork{},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		sb := got["sandbox"].(map[string]interface{})
+		nw := sb["network"].(map[string]interface{})
+		assert.NotContains(t, nw, "tlsTerminate")
+	})
+
+	t.Run("bwrapPath and socatPath zero omits keys", func(t *testing.T) {
+		in := Settings{
+			Sandbox: &SettingsSandbox{},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		sb := got["sandbox"].(map[string]interface{})
+		assert.NotContains(t, sb, "bwrapPath")
+		assert.NotContains(t, sb, "socatPath")
+	})
+
+	t.Run("bwrapPath and socatPath emit set values", func(t *testing.T) {
+		in := Settings{
+			Sandbox: &SettingsSandbox{
+				BwrapPath: "/usr/bin/bwrap",
+				SocatPath: "/usr/bin/socat",
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		sb := got["sandbox"].(map[string]interface{})
+		assert.Equal(t, "/usr/bin/bwrap", sb["bwrapPath"])
+		assert.Equal(t, "/usr/bin/socat", sb["socatPath"])
+	})
+
+	t.Run("all new sandbox fields round-trip together", func(t *testing.T) {
+		in := Settings{
+			Sandbox: &SettingsSandbox{
+				Network: &SettingsSandboxNetwork{
+					AllowedDomains: []string{"example.com"},
+					TLSTerminate: &SettingsSandboxTLSTerminate{
+						CACertPath: "/etc/claude/ca.crt",
+						CAKeyPath:  "/etc/claude/ca.key",
+					},
+				},
+				BwrapPath: "/usr/bin/bwrap",
+				SocatPath: "/usr/bin/socat",
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.Sandbox)
+		require.NotNil(t, out.Sandbox.Network)
+		require.NotNil(t, out.Sandbox.Network.TLSTerminate)
+		assert.Equal(t, []string{"example.com"}, out.Sandbox.Network.AllowedDomains)
+		assert.Equal(t, "/etc/claude/ca.crt", out.Sandbox.Network.TLSTerminate.CACertPath)
+		assert.Equal(t, "/etc/claude/ca.key", out.Sandbox.Network.TLSTerminate.CAKeyPath)
+		assert.Equal(t, "/usr/bin/bwrap", out.Sandbox.BwrapPath)
+		assert.Equal(t, "/usr/bin/socat", out.Sandbox.SocatPath)
+	})
+}
+
 func TestBaseHookInputEffortJSON(t *testing.T) {
 	t.Run("marshal includes effort", func(t *testing.T) {
 		data, err := json.Marshal(PreToolUseInput{

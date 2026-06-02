@@ -2011,6 +2011,20 @@ func TestIntegrationSettingsManagedOrgFields(t *testing.T) {
 	t.Skip("not directly assertable from CLI: managed-org settings are honored only from admin-controlled policy sources, not surfaced on user CLI flag entry points")
 }
 
+func TestIntegrationSettingsSandboxFields(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// TODO: Backfill when the CLI test fixture can deterministically inject
+	// sandbox.tlsTerminate / sandbox.bwrapPath / sandbox.socatPath via
+	// managed-settings.json so the SDK can observe them round-tripping through
+	// the resolved-settings transport. tlsTerminate is experimental runtime
+	// sandbox behavior, and bwrapPath/socatPath are honored only from
+	// admin-controlled managed settings — none are surfaced on user CLI flag
+	// entry points.
+	t.Skip("not directly assertable from CLI: sandbox tlsTerminate is experimental runtime behavior, bwrapPath/socatPath are honored only from admin-controlled policy sources")
+}
+
 func TestIntegrationToolAliases(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
