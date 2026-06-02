@@ -112,6 +112,203 @@ func TestSettingsHookContinueOnBlockJSON(t *testing.T) {
 	})
 }
 
+func TestSettingsManagedOrgFieldsJSON(t *testing.T) {
+	t.Run("policyHelper round-trips with all fields", func(t *testing.T) {
+		timeout := 5000
+		refresh := 60000
+		in := Settings{
+			PolicyHelper: &SettingsPolicyHelper{
+				Path:              "/usr/local/bin/claude-policy",
+				TimeoutMs:         &timeout,
+				RefreshIntervalMs: &refresh,
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		ph, ok := got["policyHelper"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "/usr/local/bin/claude-policy", ph["path"])
+		assert.Equal(t, float64(5000), ph["timeoutMs"])
+		assert.Equal(t, float64(60000), ph["refreshIntervalMs"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.PolicyHelper)
+		assert.Equal(t, "/usr/local/bin/claude-policy", out.PolicyHelper.Path)
+		require.NotNil(t, out.PolicyHelper.TimeoutMs)
+		assert.Equal(t, 5000, *out.PolicyHelper.TimeoutMs)
+		require.NotNil(t, out.PolicyHelper.RefreshIntervalMs)
+		assert.Equal(t, 60000, *out.PolicyHelper.RefreshIntervalMs)
+	})
+
+	t.Run("policyHelper omits optional ms fields when nil", func(t *testing.T) {
+		in := Settings{
+			PolicyHelper: &SettingsPolicyHelper{
+				Path: "/usr/local/bin/claude-policy",
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		ph, ok := got["policyHelper"].(map[string]interface{})
+		require.True(t, ok)
+		assert.NotContains(t, ph, "timeoutMs")
+		assert.NotContains(t, ph, "refreshIntervalMs")
+	})
+
+	t.Run("nil PolicyHelper omits key", func(t *testing.T) {
+		data, err := json.Marshal(Settings{})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "policyHelper")
+	})
+
+	t.Run("boolean fields nil omits key", func(t *testing.T) {
+		data, err := json.Marshal(Settings{})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		for _, k := range []string{
+			"disableAgentView",
+			"disableRemoteControl",
+			"allowAllClaudeAiMcps",
+			"isolatePeerMachines",
+		} {
+			assert.NotContains(t, got, k, "key %q must be omitted when nil", k)
+		}
+	})
+
+	t.Run("boolean fields explicit false is emitted", func(t *testing.T) {
+		f := false
+		in := Settings{
+			DisableAgentView:     &f,
+			DisableRemoteControl: &f,
+			AllowAllClaudeAiMcps: &f,
+			IsolatePeerMachines:  &f,
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, false, got["disableAgentView"])
+		assert.Equal(t, false, got["disableRemoteControl"])
+		assert.Equal(t, false, got["allowAllClaudeAiMcps"])
+		assert.Equal(t, false, got["isolatePeerMachines"])
+	})
+
+	t.Run("boolean fields explicit true round-trips", func(t *testing.T) {
+		v := true
+		in := Settings{
+			DisableAgentView:     &v,
+			DisableRemoteControl: &v,
+			AllowAllClaudeAiMcps: &v,
+			IsolatePeerMachines:  &v,
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.DisableAgentView)
+		assert.Equal(t, true, *out.DisableAgentView)
+		require.NotNil(t, out.DisableRemoteControl)
+		assert.Equal(t, true, *out.DisableRemoteControl)
+		require.NotNil(t, out.AllowAllClaudeAiMcps)
+		assert.Equal(t, true, *out.AllowAllClaudeAiMcps)
+		require.NotNil(t, out.IsolatePeerMachines)
+		assert.Equal(t, true, *out.IsolatePeerMachines)
+	})
+
+	t.Run("string fields zero omits key", func(t *testing.T) {
+		data, err := json.Marshal(Settings{})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		for _, k := range []string{
+			"parentSettingsBehavior",
+			"daemonColdStart",
+			"disableDeepLinkRegistration",
+			"defaultView",
+			"claudeMd",
+		} {
+			assert.NotContains(t, got, k, "key %q must be omitted when zero", k)
+		}
+	})
+
+	t.Run("string fields round-trip canonical values", func(t *testing.T) {
+		in := Settings{
+			ClaudeMD:                    "always run in dry-run mode",
+			ParentSettingsBehavior:      "merge",
+			DaemonColdStart:             "transient",
+			DisableDeepLinkRegistration: "disable",
+			DefaultView:                 "chat",
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		assert.Equal(t, "always run in dry-run mode", out.ClaudeMD)
+		assert.Equal(t, "merge", out.ParentSettingsBehavior)
+		assert.Equal(t, "transient", out.DaemonColdStart)
+		assert.Equal(t, "disable", out.DisableDeepLinkRegistration)
+		assert.Equal(t, "chat", out.DefaultView)
+	})
+
+	t.Run("all managed-org fields round-trip together", func(t *testing.T) {
+		v := true
+		timeout := 5000
+		in := Settings{
+			PolicyHelper: &SettingsPolicyHelper{
+				Path:      "/usr/local/bin/claude-policy",
+				TimeoutMs: &timeout,
+			},
+			ClaudeMD:                    "managed memory",
+			DisableAgentView:            &v,
+			DisableRemoteControl:        &v,
+			AllowAllClaudeAiMcps:        &v,
+			ParentSettingsBehavior:      "first-wins",
+			IsolatePeerMachines:         &v,
+			DaemonColdStart:             "ask",
+			DisableDeepLinkRegistration: "disable",
+			DefaultView:                 "transcript",
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.PolicyHelper)
+		assert.Equal(t, "/usr/local/bin/claude-policy", out.PolicyHelper.Path)
+		require.NotNil(t, out.PolicyHelper.TimeoutMs)
+		assert.Equal(t, 5000, *out.PolicyHelper.TimeoutMs)
+		assert.Nil(t, out.PolicyHelper.RefreshIntervalMs)
+		assert.Equal(t, "managed memory", out.ClaudeMD)
+		require.NotNil(t, out.DisableAgentView)
+		assert.Equal(t, true, *out.DisableAgentView)
+		require.NotNil(t, out.DisableRemoteControl)
+		assert.Equal(t, true, *out.DisableRemoteControl)
+		require.NotNil(t, out.AllowAllClaudeAiMcps)
+		assert.Equal(t, true, *out.AllowAllClaudeAiMcps)
+		assert.Equal(t, "first-wins", out.ParentSettingsBehavior)
+		require.NotNil(t, out.IsolatePeerMachines)
+		assert.Equal(t, true, *out.IsolatePeerMachines)
+		assert.Equal(t, "ask", out.DaemonColdStart)
+		assert.Equal(t, "disable", out.DisableDeepLinkRegistration)
+		assert.Equal(t, "transcript", out.DefaultView)
+	})
+}
+
 func TestBaseHookInputEffortJSON(t *testing.T) {
 	t.Run("marshal includes effort", func(t *testing.T) {
 		data, err := json.Marshal(PreToolUseInput{

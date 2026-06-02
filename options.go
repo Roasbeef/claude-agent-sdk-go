@@ -264,12 +264,14 @@ const (
 // Settings configures Claude Code settings supplied via --settings or
 // --managed-settings.
 type Settings struct {
-	Schema                            string                           `json:"$schema,omitempty"`
-	APIKeyHelper                      string                           `json:"apiKeyHelper,omitempty"`
-	ProxyAuthHelper                   string                           `json:"proxyAuthHelper,omitempty"`
-	AWSCredentialExport               string                           `json:"awsCredentialExport,omitempty"`
-	AWSAuthRefresh                    string                           `json:"awsAuthRefresh,omitempty"`
-	GCPAuthRefresh                    string                           `json:"gcpAuthRefresh,omitempty"`
+	Schema              string `json:"$schema,omitempty"`
+	APIKeyHelper        string `json:"apiKeyHelper,omitempty"`
+	ProxyAuthHelper     string `json:"proxyAuthHelper,omitempty"`
+	AWSCredentialExport string `json:"awsCredentialExport,omitempty"`
+	AWSAuthRefresh      string `json:"awsAuthRefresh,omitempty"`
+	GCPAuthRefresh      string `json:"gcpAuthRefresh,omitempty"`
+	// PolicyHelper configures the admin-controlled policy executable invoked at startup to compute managed settings. Honored only from policy sources. Mirrors sdk.d.ts v0.3.150 L3993.
+	PolicyHelper                      *SettingsPolicyHelper            `json:"policyHelper,omitempty"`
 	FileSuggestion                    *SettingsFileSuggestion          `json:"fileSuggestion,omitempty"`
 	RespectGitignore                  *bool                            `json:"respectGitignore,omitempty"`
 	CleanupPeriodDays                 *int                             `json:"cleanupPeriodDays,omitempty"`
@@ -350,29 +352,55 @@ type Settings struct {
 	SkipDangerousModePermissionPrompt *bool                            `json:"skipDangerousModePermissionPrompt,omitempty"`
 	DisableAutoMode                   string                           `json:"disableAutoMode,omitempty"`
 	SSHConfigs                        []SettingsSSHConfig              `json:"sshConfigs,omitempty"`
-	ClaudeMDExcludes                  []string                         `json:"claudeMdExcludes,omitempty"`
-	PluginTrustMessage                string                           `json:"pluginTrustMessage,omitempty"`
-	Theme                             string                           `json:"theme,omitempty"`
-	EditorMode                        string                           `json:"editorMode,omitempty"`
-	Verbose                           *bool                            `json:"verbose,omitempty"`
-	PreferredNotifChannel             string                           `json:"preferredNotifChannel,omitempty"`
-	AutoCompactEnabled                *bool                            `json:"autoCompactEnabled,omitempty"`
-	AutoScrollEnabled                 *bool                            `json:"autoScrollEnabled,omitempty"`
-	FileCheckpointingEnabled          *bool                            `json:"fileCheckpointingEnabled,omitempty"`
-	ShowTurnDuration                  *bool                            `json:"showTurnDuration,omitempty"`
-	ShowMessageTimestamps             *bool                            `json:"showMessageTimestamps,omitempty"`
-	TerminalProgressBarEnabled        *bool                            `json:"terminalProgressBarEnabled,omitempty"`
-	TodoFeatureEnabled                *bool                            `json:"todoFeatureEnabled,omitempty"`
-	TeammateMode                      string                           `json:"teammateMode,omitempty"`
-	RemoteControlAtStartup            *bool                            `json:"remoteControlAtStartup,omitempty"`
-	AutoUploadSessions                *bool                            `json:"autoUploadSessions,omitempty"`
-	InputNeededNotifEnabled           *bool                            `json:"inputNeededNotifEnabled,omitempty"`
-	AgentPushNotifEnabled             *bool                            `json:"agentPushNotifEnabled,omitempty"`
+	// ClaudeMD is CLAUDE.md-style instructions injected as organization-managed memory. Honored only from managed / policy settings. Mirrors sdk.d.ts v0.3.150 L5343.
+	ClaudeMD                   string   `json:"claudeMd,omitempty"`
+	ClaudeMDExcludes           []string `json:"claudeMdExcludes,omitempty"`
+	PluginTrustMessage         string   `json:"pluginTrustMessage,omitempty"`
+	Theme                      string   `json:"theme,omitempty"`
+	EditorMode                 string   `json:"editorMode,omitempty"`
+	Verbose                    *bool    `json:"verbose,omitempty"`
+	PreferredNotifChannel      string   `json:"preferredNotifChannel,omitempty"`
+	AutoCompactEnabled         *bool    `json:"autoCompactEnabled,omitempty"`
+	AutoScrollEnabled          *bool    `json:"autoScrollEnabled,omitempty"`
+	FileCheckpointingEnabled   *bool    `json:"fileCheckpointingEnabled,omitempty"`
+	ShowTurnDuration           *bool    `json:"showTurnDuration,omitempty"`
+	ShowMessageTimestamps      *bool    `json:"showMessageTimestamps,omitempty"`
+	TerminalProgressBarEnabled *bool    `json:"terminalProgressBarEnabled,omitempty"`
+	TodoFeatureEnabled         *bool    `json:"todoFeatureEnabled,omitempty"`
+	TeammateMode               string   `json:"teammateMode,omitempty"`
+	RemoteControlAtStartup     *bool    `json:"remoteControlAtStartup,omitempty"`
+	AutoUploadSessions         *bool    `json:"autoUploadSessions,omitempty"`
+	InputNeededNotifEnabled    *bool    `json:"inputNeededNotifEnabled,omitempty"`
+	AgentPushNotifEnabled      *bool    `json:"agentPushNotifEnabled,omitempty"`
+	// Managed-org / policy tier additions (sdk.d.ts v0.3.150).
+	// DisableAgentView disables the agent view. Typically set in managed settings. Mirrors sdk.d.ts v0.3.150 L4375.
+	DisableAgentView *bool `json:"disableAgentView,omitempty"`
+	// DisableRemoteControl disables Remote Control. Typically set in managed settings. Mirrors sdk.d.ts v0.3.150 L4379.
+	DisableRemoteControl *bool `json:"disableRemoteControl,omitempty"`
+	// AllowAllClaudeAiMcps lets claude.ai cloud MCP connectors load alongside managed-mcp.json. Mirrors sdk.d.ts v0.3.150 L4411.
+	AllowAllClaudeAiMcps *bool `json:"allowAllClaudeAiMcps,omitempty"`
+	// ParentSettingsBehavior controls whether the SDK parent tier layers under the admin tier. Mirrors sdk.d.ts v0.3.150 L5019.
+	ParentSettingsBehavior string `json:"parentSettingsBehavior,omitempty"`
+	// IsolatePeerMachines requires approval before SendMessage can reach peer sessions on other machines. Mirrors sdk.d.ts v0.3.150 L5407.
+	IsolatePeerMachines *bool `json:"isolatePeerMachines,omitempty"`
+	// DaemonColdStart controls daemon behavior when no background service is running. Mirrors sdk.d.ts v0.3.150 L5411.
+	DaemonColdStart string `json:"daemonColdStart,omitempty"`
+	// DisableDeepLinkRegistration prevents claude-cli:// protocol handler registration when set to "disable". Mirrors sdk.d.ts v0.3.150 L5427.
+	DisableDeepLinkRegistration string `json:"disableDeepLinkRegistration,omitempty"`
+	// DefaultView controls the default transcript view. Mirrors sdk.d.ts v0.3.150 L5431.
+	DefaultView string `json:"defaultView,omitempty"`
 }
 
 type SettingsFileSuggestion struct {
 	Type    string `json:"type"`
 	Command string `json:"command"`
+}
+
+// SettingsPolicyHelper configures the executable that computes managed settings at startup.
+type SettingsPolicyHelper struct {
+	Path              string `json:"path"`
+	TimeoutMs         *int   `json:"timeoutMs,omitempty"`
+	RefreshIntervalMs *int   `json:"refreshIntervalMs,omitempty"`
 }
 
 type SettingsAttribution struct {
