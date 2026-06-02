@@ -1605,6 +1605,17 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 		resp["hookSpecificOutput"] = hookSpecificOutput
 	}
 
+	if result.SuppressOriginalPrompt != nil && hookType == string(HookTypeUserPromptSubmit) {
+		hookSpecificOutput, _ := resp["hookSpecificOutput"].(map[string]interface{})
+		if hookSpecificOutput == nil {
+			hookSpecificOutput = map[string]interface{}{
+				"hookEventName": string(HookTypeUserPromptSubmit),
+			}
+		}
+		hookSpecificOutput["suppressOriginalPrompt"] = *result.SuppressOriginalPrompt
+		resp["hookSpecificOutput"] = hookSpecificOutput
+	}
+
 	return resp
 }
 

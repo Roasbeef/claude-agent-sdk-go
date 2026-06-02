@@ -729,6 +729,17 @@ func TestIntegrationHookTerminalSequence(t *testing.T) {
 	t.Skip("not directly assertable from CLI: terminalSequence bytes are written to the controlling terminal, not surfaced on the SDK transport")
 }
 
+func TestIntegrationHookSuppressOriginalPrompt(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// TODO: Backfill when the CLI test fixture can assert the
+	// block-message body the CLI returns when a UserPromptSubmit hook
+	// returns suppressOriginalPrompt: true; the omission is a CLI
+	// rendering behavior not directly observable on the SDK transport.
+	t.Skip("not directly assertable from CLI: suppressOriginalPrompt is a CLI block-message rendering behavior, not surfaced on the SDK transport")
+}
+
 func TestIntegrationPostToolUseUpdatedToolOutput(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)

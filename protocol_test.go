@@ -2801,6 +2801,77 @@ func TestBuildHookResponse_TerminalSequence(t *testing.T) {
 	})
 }
 
+// TestBuildHookResponse_SuppressOriginalPrompt verifies that
+// HookResult.SuppressOriginalPrompt is emitted under hookSpecificOutput
+// only for UserPromptSubmit hooks, composes with an explicit
+// HookSpecificOutput map without clobbering existing keys, distinguishes
+// nil from a pointer-to-false, and is ignored on other hook types.
+func TestBuildHookResponse_SuppressOriginalPrompt(t *testing.T) {
+	t.Run("emitted on UserPromptSubmit when true", func(t *testing.T) {
+		v := true
+		resp := buildHookResponse("UserPromptSubmit", HookResult{
+			Continue:               true,
+			SuppressOriginalPrompt: &v,
+		})
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "UserPromptSubmit", hso["hookEventName"])
+		assert.Equal(t, true, hso["suppressOriginalPrompt"])
+	})
+
+	t.Run("explicit false is emitted", func(t *testing.T) {
+		v := false
+		resp := buildHookResponse("UserPromptSubmit", HookResult{
+			Continue:               true,
+			SuppressOriginalPrompt: &v,
+		})
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, false, hso["suppressOriginalPrompt"])
+	})
+
+	t.Run("nil elides field", func(t *testing.T) {
+		resp := buildHookResponse("UserPromptSubmit", HookResult{
+			Continue: true,
+		})
+
+		_, has := resp["hookSpecificOutput"]
+		assert.False(t, has)
+	})
+
+	t.Run("composes with explicit HookSpecificOutput", func(t *testing.T) {
+		v := true
+		resp := buildHookResponse("UserPromptSubmit", HookResult{
+			Continue:               true,
+			SuppressOriginalPrompt: &v,
+			HookSpecificOutput: map[string]interface{}{
+				"hookEventName":     "UserPromptSubmit",
+				"additionalContext": "redacted",
+			},
+		})
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "UserPromptSubmit", hso["hookEventName"])
+		assert.Equal(t, "redacted", hso["additionalContext"])
+		assert.Equal(t, true, hso["suppressOriginalPrompt"])
+	})
+
+	t.Run("ignored on non-UserPromptSubmit hooks", func(t *testing.T) {
+		v := true
+		resp := buildHookResponse("PreToolUse", HookResult{
+			Continue:               true,
+			SuppressOriginalPrompt: &v,
+		})
+
+		_, has := resp["hookSpecificOutput"]
+		assert.False(t, has,
+			"suppressOriginalPrompt must not leak onto non-UserPromptSubmit hookSpecificOutput")
+	})
+}
+
 func TestBuildHookResponse_WatchPaths(t *testing.T) {
 	t.Run("CwdChanged emits watchPaths", func(t *testing.T) {
 		resp := buildHookResponse("CwdChanged", HookResult{
