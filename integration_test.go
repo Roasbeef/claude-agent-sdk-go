@@ -2025,6 +2025,18 @@ func TestIntegrationSettingsSandboxFields(t *testing.T) {
 	t.Skip("not directly assertable from CLI: sandbox tlsTerminate is experimental runtime behavior, bwrapPath/socatPath are honored only from admin-controlled policy sources")
 }
 
+func TestIntegrationSettingsWorktreeFields(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// TODO: Backfill when the CLI test fixture can deterministically inject
+	// worktree.baseRef / worktree.bgIsolation via managed-settings.json so the
+	// SDK can observe them round-tripping through the resolved-settings
+	// transport. Both fields drive the CLI's --worktree / EnterWorktree flow,
+	// which the Go SDK does not invoke directly.
+	t.Skip("not directly assertable from CLI: worktree.baseRef and worktree.bgIsolation are consumed by CLI --worktree / EnterWorktree code paths the Go SDK does not invoke")
+}
+
 func TestIntegrationToolAliases(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
