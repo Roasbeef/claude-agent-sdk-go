@@ -1548,6 +1548,10 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 		resp["continue"] = result.Continue
 	}
 
+	if result.TerminalSequence != "" {
+		resp["terminalSequence"] = result.TerminalSequence
+	}
+
 	// If HookSpecificOutput is set explicitly, use it directly.
 	// This gives callbacks full control over the hookSpecificOutput
 	// envelope when auto-translation of Modify is insufficient.

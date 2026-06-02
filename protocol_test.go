@@ -2714,6 +2714,93 @@ func TestBuildHookResponse_PostToolUseUpdatedToolOutput(t *testing.T) {
 	})
 }
 
+// TestBuildHookResponse_TerminalSequence verifies that
+// HookResult.TerminalSequence is emitted on the wire envelope for both
+// Stop and non-Stop hook returns, that the empty string elides the
+// field, and that it composes with HookSpecificOutput and WatchPaths
+// without interference.
+func TestBuildHookResponse_TerminalSequence(t *testing.T) {
+	t.Run("emitted on non-Stop hook", func(t *testing.T) {
+		resp := buildHookResponse("PreToolUse", HookResult{
+			Continue:         true,
+			TerminalSequence: "\x1b]9;done\x07",
+		})
+
+		assert.Equal(t, true, resp["continue"])
+		assert.Equal(t, "\x1b]9;done\x07", resp["terminalSequence"])
+	})
+
+	t.Run("emitted on Stop hook alongside decision", func(t *testing.T) {
+		resp := buildHookResponse("Stop", HookResult{
+			Decision:         "block",
+			Reason:           "continue work",
+			TerminalSequence: "\x1b]777;notify;hi\x07",
+		})
+
+		assert.Equal(t, "block", resp["decision"])
+		assert.Equal(t, "continue work", resp["reason"])
+		assert.Equal(t, "\x1b]777;notify;hi\x07", resp["terminalSequence"])
+		_, hasContinue := resp["continue"]
+		assert.False(t, hasContinue, "Stop path must not emit continue")
+	})
+
+	t.Run("empty string elides field", func(t *testing.T) {
+		resp := buildHookResponse("PreToolUse", HookResult{
+			Continue: true,
+		})
+
+		_, has := resp["terminalSequence"]
+		assert.False(t, has)
+	})
+
+	t.Run("composes with HookSpecificOutput", func(t *testing.T) {
+		resp := buildHookResponse("PreToolUse", HookResult{
+			Continue:         true,
+			TerminalSequence: "\x07",
+			HookSpecificOutput: map[string]interface{}{
+				"hookEventName":      "PreToolUse",
+				"permissionDecision": "ask",
+			},
+		})
+
+		assert.Equal(t, "\x07", resp["terminalSequence"])
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "ask", hso["permissionDecision"])
+	})
+
+	t.Run("composes with WatchPaths", func(t *testing.T) {
+		resp := buildHookResponse("SessionStart", HookResult{
+			Continue:         true,
+			TerminalSequence: "\x1b]9;watching\x07",
+			WatchPaths:       []string{"/tmp/project"},
+		})
+
+		assert.Equal(t, "\x1b]9;watching\x07", resp["terminalSequence"])
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, []string{"/tmp/project"}, hso["watchPaths"])
+	})
+
+	t.Run("HookJSONOutput round-trip", func(t *testing.T) {
+		out := HookJSONOutput{
+			Continue:         true,
+			TerminalSequence: "\x1b]9;round-trip\x07",
+		}
+		data, err := json.Marshal(out)
+		require.NoError(t, err)
+		assert.Contains(t, string(data), `"terminalSequence":"\u001b]9;round-trip\u0007"`)
+
+		var back HookJSONOutput
+		require.NoError(t, json.Unmarshal(data, &back))
+		assert.Equal(t, "\x1b]9;round-trip\x07", back.TerminalSequence)
+
+		emptyData, err := json.Marshal(HookJSONOutput{Continue: true})
+		require.NoError(t, err)
+		assert.NotContains(t, string(emptyData), "terminalSequence")
+	})
+}
+
 func TestBuildHookResponse_WatchPaths(t *testing.T) {
 	t.Run("CwdChanged emits watchPaths", func(t *testing.T) {
 		resp := buildHookResponse("CwdChanged", HookResult{
