@@ -718,6 +718,17 @@ func TestIntegrationHookContinueOnBlock(t *testing.T) {
 	t.Skip("not directly assertable from CLI: continueOnBlock affects the CLI's turn-continuation decision after a blocking hook, not anything observable on the SDK transport")
 }
 
+func TestIntegrationHookTerminalSequence(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// TODO: Backfill when the CLI test fixture can capture
+	// terminal-escape bytes emitted by a hook return; currently those
+	// go straight to the controlling TTY and aren't observable on the
+	// SDK transport.
+	t.Skip("not directly assertable from CLI: terminalSequence bytes are written to the controlling terminal, not surfaced on the SDK transport")
+}
+
 func TestIntegrationPostToolUseUpdatedToolOutput(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)

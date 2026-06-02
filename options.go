@@ -1754,6 +1754,7 @@ type HookJSONOutput struct {
 	Decision           string                 `json:"decision,omitempty"` // "approve" or "block"
 	SystemMessage      string                 `json:"systemMessage,omitempty"`
 	Reason             string                 `json:"reason,omitempty"`
+	TerminalSequence   string                 `json:"terminalSequence,omitempty"`
 	HookSpecificOutput map[string]interface{} `json:"hookSpecificOutput,omitempty"`
 }
 
@@ -1853,6 +1854,14 @@ type HookResult struct {
 	// SystemMessage is displayed to Claude as context when blocking exit.
 	// Use this to provide iteration counts or other status information.
 	SystemMessage string
+
+	// TerminalSequence is a terminal escape sequence (e.g. OSC 9 / OSC 777
+	// desktop-notification) the CLI will emit verbatim on the SDK consumer's
+	// behalf after running the hook. Empty string omits the field on the
+	// wire. The CLI restricts the allowlist to notification/title OSCs
+	// (0, 1, 2, 9, 99, 777) and BEL; anything else is dropped CLI-side.
+	// Honored on any hook return, sync or async.
+	TerminalSequence string
 
 	// UpdatedToolOutput replaces the tool output sent to the model on
 	// PostToolUse hooks. The value is forwarded verbatim as
