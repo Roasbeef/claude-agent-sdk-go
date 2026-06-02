@@ -1557,6 +1557,11 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 			hookSpecificOutput[key] = value
 		}
 		resp["hookSpecificOutput"] = hookSpecificOutput
+	} else if result.UpdatedToolOutput != nil {
+		resp["hookSpecificOutput"] = map[string]interface{}{
+			"hookEventName":     "PostToolUse",
+			"updatedToolOutput": result.UpdatedToolOutput,
+		}
 	} else if len(result.Modify) > 0 {
 		// Auto-translate Modify into the hookSpecificOutput format
 		// expected by the CLI. PreToolUse and PermissionRequest hooks
