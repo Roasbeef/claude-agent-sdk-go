@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.2.119 catchup work, using Go idioms where the API shape differs.
+v0.3.150 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -209,8 +209,10 @@ For detailed guides and examples, see [docs/examples/](docs/examples/):
 
 ## TypeScript SDK Parity
 
-The v0.2.119 catchup adds coverage for recent Agent SDK and Claude Code CLI
-surfaces, including:
+The SDK tracks the upstream TypeScript Agent SDK release cadence. Coverage
+landed across two catchup cycles.
+
+The v0.2.119 catchup added:
 
 - thinking effort, task budgets, debug files, extra CLI args, agent selection,
   and prompt/agent progress toggles
@@ -221,11 +223,60 @@ surfaces, including:
 - explicit settings support via `WithSettingsPath`, `WithSettings`, and
   `WithManagedSettings`
 
+The v0.3.150 catchup added:
+
+- per-server MCP `Timeout` and `AlwaysLoad` knobs across Stdio/HTTP/SSE/proxy
+  configurations
+- background-tasks control protocol (`Query.BackgroundTasks`) plus
+  `BackgroundTaskSummary` and `SessionCronSummary` payloads on `Stop` /
+  `SessionEnd` hooks
+- new `system/permission_denied` message subtype, `SDKAssistantMessage.Error`
+  enum (incl. `oauth_org_not_allowed`, `model_not_found`), `ResultMessage`
+  TTFT + origin metadata, and `MemoryRecallEntry` `organization` scope
+- hook output additions: `UpdatedToolOutput` on `PostToolUse`,
+  `TerminalSequence` OSC notifications, `SuppressOriginalPrompt` on
+  `UserPromptSubmit`, plus per-hook `Args` (no-shell exec form) and
+  `ContinueOnBlock`
+- managed-org / sandbox / worktree / marketplace settings batch covering
+  `PolicyHelper`, `DisableAgentView`, `IsolatePeerMachines`,
+  `Sandbox.TLSTerminate`, `Worktree.BaseRef`, `StatusLine.HideVimModeIndicator`,
+  marketplace `skills-dir` / `unsupported` source variants, and others
+- `read_file` `Encoding` (utf-8 / base64), `applyFlagSettings` per-key null
+  clearing, host-side `host_auth_token_refresh` and `submit_feedback` control
+  subtypes
+
 Some areas remain intentionally limited by the CLI or integration harness:
 desktop/IDE-only settings are not modeled exhaustively, several runtime control
 paths have unit coverage plus skipped integration slots until stable live CLI
 fixtures exist, and alpha task/agent behavior should still be checked against
 the installed Claude Code CLI version.
+
+### Porting from the TypeScript SDK - Go-side differences
+
+A short list of places the Go SDK consciously diverges from the TS shape; if
+you are translating TS code, watch for these:
+
+- **`Options.Env` merges, it does not replace.** TS `Options.env` REPLACES the
+  subprocess environment entirely; the Go `Options.Env` is overlaid on top of
+  `os.Environ()`. If you relied on the TS replace-semantics, clear inherited
+  variables yourself before spawning. There is no opt-in flag for replace mode.
+- **Cancellation is `context.Context`, not `AbortSignal`.** TS forwards a
+  derived `AbortSignal` that fires only after a stdin-EOF + grace window. In Go,
+  that grace window lives inside `SubprocessTransport.Close()`: the SDK closes
+  stdin, waits up to 5 seconds for the CLI to exit on its own, and only then
+  force-kills. Anything you hang off the same `context.Context` (HTTP
+  cancellation, in-flight tool teardown) inherits the same ordering guarantee.
+- **`'Skill'` in `AllowedTools` is deprecated upstream.** Per TS SDK v0.3.150,
+  passing `'Skill'` in `AllowedTools` or `AgentDefinition.Tools` is deprecated.
+  Use `AgentDefinition.Skills` for per-agent preload. The Go SDK does not
+  currently expose the upstream top-level user-facing `skills` option; the
+  existing `Options.Skills` mirrors the control-init system-prompt loading
+  allowlist, which is a different surface.
+- **`Effort` `"max"` / `"xhigh"` are model-gated.** `EffortMax` requires Opus
+  4.6/4.7 or Sonnet 4.6; `EffortXHigh` requires Opus 4.7. On unsupported
+  models the CLI silently downgrades per its own policy. The CLI is the
+  authority on which model accepts which level - the SDK only forwards the enum
+  value.
 
 For internal architecture, see [DESIGN.md](docs/DESIGN.md). For CLI protocol
 details (how this and the official Typescript SDK actually work), see
