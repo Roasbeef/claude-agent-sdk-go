@@ -258,6 +258,13 @@ type Options struct {
 	// enabling multiple instances to share the same task list.
 	// Tasks persist at ~/.claude/tasks/{TaskListID}/.
 	TaskListID string
+
+	// Goal is a natural-language stop condition evaluated by Claude after
+	// each turn. When the condition is met, the CLI emits a
+	// GoalStatusMessage with Met=true and the session terminates.
+	// Capped at 1000 characters; longer values are truncated by WithGoal.
+	// Requires a trusted workspace and hooks enabled.
+	Goal string
 }
 
 // SystemPromptConfig represents system prompt configuration.
@@ -2552,6 +2559,18 @@ func WithTaskListID(id string) Option {
 func WithTaskStore(store TaskStore) Option {
 	return func(o *Options) {
 		o.TaskStore = store
+	}
+}
+
+// WithGoal sets a natural-language stop condition. The session terminates when
+// Claude evaluates the condition as met, emitting a GoalStatusMessage{Met: true}.
+// Condition is capped at 1000 characters. Requires a trusted workspace and hooks enabled.
+func WithGoal(condition string) Option {
+	return func(o *Options) {
+		if len(condition) > 1000 {
+			condition = condition[:1000]
+		}
+		o.Goal = condition
 	}
 }
 
