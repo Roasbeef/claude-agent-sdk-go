@@ -822,6 +822,13 @@ func TestIntegrationResultMessageOriginTTFT(t *testing.T) {
 	t.Skip("requires CLI to emit origin/ttft_ms on result events (host-side multi-actor or measured TTFT); tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+func TestIntegrationResultMessageTimingFields(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	t.Skip("not triggerable from CLI: ttft_stream_ms / time_to_request_ms / time_to_request_from_spawn_ms / warm_spare_claimed are populated by CLI-internal spawn-pool timing instrumentation not exercisable from the standard integration run; tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
 func TestIntegrationTaskLifecycleFields(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)

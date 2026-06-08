@@ -160,8 +160,16 @@ type ResultMessage struct {
 	DurationMs    int64 `json:"duration_ms,omitempty"`     // Total duration in milliseconds
 	DurationAPIMs int64 `json:"duration_api_ms,omitempty"` // API call duration in milliseconds
 	TTFTMs        int64 `json:"ttft_ms,omitempty"`         // Time-to-first-token in milliseconds
-	IsError       bool  `json:"is_error,omitempty"`        // Whether this is an error result
-	NumTurns      int   `json:"num_turns,omitempty"`       // Number of conversation turns
+	/*
+		TS SDK v0.3.168 sdk.d.ts L3566-L3569 exposes these spawn-pool timing fields
+		between ttft_ms and is_error.
+	*/
+	TTFTStreamMs             *int64 `json:"ttft_stream_ms,omitempty"`                // Streaming time-to-first-token in milliseconds
+	TimeToRequestMs          *int64 `json:"time_to_request_ms,omitempty"`            // Time to request in milliseconds
+	TimeToRequestFromSpawnMs *int64 `json:"time_to_request_from_spawn_ms,omitempty"` // Time to request from spawn in milliseconds
+	WarmSpareClaimed         *bool  `json:"warm_spare_claimed,omitempty"`            // Whether a warm spare was claimed
+	IsError                  bool   `json:"is_error,omitempty"`                      // Whether this is an error result
+	NumTurns                 int    `json:"num_turns,omitempty"`                     // Number of conversation turns
 
 	TotalCostUSD float64 `json:"total_cost_usd,omitempty"` // Total cost in USD
 

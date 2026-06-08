@@ -11,6 +11,7 @@
 - Backfill `TestIntegrationUserMessageSubagentFields` when the CLI test fixture can deterministically run a Task-tool subagent whose tool-result user message round-trips `subagent_type` + `task_description`.
 - Backfill `TestIntegrationAssistantMessageError` when the CLI test fixture can deterministically force an upstream API failure into an `assistant` event.
 - Backfill `TestIntegrationResultMessageOriginTTFT` when the CLI test fixture can deterministically emit `origin` and/or `ttft_ms` on a result event.
+- Backfill `TestIntegrationResultMessageTimingFields` when the CLI test fixture can deterministically emit spawn-pool timing instrumentation (`ttft_stream_ms`, `time_to_request_ms`, `time_to_request_from_spawn_ms`, `warm_spare_claimed`) on a result event.
 - Backfill `TestIntegrationTaskLifecycleFields` when the CLI test fixture can deterministically run a Task-tool subagent (populates `subagent_type` on `task_started`/`task_progress`) and pause a running task (emits `task_updated` with `status:"paused"`).
 - Backfill `TestIntegrationThinkingTokensMessage` when the CLI test fixture can deterministically invoke a thinking-capable model through a redacted-thinking phase so `thinking_tokens` system events are emitted.
 - Backfill `TestIntegrationCompactBoundaryPreservedMessages` when the CLI test fixture can deterministically trigger a partial compaction with messagesToKeep so the `compact_metadata.preserved_messages` block is populated.
