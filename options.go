@@ -562,6 +562,10 @@ type SettingsMarketplace struct {
 	AutoUpdate      *bool                     `json:"autoUpdate,omitempty"`
 }
 
+// SettingsMarketplaceSource is the opaque marketplace source descriptor. Required key "source"
+// selects the variant; remaining keys depend on the variant (e.g. "repo", "url", "package",
+// "path", "ref", "sparsePaths", "skipLfs"). Per sdk.d.ts v0.3.168 L4695/L4717 (github) and
+// L4895/L4917 (git), the optional "skipLfs": boolean key sets GIT_LFS_SKIP_SMUDGE=1 on clone/update.
 type SettingsMarketplaceSource map[string]interface{}
 
 // SettingsMarketplaceSourceKind is the discriminator value stored in a SettingsMarketplaceSource "source" entry.
@@ -569,8 +573,10 @@ type SettingsMarketplaceSourceKind string
 
 const (
 	// SettingsMarketplaceSourceGithub identifies a GitHub marketplace source. Mirrors sdk.d.ts v0.3.150 L4459.
+	// Honors optional "skipLfs": boolean per sdk.d.ts v0.3.168 L4695.
 	SettingsMarketplaceSourceGithub SettingsMarketplaceSourceKind = "github"
 	// SettingsMarketplaceSourceGit identifies a Git marketplace source. Mirrors sdk.d.ts v0.3.150 L4466.
+	// Honors optional "skipLfs": boolean per sdk.d.ts v0.3.168 L4717.
 	SettingsMarketplaceSourceGit SettingsMarketplaceSourceKind = "git"
 	// SettingsMarketplaceSourceNPM identifies an npm marketplace source. Mirrors sdk.d.ts v0.3.150 L4484.
 	SettingsMarketplaceSourceNPM SettingsMarketplaceSourceKind = "npm"

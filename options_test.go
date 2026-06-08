@@ -768,6 +768,52 @@ func TestSettingsMarketplaceSourceVariants(t *testing.T) {
 		assert.Equal(t, "skills-dir", string(SettingsMarketplaceSourceSkillsDir))
 		assert.Equal(t, "unsupported", string(SettingsMarketplaceSourceUnsupported))
 	})
+
+	t.Run("github source with skipLfs true round-trips", func(t *testing.T) {
+		in := Settings{
+			ExtraKnownMarketplaces: map[string]SettingsMarketplace{
+				"upstream": {
+					Source: SettingsMarketplaceSource{
+						"source":  string(SettingsMarketplaceSourceGithub),
+						"repo":    "anthropics/skills",
+						"skipLfs": true,
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		got := out.ExtraKnownMarketplaces["upstream"].Source
+		assert.Equal(t, "github", got["source"])
+		assert.Equal(t, "anthropics/skills", got["repo"])
+		assert.Equal(t, true, got["skipLfs"])
+	})
+
+	t.Run("git source with skipLfs false round-trips", func(t *testing.T) {
+		in := Settings{
+			ExtraKnownMarketplaces: map[string]SettingsMarketplace{
+				"mirror": {
+					Source: SettingsMarketplaceSource{
+						"source":  string(SettingsMarketplaceSourceGit),
+						"url":     "https://example.invalid/marketplace.git",
+						"skipLfs": false,
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		got := out.ExtraKnownMarketplaces["mirror"].Source
+		assert.Equal(t, "git", got["source"])
+		assert.Equal(t, "https://example.invalid/marketplace.git", got["url"])
+		assert.Equal(t, false, got["skipLfs"])
+	})
 }
 
 func TestBaseHookInputEffortJSON(t *testing.T) {
