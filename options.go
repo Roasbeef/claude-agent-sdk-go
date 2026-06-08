@@ -1474,6 +1474,9 @@ func (i PostToolUseInput) Base() BaseHookInput { return i.BaseHookInput }
 type UserPromptSubmitInput struct {
 	BaseHookInput
 	Prompt string `json:"prompt"`
+	// SessionTitle is the optional user-facing session label from TS L6094.
+	// Nil means the field was absent on the wire.
+	SessionTitle *string `json:"session_title,omitempty"`
 }
 
 // HookType implements HookInput.
@@ -1621,6 +1624,9 @@ func (i NotificationInput) Base() BaseHookInput { return i.BaseHookInput }
 type SessionStartInput struct {
 	BaseHookInput
 	Source string `json:"source"` // "startup", "resume", "clear", or "compact"
+	// SessionTitle is the optional user-facing session label from TS L3978.
+	// Nil means the field was absent on the wire.
+	SessionTitle *string `json:"session_title,omitempty"`
 }
 
 // HookType implements HookInput.

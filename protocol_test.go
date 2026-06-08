@@ -3082,6 +3082,141 @@ func TestBuildHookResponse_WatchPaths(t *testing.T) {
 	})
 }
 
+func TestGetHookInput_SessionStart_SessionTitle(t *testing.T) {
+	title := "My Session"
+
+	assertLegacyHookInput(t, map[string]interface{}{
+		"hook_event":    "SessionStart",
+		"source":        "startup",
+		"session_title": title,
+	}, func(input HookInput) {
+		ev, ok := input.(SessionStartInput)
+		require.True(t, ok)
+		require.NotNil(t, ev.SessionTitle)
+		assert.Equal(t, title, *ev.SessionTitle)
+	})
+
+	assertSDKHookInput(t, map[string]interface{}{
+		"hook_event_name": "SessionStart",
+		"source":          "startup",
+		"session_title":   title,
+	}, func(input HookInput) {
+		ev, ok := input.(SessionStartInput)
+		require.True(t, ok)
+		require.NotNil(t, ev.SessionTitle)
+		assert.Equal(t, title, *ev.SessionTitle)
+	})
+}
+
+func TestGetHookInput_SessionStart_NoSessionTitle(t *testing.T) {
+	assertLegacyHookInput(t, map[string]interface{}{
+		"hook_event": "SessionStart",
+		"source":     "startup",
+	}, func(input HookInput) {
+		ev, ok := input.(SessionStartInput)
+		require.True(t, ok)
+		assert.Nil(t, ev.SessionTitle)
+	})
+
+	assertSDKHookInput(t, map[string]interface{}{
+		"hook_event_name": "SessionStart",
+		"source":          "startup",
+	}, func(input HookInput) {
+		ev, ok := input.(SessionStartInput)
+		require.True(t, ok)
+		assert.Nil(t, ev.SessionTitle)
+	})
+}
+
+func TestGetHookInput_UserPromptSubmit_SessionTitle(t *testing.T) {
+	title := "My Session"
+
+	assertLegacyHookInput(t, map[string]interface{}{
+		"hook_event":    "UserPromptSubmit",
+		"prompt":        "hello",
+		"session_title": title,
+	}, func(input HookInput) {
+		ev, ok := input.(UserPromptSubmitInput)
+		require.True(t, ok)
+		require.NotNil(t, ev.SessionTitle)
+		assert.Equal(t, title, *ev.SessionTitle)
+	})
+
+	assertSDKHookInput(t, map[string]interface{}{
+		"hook_event_name": "UserPromptSubmit",
+		"prompt":          "hello",
+		"session_title":   title,
+	}, func(input HookInput) {
+		ev, ok := input.(UserPromptSubmitInput)
+		require.True(t, ok)
+		require.NotNil(t, ev.SessionTitle)
+		assert.Equal(t, title, *ev.SessionTitle)
+	})
+}
+
+func TestGetHookInput_UserPromptSubmit_NoSessionTitle(t *testing.T) {
+	assertLegacyHookInput(t, map[string]interface{}{
+		"hook_event": "UserPromptSubmit",
+		"prompt":     "hello",
+	}, func(input HookInput) {
+		ev, ok := input.(UserPromptSubmitInput)
+		require.True(t, ok)
+		assert.Nil(t, ev.SessionTitle)
+	})
+
+	assertSDKHookInput(t, map[string]interface{}{
+		"hook_event_name": "UserPromptSubmit",
+		"prompt":          "hello",
+	}, func(input HookInput) {
+		ev, ok := input.(UserPromptSubmitInput)
+		require.True(t, ok)
+		assert.Nil(t, ev.SessionTitle)
+	})
+}
+
+func assertLegacyHookInput(t *testing.T, inputData map[string]interface{}, assertInput func(HookInput)) {
+	t.Helper()
+
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+	protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+		assertInput(input)
+		return HookResult{Continue: true}, nil
+	}
+
+	resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+		RequestID: "r",
+		Payload: map[string]interface{}{
+			"callback_id": "h",
+			"input":       inputData,
+		},
+	})
+	assert.Equal(t, "success", resp.Response.Subtype)
+}
+
+func assertSDKHookInput(t *testing.T, inputData map[string]interface{}, assertInput func(HookInput)) {
+	t.Helper()
+
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+	protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+		assertInput(input)
+		return HookResult{Continue: true}, nil
+	}
+
+	resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+		RequestID: "r",
+		Request: SDKControlRequestBody{
+			Subtype:    "hook_callback",
+			CallbackID: "h",
+			Input:      inputData,
+		},
+	})
+	assert.Equal(t, "success", resp.Response.Subtype)
+}
+
 // TestHandleHookCallback_ShapeCompatibleEvents covers the 12 v0.2.119 events
 // added in PR 8b. Each subtest exercises one event end-to-end through one of
 // the two dispatch paths and asserts every event-specific field on the parsed

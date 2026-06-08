@@ -428,6 +428,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 		input = UserPromptSubmitInput{
 			BaseHookInput: base,
 			Prompt:        getString(inputData, "prompt"),
+			SessionTitle:  getOptionalString(inputData, "session_title"),
 		}
 	case HookTypeStop:
 		input = StopInput{
@@ -484,6 +485,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 		input = SessionStartInput{
 			BaseHookInput: base,
 			Source:        getString(inputData, "source"),
+			SessionTitle:  getOptionalString(inputData, "session_title"),
 		}
 	case HookTypeSessionEnd:
 		input = SessionEndInput{
@@ -936,6 +938,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 		input = UserPromptSubmitInput{
 			BaseHookInput: base,
 			Prompt:        getString(hookInput, "prompt"),
+			SessionTitle:  getOptionalString(hookInput, "session_title"),
 		}
 	case "Stop":
 		input = StopInput{
@@ -992,6 +995,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 		input = SessionStartInput{
 			BaseHookInput: base,
 			Source:        getString(hookInput, "source"),
+			SessionTitle:  getOptionalString(hookInput, "session_title"),
 		}
 	case "SessionEnd":
 		input = SessionEndInput{
@@ -1401,6 +1405,14 @@ func getString(m map[string]interface{}, key string) string {
 		return ""
 	}
 	return v
+}
+
+func getOptionalString(m map[string]interface{}, key string) *string {
+	v, ok := m[key].(string)
+	if !ok {
+		return nil
+	}
+	return &v
 }
 
 func getInt(m map[string]interface{}, key string) int {
