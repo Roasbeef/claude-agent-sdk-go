@@ -2051,8 +2051,9 @@ func TestIntegrationSettingsManagedOrgFields(t *testing.T) {
 
 	// TODO: Backfill when the CLI test fixture can deterministically inject a
 	// managed-settings.json / MDM policy tier so the SDK can observe these
-	// admin-controlled settings through the resolved-settings transport.
-	t.Skip("not directly assertable from CLI: managed-org settings are honored only from admin-controlled policy sources, not surfaced on user CLI flag entry points")
+	// admin-controlled settings, including fallbackModel, through the
+	// resolved-settings transport.
+	t.Skip("not directly assertable from CLI: managed-org settings including fallbackModel are honored only from admin-controlled policy sources, not surfaced on user CLI flag entry points")
 }
 
 func TestIntegrationSettingsWorkflowsFields(t *testing.T) {
