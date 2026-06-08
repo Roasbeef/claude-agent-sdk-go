@@ -850,6 +850,104 @@ func TestProtocolHandleElicitationRequest(t *testing.T) {
 	})
 }
 
+func TestProtocolHandleUserDialogRequest(t *testing.T) {
+	basePayload := map[string]interface{}{
+		"dialog_kind": "approve_edit",
+		"payload":     map[string]interface{}{"path": "/tmp/x", "lines": 12},
+		"tool_use_id": "tu_42",
+	}
+
+	t.Run("invokes callback and returns completed", func(t *testing.T) {
+		opts := NewOptions()
+		var got UserDialogRequest
+		opts.OnUserDialog = func(ctx context.Context, req UserDialogRequest) (UserDialogResult, error) {
+			got = req
+			return UserDialogResult{
+				Behavior: UserDialogBehaviorCompleted,
+				Result:   "yes",
+			}, nil
+		}
+		protocol := NewProtocol(nil, opts)
+
+		resp := protocol.handleUserDialogRequest(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "request_user_dialog",
+			RequestID: "req_ud",
+			Payload:   basePayload,
+		})
+
+		assert.Equal(t, "control_response", resp.Type)
+		assert.Equal(t, "success", resp.Response.Subtype)
+		assert.Equal(t, "req_ud", resp.Response.RequestID)
+		assert.Equal(t, map[string]interface{}{
+			"behavior": "completed",
+			"result":   "yes",
+		}, resp.Response.Response)
+
+		assert.Equal(t, "approve_edit", got.DialogKind)
+		assert.Equal(t, map[string]interface{}{"path": "/tmp/x", "lines": 12}, got.Payload)
+		assert.Equal(t, "tu_42", got.ToolUseID)
+	})
+
+	t.Run("nil callback answers cancelled", func(t *testing.T) {
+		opts := NewOptions()
+		protocol := NewProtocol(nil, opts)
+
+		resp := protocol.handleUserDialogRequest(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "request_user_dialog",
+			RequestID: "req_nil",
+			Payload:   basePayload,
+		})
+
+		assert.Equal(t, "success", resp.Response.Subtype)
+		assert.Equal(t, map[string]interface{}{"behavior": "cancelled"}, resp.Response.Response)
+		_, hasResult := resp.Response.Response["result"]
+		assert.False(t, hasResult)
+	})
+
+	t.Run("callback cancels", func(t *testing.T) {
+		opts := NewOptions()
+		opts.OnUserDialog = func(ctx context.Context, req UserDialogRequest) (UserDialogResult, error) {
+			return UserDialogResult{Behavior: UserDialogBehaviorCancelled}, nil
+		}
+		protocol := NewProtocol(nil, opts)
+
+		resp := protocol.handleUserDialogRequest(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "request_user_dialog",
+			RequestID: "req_cancel",
+			Payload:   basePayload,
+		})
+
+		assert.Equal(t, "success", resp.Response.Subtype)
+		assert.Equal(t, map[string]interface{}{"behavior": "cancelled"}, resp.Response.Response)
+		_, hasResult := resp.Response.Response["result"]
+		assert.False(t, hasResult)
+	})
+
+	t.Run("callback error answers cancelled", func(t *testing.T) {
+		opts := NewOptions()
+		opts.OnUserDialog = func(ctx context.Context, req UserDialogRequest) (UserDialogResult, error) {
+			return UserDialogResult{
+				Behavior: UserDialogBehaviorCompleted,
+				Result:   "ignored",
+			}, errors.New("renderer crashed")
+		}
+		protocol := NewProtocol(nil, opts)
+
+		resp := protocol.handleUserDialogRequest(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "request_user_dialog",
+			RequestID: "req_err",
+			Payload:   basePayload,
+		})
+
+		assert.Equal(t, "success", resp.Response.Subtype)
+		assert.Equal(t, map[string]interface{}{"behavior": "cancelled"}, resp.Response.Response)
+	})
+}
+
 func TestProtocolHandleHostAuthTokenRefresh(t *testing.T) {
 	t.Run("callback returns token", func(t *testing.T) {
 		opts := NewOptions()
