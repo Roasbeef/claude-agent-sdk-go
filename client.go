@@ -596,6 +596,9 @@ func (c *Client) GetSkill(name string) (*Skill, error) {
 // This is useful for picking up new Skills or changes to existing Skills
 // without restarting the client. Returns ErrSkillsDisabled if Skills are
 // disabled in configuration.
+//
+// This reloads the SDK's local Skill cache only. To ask the running CLI
+// subprocess to refresh its skill commands, use Stream.ReloadSkills.
 func (c *Client) ReloadSkills() error {
 	if !c.options.SkillsConfig.EnableSkills {
 		return &ErrSkillsDisabled{}
@@ -838,6 +841,10 @@ func WithReloadSkills(reload ...bool) RegisterRepoRootOption {
 
 // RegisterRepoRoot adds a subdirectory of the session cwd as a working-directory
 // root and optionally asks the CLI to reload repo-scoped resources.
+//
+// Use WithReloadClaudeMD, WithReloadPlugins, and WithReloadSkills to trigger
+// the matching CLI-side reload as part of the same request. Only available
+// in streaming input mode.
 func (s *Stream) RegisterRepoRoot(
 	ctx context.Context,
 	directory string,
@@ -956,7 +963,12 @@ func (s *Stream) ReloadPlugins(
 	return &out, nil
 }
 
-// ReloadSkills reloads skills from disk and returns refreshed skill commands.
+// ReloadSkills asks the running CLI subprocess to rescan its skills
+// directories and returns the refreshed skill command list.
+//
+// This is the streaming control RPC counterpart to Client.ReloadSkills, which
+// only refreshes the SDK's local Skill cache. Only available in streaming
+// input mode.
 func (s *Stream) ReloadSkills(
 	ctx context.Context,
 ) (*SDKControlReloadSkillsResponse, error) {

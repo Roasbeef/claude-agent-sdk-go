@@ -2408,7 +2408,9 @@ func WithSystemPromptPreset(preset string, append string) Option {
 	}
 }
 
-// WithFallbackModel sets the model to use if primary fails.
+// WithFallbackModel sets the fallback model list used when the primary
+// model is overloaded or unavailable. Accepts a comma-separated list to try
+// in order; the primary model is re-tried at the start of each user turn.
 func WithFallbackModel(model string) Option {
 	return func(o *Options) {
 		o.FallbackModel = model
