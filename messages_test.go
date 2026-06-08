@@ -3147,6 +3147,81 @@ func BenchmarkParseMessage(b *testing.B) {
 
 func intPtr(i int) *int { return &i }
 
+func TestSDKControlResponseBodyPendingPermissionRequestsRoundTrip(t *testing.T) {
+	pending := []SDKControlRequest{
+		{
+			Type:      "control_request",
+			RequestID: "req-pending-1",
+			Request: SDKControlRequestBody{
+				Subtype:   "can_use_tool",
+				ToolName:  "Bash",
+				ToolUseID: "toolu_pending_1",
+				Input:     map[string]interface{}{"command": "ls"},
+			},
+		},
+		{
+			Type:      "control_request",
+			RequestID: "req-pending-2",
+			Request: SDKControlRequestBody{
+				Subtype:   "can_use_tool",
+				ToolName:  "Edit",
+				ToolUseID: "toolu_pending_2",
+				Input:     map[string]interface{}{"file_path": "/tmp/x"},
+			},
+		},
+	}
+
+	for _, subtype := range []string{"success", "error"} {
+		t.Run(subtype, func(t *testing.T) {
+			body := SDKControlResponseBody{
+				Subtype:                   subtype,
+				RequestID:                 "req-init-1",
+				PendingPermissionRequests: pending,
+			}
+			if subtype == "success" {
+				body.Response = map[string]interface{}{"ok": true}
+			} else {
+				body.Error = "boom"
+			}
+
+			data, err := json.Marshal(body)
+			require.NoError(t, err)
+
+			var got map[string]interface{}
+			require.NoError(t, json.Unmarshal(data, &got))
+
+			assert.Equal(t, subtype, got["subtype"])
+			assert.Equal(t, "req-init-1", got["request_id"])
+
+			raw, ok := got["pending_permission_requests"].([]interface{})
+			require.True(t, ok, "pending_permission_requests must be present on %q", subtype)
+			require.Len(t, raw, 2)
+
+			var decoded SDKControlResponseBody
+			require.NoError(t, json.Unmarshal(data, &decoded))
+			assert.Equal(t, pending, decoded.PendingPermissionRequests)
+		})
+	}
+}
+
+func TestSDKControlResponseBodyPendingPermissionRequestsOmitEmpty(t *testing.T) {
+	for _, subtype := range []string{"success", "error"} {
+		t.Run(subtype, func(t *testing.T) {
+			body := SDKControlResponseBody{
+				Subtype:   subtype,
+				RequestID: "req-init-1",
+			}
+			data, err := json.Marshal(body)
+			require.NoError(t, err)
+
+			var got map[string]interface{}
+			require.NoError(t, json.Unmarshal(data, &got))
+
+			assert.NotContains(t, got, "pending_permission_requests")
+		})
+	}
+}
+
 // BenchmarkContentText benchmarks content text extraction.
 func BenchmarkContentText(b *testing.B) {
 	msg := AssistantMessage{
