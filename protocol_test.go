@@ -2872,6 +2872,74 @@ func TestBuildHookResponse_SuppressOriginalPrompt(t *testing.T) {
 	})
 }
 
+func TestGetHookInput_MessageDisplay(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+
+	protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+		ev, ok := input.(MessageDisplayInput)
+		require.True(t, ok)
+		assert.Equal(t, HookTypeMessageDisplay, ev.HookType())
+		assert.Equal(t, "turn-123", ev.TurnID)
+		assert.Equal(t, "message-456", ev.MessageID)
+		assert.Equal(t, 2, ev.Index)
+		assert.True(t, ev.Final)
+		assert.Equal(t, "newly completed line\n", ev.Delta)
+		return HookResult{Continue: true}, nil
+	}
+
+	resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+		RequestID: "r",
+		Request: SDKControlRequestBody{
+			Subtype:    "hook_callback",
+			CallbackID: "h",
+			Input: map[string]interface{}{
+				"hook_event_name": "MessageDisplay",
+				"turn_id":         "turn-123",
+				"message_id":      "message-456",
+				"index":           float64(2),
+				"final":           true,
+				"delta":           "newly completed line\n",
+			},
+		},
+	})
+	assert.Equal(t, "success", resp.Response.Subtype)
+}
+
+func TestBuildHookResponse_MessageDisplay_DisplayContentSet(t *testing.T) {
+	replacement := "replacement"
+	resp := buildHookResponse("MessageDisplay", HookResult{
+		Continue:       true,
+		DisplayContent: &replacement,
+	})
+
+	hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "MessageDisplay", hso["hookEventName"])
+	assert.Equal(t, "replacement", hso["displayContent"])
+}
+
+func TestBuildHookResponse_MessageDisplay_DisplayContentNil(t *testing.T) {
+	resp := buildHookResponse("MessageDisplay", HookResult{
+		Continue: true,
+	})
+
+	_, has := resp["hookSpecificOutput"]
+	assert.False(t, has)
+}
+
+func TestBuildHookResponse_DisplayContentIgnoredOnNonMessageDisplay(t *testing.T) {
+	replacement := "x"
+	resp := buildHookResponse("PostToolUse", HookResult{
+		Continue:       true,
+		DisplayContent: &replacement,
+	})
+
+	_, has := resp["hookSpecificOutput"]
+	assert.False(t, has)
+}
+
 func TestBuildHookResponse_WatchPaths(t *testing.T) {
 	t.Run("CwdChanged emits watchPaths", func(t *testing.T) {
 		resp := buildHookResponse("CwdChanged", HookResult{

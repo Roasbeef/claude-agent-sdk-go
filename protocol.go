@@ -402,6 +402,15 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			TriggerFilePath: getString(inputData, "trigger_file_path"),
 			ParentFilePath:  getString(inputData, "parent_file_path"),
 		}
+	case HookTypeMessageDisplay:
+		input = MessageDisplayInput{
+			BaseHookInput: base,
+			TurnID:        getString(inputData, "turn_id"),
+			MessageID:     getString(inputData, "message_id"),
+			Index:         getInt(inputData, "index"),
+			Final:         getBool(inputData, "final"),
+			Delta:         getString(inputData, "delta"),
+		}
 	case HookTypePreToolUse:
 		input = PreToolUseInput{
 			BaseHookInput: base,
@@ -900,6 +909,15 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			Globs:           getStringSlice(hookInput, "globs"),
 			TriggerFilePath: getString(hookInput, "trigger_file_path"),
 			ParentFilePath:  getString(hookInput, "parent_file_path"),
+		}
+	case "MessageDisplay":
+		input = MessageDisplayInput{
+			BaseHookInput: base,
+			TurnID:        getString(hookInput, "turn_id"),
+			MessageID:     getString(hookInput, "message_id"),
+			Index:         getInt(hookInput, "index"),
+			Final:         getBool(hookInput, "final"),
+			Delta:         getString(hookInput, "delta"),
 		}
 	case "PreToolUse":
 		input = PreToolUseInput{
@@ -1613,6 +1631,17 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 			}
 		}
 		hookSpecificOutput["suppressOriginalPrompt"] = *result.SuppressOriginalPrompt
+		resp["hookSpecificOutput"] = hookSpecificOutput
+	}
+
+	if result.DisplayContent != nil && hookType == string(HookTypeMessageDisplay) {
+		hookSpecificOutput, _ := resp["hookSpecificOutput"].(map[string]interface{})
+		if hookSpecificOutput == nil {
+			hookSpecificOutput = map[string]interface{}{
+				"hookEventName": string(HookTypeMessageDisplay),
+			}
+		}
+		hookSpecificOutput["displayContent"] = *result.DisplayContent
 		resp["hookSpecificOutput"] = hookSpecificOutput
 	}
 
