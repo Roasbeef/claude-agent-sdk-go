@@ -2040,7 +2040,7 @@ type HookResult struct {
 	// Translates into hookSpecificOutput.additionalContext per sdk.d.ts
 	// v0.3.168 for the hook events whose envelope accepts the field:
 	// Notification (L1251), PostToolBatch (L2107), PostToolUseFailure
-	// (L2132), PostToolUse (L2149), PreToolUse (L2178), SessionStart
+	// (L2132), PostToolUse (L2149), PreToolUse (L2175), SessionStart
 	// (L3982), Setup (L5695), Stop (L5841-L5845), SubagentStart (L5855),
 	// SubagentStop (L5882-L5886), UserPromptExpansion (L6087), and
 	// UserPromptSubmit (L6098). Silently dropped for other hook types.
