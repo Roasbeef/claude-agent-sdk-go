@@ -808,6 +808,13 @@ func TestIntegrationTaskLifecycleFields(t *testing.T) {
 	t.Skip("requires CLI to emit a Task-tool subagent run (subagent_type) and a paused-status task_updated event; tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+func TestIntegrationThinkingTokensMessage(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	t.Skip("not triggerable from CLI: requires a thinking-capable model with redacted-thinking phase, which the standard integration run does not invoke")
+}
+
 func TestIntegrationBaseHookInputEffort(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)

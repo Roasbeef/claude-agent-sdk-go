@@ -1034,6 +1034,21 @@ type SessionStateChangedMessage struct {
 // MessageType implements Message.
 func (m SessionStateChangedMessage) MessageType() string { return "system" }
 
+// ThinkingTokensMessage reports live thinking-token estimates from
+// sdk.d.ts L3795-L3807. These values are approximate progress during
+// redacted thinking, not authoritative billed output_tokens.
+type ThinkingTokensMessage struct {
+	Type                 string `json:"type"`                   // Always "system"
+	Subtype              string `json:"subtype"`                // "thinking_tokens"
+	EstimatedTokens      int64  `json:"estimated_tokens"`       // Running total for the thinking block
+	EstimatedTokensDelta int64  `json:"estimated_tokens_delta"` // Increment carried by this frame
+	UUID                 string `json:"uuid"`                   // Unique message ID
+	SessionID            string `json:"session_id"`             // Session identifier
+}
+
+// MessageType implements Message.
+func (m ThinkingTokensMessage) MessageType() string { return "system" }
+
 // SDKStatusValue is the non-null status payload for a status message.
 type SDKStatusValue string
 
@@ -1232,6 +1247,10 @@ func ParseMessage(data []byte) (Message, error) {
 			return msg, err
 		case "status":
 			var msg StatusMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "thinking_tokens":
+			var msg ThinkingTokensMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
 		default:
