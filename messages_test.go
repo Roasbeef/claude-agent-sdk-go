@@ -2821,6 +2821,78 @@ func TestParseMessageSessionStateChanged(t *testing.T) {
 	}
 }
 
+func TestParseMessageThinkingTokens(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "thinking_tokens",
+		"estimated_tokens": 1234,
+		"estimated_tokens_delta": 56,
+		"uuid": "550e8400-e29b-41d4-a716-4466554402B0",
+		"session_id": "sess_misc_011"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	thinkingMsg, ok := msg.(ThinkingTokensMessage)
+	require.True(t, ok, "expected ThinkingTokensMessage")
+
+	assert.Equal(t, "system", thinkingMsg.MessageType())
+	assert.Equal(t, "system", thinkingMsg.Type)
+	assert.Equal(t, "thinking_tokens", thinkingMsg.Subtype)
+	assert.Equal(t, int64(1234), thinkingMsg.EstimatedTokens)
+	assert.Equal(t, int64(56), thinkingMsg.EstimatedTokensDelta)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-4466554402B0", thinkingMsg.UUID)
+	assert.Equal(t, "sess_misc_011", thinkingMsg.SessionID)
+}
+
+func TestThinkingTokensMessageRoundTrip(t *testing.T) {
+	want := ThinkingTokensMessage{
+		Type:                 "system",
+		Subtype:              "thinking_tokens",
+		EstimatedTokens:      1234,
+		EstimatedTokensDelta: 56,
+		UUID:                 "550e8400-e29b-41d4-a716-4466554402B1",
+		SessionID:            "sess_misc_011",
+	}
+
+	data, err := json.Marshal(want)
+	require.NoError(t, err)
+
+	msg, err := ParseMessage(data)
+	require.NoError(t, err)
+
+	got, ok := msg.(ThinkingTokensMessage)
+	require.True(t, ok, "expected ThinkingTokensMessage")
+	assert.Equal(t, want, got)
+}
+
+func TestParseMessageThinkingTokensZeroDelta(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "thinking_tokens",
+		"estimated_tokens": 1234,
+		"estimated_tokens_delta": 0,
+		"uuid": "550e8400-e29b-41d4-a716-4466554402B2",
+		"session_id": "sess_misc_011"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	thinkingMsg, ok := msg.(ThinkingTokensMessage)
+	require.True(t, ok, "expected ThinkingTokensMessage")
+	assert.Equal(t, int64(0), thinkingMsg.EstimatedTokensDelta)
+
+	data, err := json.Marshal(thinkingMsg)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Contains(t, got, "estimated_tokens_delta")
+	assert.Equal(t, float64(0), got["estimated_tokens_delta"])
+}
+
 func TestParseMessageStatus(t *testing.T) {
 	tests := []struct {
 		name               string
