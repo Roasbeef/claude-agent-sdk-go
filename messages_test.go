@@ -1601,6 +1601,105 @@ func TestCompactBoundaryPreservedMessagesRoundTrip(t *testing.T) {
 	assert.Equal(t, compactMsg.CompactMetadata.PreservedMessages.UUIDs, got.CompactMetadata.PreservedMessages.UUIDs)
 }
 
+func TestParseMessageCommandsChanged(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "commands_changed",
+		"commands": [
+			{
+				"name": "review",
+				"description": "Review current changes",
+				"argumentHint": "<path>",
+				"aliases": ["inspect", "critique"]
+			},
+			{
+				"name": "fix",
+				"description": "Apply a focused fix",
+				"argumentHint": ""
+			}
+		],
+		"uuid": "550e8400-e29b-41d4-a716-446655440011",
+		"session_id": "sess_commands_123"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	commandsMsg, ok := msg.(CommandsChangedMessage)
+	require.True(t, ok, "expected CommandsChangedMessage")
+
+	assert.Equal(t, "system", commandsMsg.MessageType())
+	assert.Equal(t, "system", commandsMsg.Type)
+	assert.Equal(t, "commands_changed", commandsMsg.Subtype)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440011", commandsMsg.UUID)
+	assert.Equal(t, "sess_commands_123", commandsMsg.SessionID)
+	require.Len(t, commandsMsg.Commands, 2)
+	assert.Equal(t, SlashCommand{
+		Name:         "review",
+		Description:  "Review current changes",
+		ArgumentHint: "<path>",
+		Aliases:      []string{"inspect", "critique"},
+	}, commandsMsg.Commands[0])
+	assert.Equal(t, SlashCommand{
+		Name:         "fix",
+		Description:  "Apply a focused fix",
+		ArgumentHint: "",
+	}, commandsMsg.Commands[1])
+}
+
+func TestCommandsChangedMessageRoundTrip(t *testing.T) {
+	commandsMsg := CommandsChangedMessage{
+		Type:    "system",
+		Subtype: "commands_changed",
+		Commands: []SlashCommand{
+			{
+				Name:         "review",
+				Description:  "Review current changes",
+				ArgumentHint: "<path>",
+				Aliases:      []string{"inspect"},
+			},
+		},
+		UUID:      "550e8400-e29b-41d4-a716-446655440011",
+		SessionID: "sess_commands_123",
+	}
+
+	data, err := json.Marshal(commandsMsg)
+	require.NoError(t, err)
+
+	msg, err := ParseMessage(data)
+	require.NoError(t, err)
+
+	got, ok := msg.(CommandsChangedMessage)
+	require.True(t, ok, "expected CommandsChangedMessage")
+	assert.Equal(t, commandsMsg, got)
+}
+
+func TestParseMessageCommandsChangedEmptyList(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "commands_changed",
+		"commands": [],
+		"uuid": "550e8400-e29b-41d4-a716-446655440012",
+		"session_id": "sess_commands_empty"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	commandsMsg, ok := msg.(CommandsChangedMessage)
+	require.True(t, ok, "expected CommandsChangedMessage")
+	require.NotNil(t, commandsMsg.Commands)
+	assert.Empty(t, commandsMsg.Commands)
+
+	data, err := json.Marshal(commandsMsg)
+	require.NoError(t, err)
+
+	var got CommandsChangedMessage
+	require.NoError(t, json.Unmarshal(data, &got))
+	require.NotNil(t, got.Commands)
+	assert.Empty(t, got.Commands)
+}
+
 func TestParseMessageHookStarted(t *testing.T) {
 	input := `{
 		"type": "system",
