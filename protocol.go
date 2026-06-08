@@ -1634,6 +1634,17 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 		resp["hookSpecificOutput"] = hookSpecificOutput
 	}
 
+	if result.ReloadSkills != nil && hookType == string(HookTypeSessionStart) {
+		hookSpecificOutput, _ := resp["hookSpecificOutput"].(map[string]interface{})
+		if hookSpecificOutput == nil {
+			hookSpecificOutput = map[string]interface{}{
+				"hookEventName": string(HookTypeSessionStart),
+			}
+		}
+		hookSpecificOutput["reloadSkills"] = *result.ReloadSkills
+		resp["hookSpecificOutput"] = hookSpecificOutput
+	}
+
 	if result.DisplayContent != nil && hookType == string(HookTypeMessageDisplay) {
 		hookSpecificOutput, _ := resp["hookSpecificOutput"].(map[string]interface{})
 		if hookSpecificOutput == nil {

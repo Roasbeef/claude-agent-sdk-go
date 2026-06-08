@@ -1995,6 +1995,14 @@ type HookResult struct {
 	// prompt itself was the reason for the block (PII, credentials, etc.).
 	SuppressOriginalPrompt *bool
 
+	// ReloadSkills, when set on a SessionStart hook return, asks the CLI to
+	// re-scan skill and command directories after SessionStart hooks complete.
+	// Honored only on SessionStart hooks and silently dropped for other hook
+	// types; nil leaves the wire field unset and a pointer to false explicitly
+	// opts out. Translates into hookSpecificOutput.reloadSkills per sdk.d.ts
+	// v0.3.168 L3990.
+	ReloadSkills *bool `json:"reloadSkills,omitempty"`
+
 	// DisplayContent replaces the displayed delta for MessageDisplay hooks
 	// without changing the stored message or model-visible content. Honored
 	// only on MessageDisplay hooks and silently dropped for other hook types.
