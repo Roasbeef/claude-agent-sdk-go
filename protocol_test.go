@@ -2872,6 +2872,74 @@ func TestBuildHookResponse_SuppressOriginalPrompt(t *testing.T) {
 	})
 }
 
+func TestBuildHookResponse_ReloadSkills_True(t *testing.T) {
+	v := true
+	resp := buildHookResponse("SessionStart", HookResult{
+		Continue:     true,
+		ReloadSkills: &v,
+	})
+
+	hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "SessionStart", hso["hookEventName"])
+	assert.Equal(t, true, hso["reloadSkills"])
+}
+
+func TestBuildHookResponse_ReloadSkills_False(t *testing.T) {
+	v := false
+	resp := buildHookResponse("SessionStart", HookResult{
+		Continue:     true,
+		ReloadSkills: &v,
+	})
+
+	hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, false, hso["reloadSkills"])
+}
+
+func TestBuildHookResponse_ReloadSkills_Nil(t *testing.T) {
+	resp := buildHookResponse("SessionStart", HookResult{
+		Continue: true,
+	})
+
+	_, has := resp["hookSpecificOutput"]
+	assert.False(t, has)
+}
+
+func TestBuildHookResponse_ReloadSkills_IgnoredOnPreToolUse(t *testing.T) {
+	v := true
+	resp := buildHookResponse("PreToolUse", HookResult{
+		Continue:     true,
+		ReloadSkills: &v,
+	})
+
+	_, has := resp["hookSpecificOutput"]
+	assert.False(t, has)
+}
+
+func TestBuildHookResponse_ReloadSkills_ComposesWithAdditionalContext(t *testing.T) {
+	v := true
+	result := HookResult{
+		Continue:     true,
+		ReloadSkills: &v,
+		HookSpecificOutput: map[string]interface{}{
+			"hookEventName":     "SessionStart",
+			"additionalContext": "skills installed",
+		},
+	}
+
+	resp := buildHookResponse("SessionStart", result)
+
+	hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "SessionStart", hso["hookEventName"])
+	assert.Equal(t, "skills installed", hso["additionalContext"])
+	assert.Equal(t, true, hso["reloadSkills"])
+
+	_, mutated := result.HookSpecificOutput["reloadSkills"]
+	assert.False(t, mutated)
+}
+
 func TestGetHookInput_MessageDisplay(t *testing.T) {
 	runner := NewMockSubprocessRunner()
 	opts := NewOptions()

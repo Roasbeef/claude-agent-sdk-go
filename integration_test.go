@@ -740,6 +740,13 @@ func TestIntegrationHookSuppressOriginalPrompt(t *testing.T) {
 	t.Skip("not directly assertable from CLI: suppressOriginalPrompt is a CLI block-message rendering behavior, not surfaced on the SDK transport")
 }
 
+func TestIntegrationSessionStartReloadSkills(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	t.Skip("not triggerable from CLI: SessionStart hook reload-skills behavior requires a CLAUDE_SKILLS_DIR change between session start and first message; not exercisable in standard integration runs")
+}
+
 func TestIntegrationMessageDisplayHook(t *testing.T) {
 	// Registering HookTypeMessageDisplay against a streamed assistant turn
 	// (with WithMaxTurns(1) and a normal prompt) yields zero callback
