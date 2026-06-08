@@ -791,6 +791,73 @@ func (s *Stream) SetMaxThinkingTokens(ctx context.Context, tokens *int) error {
 	return err
 }
 
+type registerRepoRootOptions struct {
+	reloadClaudeMD *bool
+	reloadPlugins  *bool
+	reloadSkills   *bool
+}
+
+// RegisterRepoRootOption configures Stream.RegisterRepoRoot.
+type RegisterRepoRootOption func(*registerRepoRootOptions)
+
+// WithReloadClaudeMD configures whether CLAUDE.md is reloaded after
+// registering the repo root. Calling it without an argument enables reload.
+func WithReloadClaudeMD(reload ...bool) RegisterRepoRootOption {
+	return func(opts *registerRepoRootOptions) {
+		value := true
+		if len(reload) > 0 {
+			value = reload[0]
+		}
+		opts.reloadClaudeMD = &value
+	}
+}
+
+// WithReloadPlugins configures whether plugins are reloaded after registering
+// the repo root. Calling it without an argument enables reload.
+func WithReloadPlugins(reload ...bool) RegisterRepoRootOption {
+	return func(opts *registerRepoRootOptions) {
+		value := true
+		if len(reload) > 0 {
+			value = reload[0]
+		}
+		opts.reloadPlugins = &value
+	}
+}
+
+// WithReloadSkills configures whether skills are reloaded after registering
+// the repo root. Calling it without an argument enables reload.
+func WithReloadSkills(reload ...bool) RegisterRepoRootOption {
+	return func(opts *registerRepoRootOptions) {
+		value := true
+		if len(reload) > 0 {
+			value = reload[0]
+		}
+		opts.reloadSkills = &value
+	}
+}
+
+// RegisterRepoRoot adds a subdirectory of the session cwd as a working-directory
+// root and optionally asks the CLI to reload repo-scoped resources.
+func (s *Stream) RegisterRepoRoot(
+	ctx context.Context,
+	directory string,
+	opts ...RegisterRepoRootOption,
+) error {
+	var o registerRepoRootOptions
+	for _, opt := range opts {
+		opt(&o)
+	}
+
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype:        "register_repo_root",
+		Directory:      directory,
+		ReloadClaudeMD: o.reloadClaudeMD,
+		ReloadPlugins:  o.reloadPlugins,
+		ReloadSkills:   o.reloadSkills,
+	})
+	return err
+}
+
 // RewindFiles restores tracked files to their state at the specified user
 // message checkpoint. EnableFileCheckpointing must be true when the session is
 // started for the CLI to have checkpoint data.

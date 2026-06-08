@@ -301,6 +301,10 @@ type SDKControlRequestBody struct {
 	Mode                   string                              `json:"mode,omitempty"`                   // For set_permission_mode
 	Model                  string                              `json:"model,omitempty"`                  // For set_model
 	MaxThinkingTokens      *int                                `json:"max_thinking_tokens,omitempty"`    // For set_max_thinking_tokens
+	Directory              string                              `json:"directory,omitempty"`              // For register_repo_root
+	ReloadClaudeMD         *bool                               `json:"reload_claude_md,omitempty"`       // For register_repo_root
+	ReloadPlugins          *bool                               `json:"reload_plugins,omitempty"`         // For register_repo_root
+	ReloadSkills           *bool                               `json:"reload_skills,omitempty"`          // For register_repo_root
 	UserMessageID          string                              `json:"user_message_id,omitempty"`        // For rewind_files
 	DryRun                 *bool                               `json:"dry_run,omitempty"`                // For rewind_files
 	Path                   string                              `json:"path,omitempty"`                   // For read_file/seed_read_state
