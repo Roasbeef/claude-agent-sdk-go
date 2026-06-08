@@ -3321,6 +3321,47 @@ func TestSDKControlResponseBodyPendingPermissionRequestsOmitEmpty(t *testing.T) 
 	}
 }
 
+func TestSDKControlReloadSkillsResponseJSON(t *testing.T) {
+	response := SDKControlReloadSkillsResponse{
+		Skills: []SlashCommand{
+			{
+				Name:         "review",
+				Description:  "Run review",
+				ArgumentHint: "[target]",
+				Aliases:      []string{"inspect"},
+			},
+			{
+				Name:         "fix",
+				Description:  "Apply a focused fix",
+				ArgumentHint: "",
+			},
+		},
+	}
+
+	data, err := json.Marshal(response)
+	require.NoError(t, err)
+
+	assert.JSONEq(t, `{
+		"skills": [
+			{
+				"name": "review",
+				"description": "Run review",
+				"argumentHint": "[target]",
+				"aliases": ["inspect"]
+			},
+			{
+				"name": "fix",
+				"description": "Apply a focused fix",
+				"argumentHint": ""
+			}
+		]
+	}`, string(data))
+
+	var got SDKControlReloadSkillsResponse
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, response, got)
+}
+
 // BenchmarkContentText benchmarks content text extraction.
 func BenchmarkContentText(b *testing.B) {
 	msg := AssistantMessage{

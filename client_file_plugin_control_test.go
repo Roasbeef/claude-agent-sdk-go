@@ -368,6 +368,74 @@ func TestStreamReloadPluginsParsesResponse(t *testing.T) {
 	})
 }
 
+func TestStreamReloadSkillsRoundTrip(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(
+		successSDKControlResponseWithPayload(map[string]interface{}{
+			"skills": []interface{}{
+				map[string]interface{}{
+					"name":         "review",
+					"description":  "Run review",
+					"argumentHint": "[target]",
+					"aliases":      []interface{}{"inspect"},
+				},
+				map[string]interface{}{
+					"name":         "fix",
+					"description":  "Apply a focused fix",
+					"argumentHint": "",
+				},
+			},
+		}),
+	)
+
+	var got *SDKControlReloadSkillsResponse
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		var err error
+		got, err = stream.ReloadSkills(ctx)
+		return err
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t, []SlashCommand{
+		{
+			Name:         "review",
+			Description:  "Run review",
+			ArgumentHint: "[target]",
+			Aliases:      []string{"inspect"},
+		},
+		{
+			Name:         "fix",
+			Description:  "Apply a focused fix",
+			ArgumentHint: "",
+		},
+	}, got.Skills)
+
+	assert.JSONEq(t,
+		`{"type":"control_request","request_id":"req_1","request":{"subtype":"reload_skills"}}`,
+		rawWrittenSDKControlRequest(t, transport),
+	)
+}
+
+func TestStreamReloadSkillsErrorResponse(t *testing.T) {
+	stream, _, _ := newStreamControlTest(controlErrorResponse("reload skills failed"))
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		_, err := stream.ReloadSkills(ctx)
+		return err
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reload skills failed")
+}
+
+func TestStreamReloadSkillsCancelledContext(t *testing.T) {
+	stream, _, _ := newStreamControlTest(nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := stream.ReloadSkills(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+}
+
 func TestStreamApplyFlagSettingsNonEmpty(t *testing.T) {
 	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
 
