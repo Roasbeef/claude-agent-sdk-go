@@ -2194,3 +2194,9 @@ func TestIntegrationPartialAssistantParentToolUseID(t *testing.T) {
 	skipIfNoCLI(t)
 	t.Skip("requires CLI to deterministically emit a streaming partial event nested under a Task-tool subagent (parent_tool_use_id non-null); tracked in INTEGRATION-FOLLOWUPS.md")
 }
+
+func TestIntegrationCommandsChangedMessage(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	t.Skip("not triggerable from CLI: commands_changed fires when the CLI dynamically discovers new skills mid-session, which requires modifying the skills directory while a session is live - not exercisable in standard integration runs; tracked in INTEGRATION-FOLLOWUPS.md")
+}

@@ -2,9 +2,10 @@ package claudeagent
 
 // SlashCommand represents an available slash command.
 type SlashCommand struct {
-	Name         string `json:"name"`         // Command name (without slash)
-	Description  string `json:"description"`  // Command description
-	ArgumentHint string `json:"argumentHint"` // Hint for command arguments
+	Name         string   `json:"name"`              // Command name (without slash)
+	Description  string   `json:"description"`       // Command description
+	ArgumentHint string   `json:"argumentHint"`      // Hint for command arguments
+	Aliases      []string `json:"aliases,omitempty"` // Alternate names resolving to this command (e.g. /cost and /stats both resolve to /usage)
 }
 
 // ModelInfo contains information about an available model.

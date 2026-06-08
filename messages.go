@@ -1018,6 +1018,21 @@ type PluginInstallMessage struct {
 // MessageType implements Message.
 func (m PluginInstallMessage) MessageType() string { return "system" }
 
+// CommandsChangedMessage reports a full slash-command list replacement from
+// sdk.d.ts L2683-L2696. Clients should replace cached command lists with this
+// payload because the supportedCommands() snapshot only reflects initialize-time
+// commands and does not include mid-session discoveries.
+type CommandsChangedMessage struct {
+	Type      string         `json:"type"`       // Always "system"
+	Subtype   string         `json:"subtype"`    // "commands_changed"
+	Commands  []SlashCommand `json:"commands"`   // Full replacement slash-command list
+	UUID      string         `json:"uuid"`       // Unique message ID
+	SessionID string         `json:"session_id"` // Session identifier
+}
+
+// MessageType implements Message.
+func (m CommandsChangedMessage) MessageType() string { return "system" }
+
 // SessionState is the current session run state.
 type SessionState string
 
@@ -1180,6 +1195,10 @@ func ParseMessage(data []byte) (Message, error) {
 		switch base.Subtype {
 		case "compact_boundary":
 			var msg CompactBoundaryMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "commands_changed":
+			var msg CommandsChangedMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
 		case "hook_started":
