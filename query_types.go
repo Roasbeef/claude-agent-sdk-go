@@ -110,6 +110,11 @@ type SDKControlReloadPluginsResponse struct {
 	ErrorCount int               `json:"error_count"`
 }
 
+// SDKControlReloadSkillsResponse reports refreshed skill commands.
+type SDKControlReloadSkillsResponse struct {
+	Skills []SlashCommand `json:"skills"`
+}
+
 // PluginInfo describes a plugin loaded by the CLI.
 type PluginInfo struct {
 	Name   string `json:"name"`

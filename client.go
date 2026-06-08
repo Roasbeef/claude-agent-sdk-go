@@ -889,6 +889,27 @@ func (s *Stream) ReloadPlugins(
 	return &out, nil
 }
 
+// ReloadSkills reloads skills from disk and returns refreshed skill commands.
+func (s *Stream) ReloadSkills(
+	ctx context.Context,
+) (*SDKControlReloadSkillsResponse, error) {
+	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "reload_skills",
+	})
+	if err != nil {
+		return nil, err
+	}
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return nil, fmt.Errorf("reload_skills: marshal: %w", err)
+	}
+	var out SDKControlReloadSkillsResponse
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return nil, fmt.Errorf("reload_skills: unmarshal: %w", err)
+	}
+	return &out, nil
+}
+
 // ApplyFlagSettings merges the provided settings into the flag settings layer,
 // updating the active configuration. Top-level keys are shallow-merged by the
 // CLI across successive calls and fall back to lower-precedence sources when
