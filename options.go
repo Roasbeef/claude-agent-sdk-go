@@ -1844,6 +1844,7 @@ const (
 	AssistantMessageErrorOAuthOrgNotAllowed   AssistantMessageError = "oauth_org_not_allowed"
 	AssistantMessageErrorBillingError         AssistantMessageError = "billing_error"
 	AssistantMessageErrorRateLimit            AssistantMessageError = "rate_limit"
+	AssistantMessageErrorOverloaded           AssistantMessageError = "overloaded"
 	AssistantMessageErrorInvalidRequest       AssistantMessageError = "invalid_request"
 	AssistantMessageErrorModelNotFound        AssistantMessageError = "model_not_found"
 	AssistantMessageErrorServerError          AssistantMessageError = "server_error"
