@@ -2872,6 +2872,80 @@ func TestBuildHookResponse_SuppressOriginalPrompt(t *testing.T) {
 	})
 }
 
+func TestBuildHookResponse_Stop_AdditionalContext(t *testing.T) {
+	resp := buildHookResponse("Stop", HookResult{
+		Continue:          true,
+		AdditionalContext: "context",
+	})
+
+	hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "Stop", hso["hookEventName"])
+	assert.Equal(t, "context", hso["additionalContext"])
+}
+
+func TestBuildHookResponse_Stop_AdditionalContextEmpty(t *testing.T) {
+	resp := buildHookResponse("Stop", HookResult{
+		Continue:          true,
+		AdditionalContext: "",
+	})
+
+	_, has := resp["hookSpecificOutput"]
+	assert.False(t, has,
+		"empty AdditionalContext must not emit hookSpecificOutput")
+}
+
+func TestBuildHookResponse_SubagentStop_AdditionalContext(t *testing.T) {
+	resp := buildHookResponse("SubagentStop", HookResult{
+		Continue:          true,
+		AdditionalContext: "context",
+	})
+
+	hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "SubagentStop", hso["hookEventName"])
+	assert.Equal(t, "context", hso["additionalContext"])
+}
+
+func TestBuildHookResponse_SubagentStop_AdditionalContextEmpty(t *testing.T) {
+	resp := buildHookResponse("SubagentStop", HookResult{
+		Continue:          true,
+		AdditionalContext: "",
+	})
+
+	_, has := resp["hookSpecificOutput"]
+	assert.False(t, has,
+		"empty AdditionalContext must not emit hookSpecificOutput")
+}
+
+func TestBuildHookResponse_AdditionalContext_DroppedOnUnsupportedHook(t *testing.T) {
+	resp := buildHookResponse("PreCompact", HookResult{
+		Continue:          true,
+		AdditionalContext: "context",
+	})
+
+	_, has := resp["hookSpecificOutput"]
+	assert.False(t, has,
+		"additionalContext must not leak onto hooks whose envelope does not accept it")
+}
+
+func TestBuildHookResponse_AdditionalContext_ComposesWithHookSpecificOutput(t *testing.T) {
+	resp := buildHookResponse("Stop", HookResult{
+		Continue:          true,
+		AdditionalContext: "from-typed-field",
+		HookSpecificOutput: map[string]interface{}{
+			"hookEventName": "Stop",
+			"customKey":     "preserved",
+		},
+	})
+
+	hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "Stop", hso["hookEventName"])
+	assert.Equal(t, "from-typed-field", hso["additionalContext"])
+	assert.Equal(t, "preserved", hso["customKey"])
+}
+
 func TestBuildHookResponse_ReloadSkills_True(t *testing.T) {
 	v := true
 	resp := buildHookResponse("SessionStart", HookResult{

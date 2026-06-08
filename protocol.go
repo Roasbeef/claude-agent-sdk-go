@@ -1635,6 +1635,17 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 		resp["hookSpecificOutput"] = hookSpecificOutput
 	}
 
+	if result.AdditionalContext != "" && isAdditionalContextHook(hookType) {
+		hookSpecificOutput, _ := resp["hookSpecificOutput"].(map[string]interface{})
+		if hookSpecificOutput == nil {
+			hookSpecificOutput = map[string]interface{}{
+				"hookEventName": hookType,
+			}
+		}
+		hookSpecificOutput["additionalContext"] = result.AdditionalContext
+		resp["hookSpecificOutput"] = hookSpecificOutput
+	}
+
 	if result.SuppressOriginalPrompt != nil && hookType == string(HookTypeUserPromptSubmit) {
 		hookSpecificOutput, _ := resp["hookSpecificOutput"].(map[string]interface{})
 		if hookSpecificOutput == nil {
@@ -1669,6 +1680,28 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 	}
 
 	return resp
+}
+
+// isAdditionalContextHook returns true for hook events whose
+// hookSpecificOutput accepts additionalContext per sdk.d.ts v0.3.168.
+func isAdditionalContextHook(hookType string) bool {
+	switch hookType {
+	case string(HookTypeNotification),
+		string(HookTypePostToolBatch),
+		string(HookTypePostToolUseFailure),
+		string(HookTypePostToolUse),
+		string(HookTypePreToolUse),
+		string(HookTypeSessionStart),
+		string(HookTypeSetup),
+		string(HookTypeStop),
+		string(HookTypeSubagentStart),
+		string(HookTypeSubagentStop),
+		string(HookTypeUserPromptExpansion),
+		string(HookTypeUserPromptSubmit):
+		return true
+	default:
+		return false
+	}
 }
 
 // isWatchPathsHook returns true for hook events whose
