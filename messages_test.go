@@ -63,6 +63,33 @@ func TestSDKControlRequestBodyInitializeOptionsOmitUnset(t *testing.T) {
 	}
 }
 
+func TestSDKControlRegisterRepoRootJSON(t *testing.T) {
+	reloadClaudeMD := true
+	reloadPlugins := false
+	reloadSkills := true
+	body := SDKControlRequestBody{
+		Subtype:        "register_repo_root",
+		Directory:      "packages/app",
+		ReloadClaudeMD: &reloadClaudeMD,
+		ReloadPlugins:  &reloadPlugins,
+		ReloadSkills:   &reloadSkills,
+	}
+
+	data, err := json.Marshal(body)
+	require.NoError(t, err)
+
+	var got SDKControlRequestBody
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, "register_repo_root", got.Subtype)
+	assert.Equal(t, "packages/app", got.Directory)
+	require.NotNil(t, got.ReloadClaudeMD)
+	require.NotNil(t, got.ReloadPlugins)
+	require.NotNil(t, got.ReloadSkills)
+	assert.Equal(t, true, *got.ReloadClaudeMD)
+	assert.Equal(t, false, *got.ReloadPlugins)
+	assert.Equal(t, true, *got.ReloadSkills)
+}
+
 func TestAgentDefinitionJSON(t *testing.T) {
 	background := false
 	effortBudget := 30000

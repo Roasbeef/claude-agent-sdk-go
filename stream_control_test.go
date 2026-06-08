@@ -242,6 +242,64 @@ func TestStreamSetMaxThinkingTokensRoundTrip(t *testing.T) {
 	}
 }
 
+func TestStreamRegisterRepoRootMinimal(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		return stream.RegisterRepoRoot(ctx, "packages/app")
+	})
+	require.NoError(t, err)
+
+	_, generic := decodeWrittenSDKControlRequest(t, transport)
+	body := genericRequestBody(t, generic)
+	assert.Equal(t, "register_repo_root", body["subtype"])
+	assert.Equal(t, "packages/app", body["directory"])
+	assert.NotContains(t, body, "reload_claude_md")
+	assert.NotContains(t, body, "reload_plugins")
+	assert.NotContains(t, body, "reload_skills")
+}
+
+func TestStreamRegisterRepoRootAllFlags(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		return stream.RegisterRepoRoot(ctx, "packages/app",
+			WithReloadClaudeMD(),
+			WithReloadPlugins(),
+			WithReloadSkills(),
+		)
+	})
+	require.NoError(t, err)
+
+	_, generic := decodeWrittenSDKControlRequest(t, transport)
+	body := genericRequestBody(t, generic)
+	assert.Equal(t, "register_repo_root", body["subtype"])
+	assert.Equal(t, "packages/app", body["directory"])
+	assert.Equal(t, true, body["reload_claude_md"])
+	assert.Equal(t, true, body["reload_plugins"])
+	assert.Equal(t, true, body["reload_skills"])
+}
+
+func TestStreamRegisterRepoRootSomeFlagsFalse(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		return stream.RegisterRepoRoot(ctx, "packages/app",
+			WithReloadClaudeMD(false),
+			WithReloadPlugins(false),
+		)
+	})
+	require.NoError(t, err)
+
+	_, generic := decodeWrittenSDKControlRequest(t, transport)
+	body := genericRequestBody(t, generic)
+	assert.Equal(t, "register_repo_root", body["subtype"])
+	assert.Equal(t, "packages/app", body["directory"])
+	assert.Equal(t, false, body["reload_claude_md"])
+	assert.Equal(t, false, body["reload_plugins"])
+	assert.NotContains(t, body, "reload_skills")
+}
+
 func TestStreamControlRequestSurfacesError(t *testing.T) {
 	stream, _, _ := newStreamControlTest(func(req SDKControlRequest) SDKControlResponse {
 		return SDKControlResponse{
