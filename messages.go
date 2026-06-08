@@ -188,6 +188,7 @@ const (
 	MessageOriginKindPeer             MessageOriginKind = "peer"
 	MessageOriginKindTaskNotification MessageOriginKind = "task-notification"
 	MessageOriginKindCoordinator      MessageOriginKind = "coordinator"
+	MessageOriginKindAutoContinuation MessageOriginKind = "auto-continuation"
 )
 
 // MessageOrigin describes the originating actor for a message.

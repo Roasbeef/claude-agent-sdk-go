@@ -1189,6 +1189,34 @@ func TestResultMessageOriginRoundTrip(t *testing.T) {
 	assert.Equal(t, int64(250), decoded.TTFTMs)
 }
 
+func TestMessageOriginAutoContinuationRoundTrip(t *testing.T) {
+	msg := ResultMessage{
+		Type:    "result",
+		Subtype: "success",
+		Origin:  &MessageOrigin{Kind: MessageOriginKindAutoContinuation},
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &raw))
+	origin, ok := raw["origin"].(map[string]interface{})
+	require.True(t, ok, "origin must marshal to an object")
+	assert.Equal(t, "auto-continuation", origin["kind"])
+	assert.NotContains(t, origin, "server")
+	assert.NotContains(t, origin, "from")
+	assert.NotContains(t, origin, "name")
+
+	var decoded ResultMessage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NotNil(t, decoded.Origin)
+	assert.Equal(t, MessageOriginKindAutoContinuation, decoded.Origin.Kind)
+	assert.Empty(t, decoded.Origin.Server)
+	assert.Empty(t, decoded.Origin.From)
+	assert.Empty(t, decoded.Origin.Name)
+}
+
 func TestResultMessageFieldAdditionsBackwardCompat(t *testing.T) {
 	input := []byte(`{
 		"type": "result",
