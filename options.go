@@ -74,6 +74,13 @@ type Options struct {
 	// OnElicitation handles MCP server requests for user input.
 	OnElicitation OnElicitationFunc
 
+	// OnUserDialog handles request_user_dialog control requests from the CLI.
+	// Each dialogKind defines its own payload + result shape. When unset or
+	// when the callback answers cancelled, the CLI applies the dialog's
+	// default behavior. Hosts MUST answer unrecognized dialogKind values
+	// with cancelled.
+	OnUserDialog OnUserDialogFunc
+
 	// GetHostAuthToken handles host-auth-token refresh requests from the CLI.
 	// If unset, the SDK replies with an error response.
 	GetHostAuthToken GetHostAuthTokenFunc
@@ -1007,6 +1014,17 @@ func WithOnElicitation(fn OnElicitationFunc) Option {
 	}
 }
 
+// WithOnUserDialog registers a callback that handles request_user_dialog
+// control requests.
+//
+// If unset, the SDK answers every dialog as cancelled and the CLI applies
+// each dialog's default behavior.
+func WithOnUserDialog(fn OnUserDialogFunc) Option {
+	return func(o *Options) {
+		o.OnUserDialog = fn
+	}
+}
+
 // WithGetHostAuthToken registers a callback that refreshes host auth tokens on
 // CLI request.
 //
@@ -1191,6 +1209,14 @@ type CanUseToolFunc func(ctx context.Context, req ToolPermissionRequest) Permiss
 // Returning a non-nil error converts the response to action="cancel".
 type OnElicitationFunc func(ctx context.Context, req ElicitationRequest) (ElicitationResult, error)
 
+// OnUserDialogFunc handles a request_user_dialog control request.
+//
+// Returning a non-nil error or a UserDialogResult with
+// Behavior == UserDialogBehaviorCancelled signals the CLI to apply the
+// dialog's default behavior. Hosts MUST answer with cancelled for any
+// dialogKind they do not recognize.
+type OnUserDialogFunc func(ctx context.Context, req UserDialogRequest) (UserDialogResult, error)
+
 // GetHostAuthTokenFunc returns a fresh host auth token.
 //
 // The context is canceled when the CLI cancels the refresh request.
@@ -1222,6 +1248,37 @@ const (
 	ElicitationActionDecline = "decline"
 	// ElicitationActionCancel cancels the elicitation response.
 	ElicitationActionCancel = "cancel"
+)
+
+// UserDialogRequest is the input to the OnUserDialog callback.
+//
+// DialogKind is an open string union — new kinds may appear without a
+// protocol bump. Hosts MUST answer unrecognized kinds with
+// UserDialogBehaviorCancelled so the CLI applies the dialog default.
+type UserDialogRequest struct {
+	DialogKind string                 `json:"dialogKind"`
+	Payload    map[string]interface{} `json:"payload"`
+	ToolUseID  string                 `json:"toolUseID,omitempty"`
+}
+
+// UserDialogResult is what OnUserDialog returns. The TS wire spec is a
+// discriminated union with only two valid Behavior values:
+//
+//   - UserDialogBehaviorCompleted — Result carries the host's answer
+//     (dialog-kind-specific shape, transported opaquely).
+//   - UserDialogBehaviorCancelled — the host declined to answer; the CLI
+//     applies the dialog's default behavior. Result MUST be nil.
+type UserDialogResult struct {
+	Behavior string      `json:"behavior"`
+	Result   interface{} `json:"result,omitempty"`
+}
+
+const (
+	// UserDialogBehaviorCompleted signals the host produced an answer.
+	UserDialogBehaviorCompleted = "completed"
+	// UserDialogBehaviorCancelled signals the CLI to apply the dialog's
+	// default behavior.
+	UserDialogBehaviorCancelled = "cancelled"
 )
 
 // ToolPermissionRequest contains details about a tool execution request.

@@ -1,6 +1,7 @@
 package claudeagent
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -877,5 +878,57 @@ func TestBaseHookInputEffortJSON(t *testing.T) {
 		require.NotNil(t, input.Effort)
 		assert.Equal(t, EffortHigh, input.Effort.Level)
 		assert.Equal(t, EffortHigh, input.Base().Effort.Level)
+	})
+}
+
+func TestWithOnUserDialog(t *testing.T) {
+	t.Run("builder installs callback", func(t *testing.T) {
+		opts := NewOptions()
+		require.Nil(t, opts.OnUserDialog)
+
+		called := false
+		fn := func(ctx context.Context, req UserDialogRequest) (UserDialogResult, error) {
+			called = true
+			return UserDialogResult{Behavior: UserDialogBehaviorCancelled}, nil
+		}
+
+		WithOnUserDialog(fn)(opts)
+		require.NotNil(t, opts.OnUserDialog)
+
+		_, err := opts.OnUserDialog(context.Background(), UserDialogRequest{DialogKind: "k"})
+		require.NoError(t, err)
+		assert.True(t, called)
+	})
+}
+
+func TestUserDialogRequest_ToolUseIDOmitempty(t *testing.T) {
+	t.Run("missing tool_use_id is absent on the wire", func(t *testing.T) {
+		req := UserDialogRequest{
+			DialogKind: "approve_edit",
+			Payload:    map[string]interface{}{"path": "/tmp/x"},
+		}
+		data, err := json.Marshal(req)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, "approve_edit", got["dialogKind"])
+		assert.Equal(t, map[string]interface{}{"path": "/tmp/x"}, got["payload"])
+		_, hasToolUseID := got["toolUseID"]
+		assert.False(t, hasToolUseID)
+	})
+
+	t.Run("present tool_use_id round-trips", func(t *testing.T) {
+		req := UserDialogRequest{
+			DialogKind: "approve_edit",
+			Payload:    map[string]interface{}{},
+			ToolUseID:  "tu_42",
+		}
+		data, err := json.Marshal(req)
+		require.NoError(t, err)
+
+		var got UserDialogRequest
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, "tu_42", got.ToolUseID)
 	})
 }
