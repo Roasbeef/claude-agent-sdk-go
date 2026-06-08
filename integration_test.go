@@ -787,6 +787,13 @@ func TestIntegrationStopHookSessionCrons(t *testing.T) {
 	t.Skip("not triggerable from CLI without scheduling a session cron; tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+func TestIntegrationStopHookAdditionalContext(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	t.Skip("not triggerable from CLI: hookSpecificOutput.additionalContext on Stop / SubagentStop requires the model to consume the context and continue the turn, which is not assertable from the SDK transport in standard integration runs; tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
 func TestIntegrationAssistantMessageSubagentFields(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
