@@ -1003,6 +1003,7 @@ func TestSubprocessTransportManagedSettings(t *testing.T) {
 	runner := NewMockSubprocessRunner()
 	opts := NewOptions()
 	WithManagedSettings(Settings{
+		FallbackModel:   []string{"opus", "sonnet", "default"},
 		AvailableModels: []string{"opus", "sonnet"},
 		Sandbox: &SettingsSandbox{
 			Enabled:           boolPtr(true),
@@ -1022,6 +1023,7 @@ func TestSubprocessTransportManagedSettings(t *testing.T) {
 
 	var raw map[string]interface{}
 	require.NoError(t, json.Unmarshal([]byte(runner.StartArgs[managedIndex+1]), &raw))
+	assert.Equal(t, []interface{}{"opus", "sonnet", "default"}, raw["fallbackModel"])
 	assert.Equal(t, []interface{}{"opus", "sonnet"}, raw["availableModels"])
 	assert.Equal(t, true, raw["sandbox"].(map[string]interface{})["enabled"])
 	assert.Equal(t, false, raw["sandbox"].(map[string]interface{})["failIfUnavailable"])

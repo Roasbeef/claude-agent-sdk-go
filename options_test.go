@@ -114,6 +114,48 @@ func TestSettingsHookContinueOnBlockJSON(t *testing.T) {
 }
 
 func TestSettingsManagedOrgFieldsJSON(t *testing.T) {
+	t.Run("fallbackModel round-trips populated list", func(t *testing.T) {
+		in := Settings{
+			FallbackModel: []string{"opus", "sonnet", "default"},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, []interface{}{"opus", "sonnet", "default"}, got["fallbackModel"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		assert.Equal(t, []string{"opus", "sonnet", "default"}, out.FallbackModel)
+	})
+
+	t.Run("fallbackModel nil and empty omitted", func(t *testing.T) {
+		for _, in := range []Settings{
+			{},
+			{FallbackModel: []string{}},
+		} {
+			data, err := json.Marshal(in)
+			require.NoError(t, err)
+
+			var got map[string]interface{}
+			require.NoError(t, json.Unmarshal(data, &got))
+			assert.NotContains(t, got, "fallbackModel")
+		}
+	})
+
+	t.Run("fallbackModel single value round-trips", func(t *testing.T) {
+		in := Settings{
+			FallbackModel: []string{"default"},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		assert.Equal(t, []string{"default"}, out.FallbackModel)
+	})
+
 	t.Run("policyHelper round-trips with all fields", func(t *testing.T) {
 		timeout := 5000
 		refresh := 60000

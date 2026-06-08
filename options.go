@@ -26,7 +26,9 @@ type Options struct {
 	// MainAgent names the agent to apply to the main thread.
 	MainAgent string
 
-	// FallbackModel is the model to use if primary fails.
+	// FallbackModel is the fallback model list to use if the primary model is
+	// overloaded or unavailable. Accepts a comma-separated list to try in order;
+	// the primary model is re-tried at the start of each user turn.
 	FallbackModel string
 
 	// CLIPath is the path to the Claude Code CLI executable.
@@ -315,6 +317,7 @@ type Settings struct {
 	IncludeGitInstructions          *bool                            `json:"includeGitInstructions,omitempty"`
 	Permissions                     *SettingsPermissions             `json:"permissions,omitempty"`
 	Model                           string                           `json:"model,omitempty"`
+	FallbackModel                   []string                         `json:"fallbackModel,omitempty"`
 	AvailableModels                 []string                         `json:"availableModels,omitempty"`
 	ModelOverrides                  map[string]string                `json:"modelOverrides,omitempty"`
 	EnableAllProjectMCPServers      *bool                            `json:"enableAllProjectMcpServers,omitempty"`
