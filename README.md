@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.150 catchup work, using Go idioms where the API shape differs.
+v0.3.168 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -210,7 +210,7 @@ For detailed guides and examples, see [docs/examples/](docs/examples/):
 ## TypeScript SDK Parity
 
 The SDK tracks the upstream TypeScript Agent SDK release cadence. Coverage
-landed across two catchup cycles.
+landed across three catchup cycles.
 
 The v0.2.119 catchup added:
 
@@ -245,6 +245,42 @@ The v0.3.150 catchup added:
   clearing, host-side `host_auth_token_refresh` and `submit_feedback` control
   subtypes
 
+The v0.3.168 catchup added:
+
+- new system message subtypes (`ThinkingTokensMessage`, `CommandsChangedMessage`),
+  the `MessageDisplay` hook event, and the `MessageOriginKindAutoContinuation`
+  origin variant
+- `ResultMessage` timing fields (`Duration*MS`), an `Overloaded`
+  `SDKAssistantMessage.Error` variant, and the `SessionTitle` field on
+  `SessionStart` + `UserPromptSubmit` hook inputs
+- hook output additions: `ReloadSkills` on `SessionStart` and
+  `AdditionalContext` on `Notification` / `PostToolBatch` / `PostToolUse*` /
+  `PreToolUse` / `SessionStart` / `Setup` / `Stop` / `SubagentStart` /
+  `SubagentStop` / `UserPromptExpansion` / `UserPromptSubmit`
+- new control RPCs: `OnUserDialog` callback for `request_user_dialog`,
+  `Stream.ReloadSkills`, and `Stream.RegisterRepoRoot` with
+  `WithReloadClaudeMD` / `WithReloadPlugins` / `WithReloadSkills`
+- managed-settings batch: `RequiredMinimumVersion`, `RequiredMaximumVersion`,
+  `SwitchModelsOnFlag`, `ForceLoginMethod` `"gateway"`, `Settings.FallbackModel`
+  list, `PluginSuggestionMarketplaces`, marketplace `SkipLfs`, plus
+  `Workflows` / `EnableWorkflows` / `WorkflowKeywordTriggerEnabled` /
+  `Ultracode` knobs
+- correctness fixes: `pending_permission_requests` round-trips on control
+  success payloads, marketplace source variants document `skipLfs` flow, and
+  `Effort` / strict-MCP docstrings refreshed for clarity
+
+PRs in this cycle (squash-merged): #96 MessageDisplay hook, #97
+ThinkingTokensMessage, #98 SessionStart reloadSkills, #99 SessionTitle hook
+fields, #100 workflows + ultracode + pluginSuggestionMarketplaces, #101
+marketplace skipLfs, #102 option docstring refresh, #103
+pending_permission_requests round-trip, #104 CommandsChangedMessage, #105
+Stop/SubagentStop additionalContext, #106 OnUserDialog + request_user_dialog,
+#107 reload_skills RPC, #108 register_repo_root + Stream.RegisterRepoRoot,
+#109 overloaded assistant error, #110 MessageOriginKindAutoContinuation,
+#111 ResultMessage timing fields, #112 Settings.FallbackModel list, #113
+managed required/maximum version + switchModelsOnFlag + forceLoginMethod
+"gateway".
+
 Some areas remain intentionally limited by the CLI or integration harness:
 desktop/IDE-only settings are not modeled exhaustively, several runtime control
 paths have unit coverage plus skipped integration slots until stable live CLI
@@ -277,6 +313,16 @@ you are translating TS code, watch for these:
   models the CLI silently downgrades per its own policy. The CLI is the
   authority on which model accepts which level - the SDK only forwards the enum
   value.
+- **`OnUserDialog` answers cancelled by default, including on unknown
+  `dialogKind`.** Per TS SDK v0.3.168, `dialogKind` is an open string union: a
+  new CLI release can ship a kind the host has never seen. The contract is
+  that the host MUST respond cancelled in that case, and the CLI then applies
+  the dialog's default behavior. The Go SDK enforces this automatically: if
+  `OnUserDialog` is unset, or the callback returns a non-nil error, the SDK
+  emits cancelled on the host's behalf. Callbacks that do recognize the kind
+  should still return `UserDialogBehaviorCancelled` (rather than fabricating a
+  result) for any branch they cannot honor — a misbehaving host should never
+  wedge the CLI on an unresolved dialog.
 
 For internal architecture, see [DESIGN.md](docs/DESIGN.md). For CLI protocol
 details (how this and the official Typescript SDK actually work), see
