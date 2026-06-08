@@ -352,6 +352,80 @@ func TestSettingsManagedOrgFieldsJSON(t *testing.T) {
 	})
 }
 
+func TestSettingsRequiredVersionsJSON(t *testing.T) {
+	in := Settings{
+		RequiredMinimumVersion: "0.3.168",
+		RequiredMaximumVersion: "0.3.200",
+	}
+	data, err := json.Marshal(in)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, "0.3.168", got["requiredMinimumVersion"])
+	assert.Equal(t, "0.3.200", got["requiredMaximumVersion"])
+
+	var out Settings
+	require.NoError(t, json.Unmarshal(data, &out))
+	assert.Equal(t, "0.3.168", out.RequiredMinimumVersion)
+	assert.Equal(t, "0.3.200", out.RequiredMaximumVersion)
+
+	data, err = json.Marshal(Settings{})
+	require.NoError(t, err)
+	empty := map[string]interface{}{}
+	require.NoError(t, json.Unmarshal(data, &empty))
+	assert.NotContains(t, empty, "requiredMinimumVersion")
+	assert.NotContains(t, empty, "requiredMaximumVersion")
+}
+
+func TestSettingsSwitchModelsOnFlagJSON(t *testing.T) {
+	t.Run("nil omits key", func(t *testing.T) {
+		data, err := json.Marshal(Settings{})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "switchModelsOnFlag")
+	})
+
+	for _, tc := range []struct {
+		name string
+		in   bool
+	}{
+		{name: "explicit false emits false", in: false},
+		{name: "explicit true emits true", in: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			in := Settings{SwitchModelsOnFlag: &tc.in}
+			data, err := json.Marshal(in)
+			require.NoError(t, err)
+
+			var got map[string]interface{}
+			require.NoError(t, json.Unmarshal(data, &got))
+			assert.Equal(t, tc.in, got["switchModelsOnFlag"])
+
+			var out Settings
+			require.NoError(t, json.Unmarshal(data, &out))
+			require.NotNil(t, out.SwitchModelsOnFlag)
+			assert.Equal(t, tc.in, *out.SwitchModelsOnFlag)
+		})
+	}
+}
+
+func TestSettingsForceLoginMethodGateway(t *testing.T) {
+	in := Settings{ForceLoginMethod: "gateway"}
+	data, err := json.Marshal(in)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, "gateway", got["forceLoginMethod"])
+
+	var out Settings
+	require.NoError(t, json.Unmarshal(data, &out))
+	assert.Equal(t, "gateway", out.ForceLoginMethod)
+}
+
 func TestSettingsWorkflowsFieldsJSON(t *testing.T) {
 	t.Run("nil and empty fields omitted", func(t *testing.T) {
 		data, err := json.Marshal(Settings{
