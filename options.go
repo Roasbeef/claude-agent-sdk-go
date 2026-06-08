@@ -1267,6 +1267,9 @@ const (
 	// HookTypeInstructionsLoaded fires when instruction files are loaded.
 	HookTypeInstructionsLoaded HookType = "InstructionsLoaded"
 
+	// HookTypeMessageDisplay fires as assistant message display lines stream.
+	HookTypeMessageDisplay HookType = "MessageDisplay"
+
 	// HookTypePreToolUse fires before tool execution.
 	HookTypePreToolUse HookType = "PreToolUse"
 
@@ -1422,6 +1425,23 @@ func (InstructionsLoadedInput) HookType() HookType { return HookTypeInstructions
 
 // Base implements HookInput.
 func (i InstructionsLoadedInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// MessageDisplayInput contains data for MessageDisplay hooks per sdk.d.ts
+// v0.3.168 L1153-L1180.
+type MessageDisplayInput struct {
+	BaseHookInput
+	TurnID    string `json:"turn_id"`
+	MessageID string `json:"message_id"`
+	Index     int    `json:"index"`
+	Final     bool   `json:"final"`
+	Delta     string `json:"delta"`
+}
+
+// HookType implements HookInput.
+func (MessageDisplayInput) HookType() HookType { return HookTypeMessageDisplay }
+
+// Base implements HookInput.
+func (i MessageDisplayInput) Base() BaseHookInput { return i.BaseHookInput }
 
 // PreToolUseInput contains data for PreToolUse hooks.
 type PreToolUseInput struct {
@@ -1974,6 +1994,13 @@ type HookResult struct {
 	// suppressOriginalPrompt per sdk.d.ts v0.3.150 L5808. Useful when the
 	// prompt itself was the reason for the block (PII, credentials, etc.).
 	SuppressOriginalPrompt *bool
+
+	// DisplayContent replaces the displayed delta for MessageDisplay hooks
+	// without changing the stored message or model-visible content. Honored
+	// only on MessageDisplay hooks and silently dropped for other hook types.
+	// Translates into hookSpecificOutput.displayContent per sdk.d.ts v0.3.168
+	// L1182-L1191.
+	DisplayContent *string
 
 	// UpdatedToolOutput replaces the tool output sent to the model on
 	// PostToolUse hooks. The value is forwarded verbatim as

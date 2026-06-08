@@ -740,6 +740,15 @@ func TestIntegrationHookSuppressOriginalPrompt(t *testing.T) {
 	t.Skip("not directly assertable from CLI: suppressOriginalPrompt is a CLI block-message rendering behavior, not surfaced on the SDK transport")
 }
 
+func TestIntegrationMessageDisplayHook(t *testing.T) {
+	// Registering HookTypeMessageDisplay against a streamed assistant turn
+	// (with WithMaxTurns(1) and a normal prompt) yields zero callback
+	// invocations end-to-end against the v0.3.168 CLI. The assistant message
+	// arrives on the SDK transport but no MessageDisplay hook events do.
+	// Tracked in memory/catchup-v0.3.168/INTEGRATION-FOLLOWUPS.md.
+	t.Skip("not triggerable from CLI: v0.3.168 CLI does not emit MessageDisplay hook events to SDK transports during assistant streaming")
+}
+
 func TestIntegrationPostToolUseUpdatedToolOutput(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
