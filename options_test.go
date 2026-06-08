@@ -309,6 +309,128 @@ func TestSettingsManagedOrgFieldsJSON(t *testing.T) {
 	})
 }
 
+func TestSettingsWorkflowsFieldsJSON(t *testing.T) {
+	t.Run("nil and empty fields omitted", func(t *testing.T) {
+		data, err := json.Marshal(Settings{
+			PluginSuggestionMarketplaces: []string{},
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		for _, k := range []string{
+			"disableWorkflows",
+			"enableWorkflows",
+			"workflowKeywordTriggerEnabled",
+			"pluginSuggestionMarketplaces",
+			"ultracode",
+		} {
+			assert.NotContains(t, got, k, "key %q must be omitted when nil or empty", k)
+		}
+	})
+
+	t.Run("disableWorkflows true round-trips", func(t *testing.T) {
+		v := true
+		data, err := json.Marshal(Settings{DisableWorkflows: &v})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, true, got["disableWorkflows"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.DisableWorkflows)
+		assert.True(t, *out.DisableWorkflows)
+	})
+
+	t.Run("enableWorkflows false round-trips", func(t *testing.T) {
+		v := false
+		data, err := json.Marshal(Settings{EnableWorkflows: &v})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, false, got["enableWorkflows"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.EnableWorkflows)
+		assert.False(t, *out.EnableWorkflows)
+	})
+
+	t.Run("workflowKeywordTriggerEnabled true round-trips", func(t *testing.T) {
+		v := true
+		data, err := json.Marshal(Settings{WorkflowKeywordTriggerEnabled: &v})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, true, got["workflowKeywordTriggerEnabled"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.WorkflowKeywordTriggerEnabled)
+		assert.True(t, *out.WorkflowKeywordTriggerEnabled)
+	})
+
+	t.Run("pluginSuggestionMarketplaces round-trips", func(t *testing.T) {
+		data, err := json.Marshal(Settings{
+			PluginSuggestionMarketplaces: []string{"a", "b"},
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, []interface{}{"a", "b"}, got["pluginSuggestionMarketplaces"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		assert.Equal(t, []string{"a", "b"}, out.PluginSuggestionMarketplaces)
+	})
+
+	t.Run("ultracode true round-trips", func(t *testing.T) {
+		v := true
+		data, err := json.Marshal(Settings{Ultracode: &v})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, true, got["ultracode"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.Ultracode)
+		assert.True(t, *out.Ultracode)
+	})
+
+	t.Run("all fields round-trip together", func(t *testing.T) {
+		enabled := true
+		disabled := false
+		in := Settings{
+			DisableWorkflows:              &enabled,
+			EnableWorkflows:               &disabled,
+			WorkflowKeywordTriggerEnabled: &enabled,
+			PluginSuggestionMarketplaces:  []string{"internal", "partner"},
+			Ultracode:                     &enabled,
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.DisableWorkflows)
+		assert.True(t, *out.DisableWorkflows)
+		require.NotNil(t, out.EnableWorkflows)
+		assert.False(t, *out.EnableWorkflows)
+		require.NotNil(t, out.WorkflowKeywordTriggerEnabled)
+		assert.True(t, *out.WorkflowKeywordTriggerEnabled)
+		assert.Equal(t, []string{"internal", "partner"}, out.PluginSuggestionMarketplaces)
+		require.NotNil(t, out.Ultracode)
+		assert.True(t, *out.Ultracode)
+	})
+}
+
 func TestSettingsSandboxFieldsJSON(t *testing.T) {
 	t.Run("tlsTerminate round-trips with both paths", func(t *testing.T) {
 		in := Settings{

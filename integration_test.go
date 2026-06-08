@@ -2041,6 +2041,17 @@ func TestIntegrationSettingsManagedOrgFields(t *testing.T) {
 	t.Skip("not directly assertable from CLI: managed-org settings are honored only from admin-controlled policy sources, not surfaced on user CLI flag entry points")
 }
 
+func TestIntegrationSettingsWorkflowsFields(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// TODO: Backfill when the CLI test fixture can deterministically inject
+	// workflows + ultracode + pluginSuggestionMarketplaces through managed or
+	// session settings so the SDK can observe resolved workflow policy state.
+	// Tracked in memory/catchup-v0.3.168/INTEGRATION-FOLLOWUPS.md.
+	t.Skip("not triggerable from CLI: workflows + ultracode + pluginSuggestionMarketplaces are admin-policy-tier toggles not surfaced via standard CLI flags")
+}
+
 func TestIntegrationSettingsSandboxFields(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
