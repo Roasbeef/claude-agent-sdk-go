@@ -694,6 +694,98 @@ func TestParseMessageResultMessageTTFT(t *testing.T) {
 	assert.Equal(t, int64(137), resultMsg.TTFTMs)
 }
 
+func TestParseResultMessageTimingFields(t *testing.T) {
+	input := []byte(`{
+		"type": "result",
+		"status": "success",
+		"subtype": "success",
+		"result": "done",
+		"ttft_stream_ms": 42,
+		"time_to_request_ms": 84,
+		"time_to_request_from_spawn_ms": 126,
+		"warm_spare_claimed": true
+	}`)
+
+	msg, err := ParseMessage(input)
+	require.NoError(t, err)
+
+	resultMsg, ok := msg.(ResultMessage)
+	require.True(t, ok)
+	require.NotNil(t, resultMsg.TTFTStreamMs)
+	assert.Equal(t, int64(42), *resultMsg.TTFTStreamMs)
+	require.NotNil(t, resultMsg.TimeToRequestMs)
+	assert.Equal(t, int64(84), *resultMsg.TimeToRequestMs)
+	require.NotNil(t, resultMsg.TimeToRequestFromSpawnMs)
+	assert.Equal(t, int64(126), *resultMsg.TimeToRequestFromSpawnMs)
+	require.NotNil(t, resultMsg.WarmSpareClaimed)
+	assert.True(t, *resultMsg.WarmSpareClaimed)
+}
+
+func TestResultMessageTimingFieldsOmitempty(t *testing.T) {
+	msg := ResultMessage{
+		Type:    "result",
+		Subtype: "success",
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.NotContains(t, got, "ttft_stream_ms")
+	assert.NotContains(t, got, "time_to_request_ms")
+	assert.NotContains(t, got, "time_to_request_from_spawn_ms")
+	assert.NotContains(t, got, "warm_spare_claimed")
+}
+
+func TestResultMessageTimingFieldsExplicitFalse(t *testing.T) {
+	msg := ResultMessage{
+		Type:             "result",
+		Subtype:          "success",
+		WarmSpareClaimed: boolPtr(false),
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Contains(t, got, "warm_spare_claimed")
+	assert.Equal(t, false, got["warm_spare_claimed"])
+
+	var decoded ResultMessage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NotNil(t, decoded.WarmSpareClaimed)
+	assert.False(t, *decoded.WarmSpareClaimed)
+}
+
+func TestResultMessageTimingFieldsRoundTrip(t *testing.T) {
+	msg := ResultMessage{
+		Type:                     "result",
+		Status:                   "success",
+		Subtype:                  "success",
+		Result:                   "done",
+		TTFTStreamMs:             int64Ptr(7),
+		TimeToRequestMs:          int64Ptr(11),
+		TimeToRequestFromSpawnMs: int64Ptr(13),
+		WarmSpareClaimed:         boolPtr(true),
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var decoded ResultMessage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NotNil(t, decoded.TTFTStreamMs)
+	assert.Equal(t, int64(7), *decoded.TTFTStreamMs)
+	require.NotNil(t, decoded.TimeToRequestMs)
+	assert.Equal(t, int64(11), *decoded.TimeToRequestMs)
+	require.NotNil(t, decoded.TimeToRequestFromSpawnMs)
+	assert.Equal(t, int64(13), *decoded.TimeToRequestFromSpawnMs)
+	require.NotNil(t, decoded.WarmSpareClaimed)
+	assert.True(t, *decoded.WarmSpareClaimed)
+}
+
 // TestParseMessageStreamEvent tests parsing stream events.
 func TestParseMessageStreamEvent(t *testing.T) {
 	input := `{
