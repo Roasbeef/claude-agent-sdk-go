@@ -509,20 +509,38 @@ func TestAssistantMessageJSONRoundTrip(t *testing.T) {
 }
 
 func TestAssistantMessageErrorRoundTrip(t *testing.T) {
-	msg := AssistantMessage{
-		Type:  "assistant",
-		Error: AssistantMessageErrorModelNotFound,
+	tests := []struct {
+		name  string
+		error AssistantMessageError
+	}{
+		{
+			name:  "model_not_found",
+			error: AssistantMessageErrorModelNotFound,
+		},
+		{
+			name:  "overloaded",
+			error: AssistantMessageErrorOverloaded,
+		},
 	}
-	msg.Message.Role = "assistant"
-	msg.Message.Content = []ContentBlock{{Type: "text", Text: "Model unavailable."}}
 
-	data, err := json.Marshal(msg)
-	require.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := AssistantMessage{
+				Type:  "assistant",
+				Error: tt.error,
+			}
+			msg.Message.Role = "assistant"
+			msg.Message.Content = []ContentBlock{{Type: "text", Text: "Model unavailable."}}
 
-	var got AssistantMessage
-	require.NoError(t, json.Unmarshal(data, &got))
+			data, err := json.Marshal(msg)
+			require.NoError(t, err)
 
-	assert.Equal(t, msg.Error, got.Error)
+			var got AssistantMessage
+			require.NoError(t, json.Unmarshal(data, &got))
+
+			assert.Equal(t, msg.Error, got.Error)
+		})
+	}
 }
 
 // TestParseMessageToolUseBlock tests parsing tool use requests.
