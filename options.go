@@ -178,8 +178,12 @@ type Options struct {
 	// DisallowedTools is a list of disallowed tool names.
 	DisallowedTools []string
 
-	// Tools configures available tools.
+	// Tools configures available built-in tools.
 	// Can be a list of tool names or use preset "claude_code".
+	//
+	// Note: native builds may provide search via Bash `find`/`grep`
+	// instead of the dedicated Grep/Glob tools. List Grep/Glob here
+	// or in AllowedTools to get them.
 	Tools *ToolsConfig
 
 	// Thinking controls Claude's thinking/reasoning behavior.
@@ -233,8 +237,10 @@ type Options struct {
 	// The CLAUDE_CONFIG_DIR environment variable is set when this is specified.
 	ConfigDir string
 
-	// StrictMCPConfig when true, only uses MCP servers from MCPServers config,
-	// ignoring all other MCP configurations from settings files.
+	// StrictMCPConfig, when true, only uses MCP servers from MCPServers
+	// and explicitly passed agent definitions, ignoring all other MCP
+	// configurations from settings files, plugins, and on-disk agent
+	// frontmatter. Maps to the CLI --strict-mcp-config flag.
 	StrictMCPConfig bool
 
 	// SDKMcpServers are in-process MCP servers that run within the SDK.
@@ -834,14 +840,11 @@ const (
 	EffortMedium EffortLevel = "medium"
 	// EffortHigh applies deep reasoning.
 	EffortHigh EffortLevel = "high"
-	// EffortXHigh applies deeper reasoning than high. Supported only
-	// on Opus 4.7; silently falls back to "high" on other models per
-	// TS SDK v0.3.150 (sdk.d.ts L519-L522, L1511-L1512).
+	// EffortXHigh applies deeper reasoning than high. Supported on
+	// Opus 4.7+.
 	EffortXHigh EffortLevel = "xhigh"
-	// EffortMax applies maximum effort. Supported on Opus 4.6, Opus
-	// 4.7, and Sonnet 4.6 per TS SDK v0.3.150 (sdk.d.ts L519-L522,
-	// L1511-L1512). On unsupported models the CLI falls back per its
-	// own downgrade policy.
+	// EffortMax applies maximum effort. Supported on Opus 4.6+ and
+	// Sonnet 4.6.
 	EffortMax EffortLevel = "max"
 )
 
@@ -2244,7 +2247,8 @@ type MCPServerConfig struct {
 	// Timeout is the per-server tool-call timeout in milliseconds. Overrides
 	// the MCP_TOOL_TIMEOUT environment variable for this server. Hard wall-
 	// clock limit per call; progress notifications do not extend it.
-	// Server-side floor: 1000ms.
+	// Values below 1000ms are ignored and fall through to MCP_TOOL_TIMEOUT
+	// or the default.
 	Timeout *int `json:"timeout,omitempty"`
 	// AlwaysLoad, when true, forces every tool from this server to be included
 	// in the prompt instead of deferred behind tool search. Equivalent to
