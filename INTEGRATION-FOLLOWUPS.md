@@ -5,6 +5,7 @@
 - Backfill `TestIntegrationHookTerminalSequence` when the CLI test fixture can capture terminal-escape bytes emitted by hook `terminalSequence` returns. Currently those go straight to the controlling TTY and aren't observable on the SDK transport.
 - Backfill `TestIntegrationHookSuppressOriginalPrompt` when the CLI test fixture can assert the block-message body the CLI returns when a UserPromptSubmit hook returns `suppressOriginalPrompt: true`. The omission is a CLI rendering behavior, not surfaced on the SDK transport.
 - Backfill `TestIntegrationSessionStartReloadSkills` when the CLI test fixture can change `CLAUDE_SKILLS_DIR` between SessionStart and the first message so reload-skills behavior is observable in standard integration runs.
+- Backfill `TestIntegrationSessionTitleField` when the CLI test fixture can explicitly rename the session so `session_title` is emitted on SessionStart and UserPromptSubmit hook inputs.
 - Backfill `TestIntegrationPostToolUseUpdatedToolOutput` when the CLI test fixture can deterministically run a tool whose output a PostToolUse hook rewrites, so the model receives the rewritten value rather than the original tool response.
 - Backfill `TestIntegrationAssistantMessageSubagentFields` when the CLI test fixture can deterministically run a subagent task end-to-end.
 - Backfill `TestIntegrationUserMessageSubagentFields` when the CLI test fixture can deterministically run a Task-tool subagent whose tool-result user message round-trips `subagent_type` + `task_description`.

@@ -747,6 +747,13 @@ func TestIntegrationSessionStartReloadSkills(t *testing.T) {
 	t.Skip("not triggerable from CLI: SessionStart hook reload-skills behavior requires a CLAUDE_SKILLS_DIR change between session start and first message; not exercisable in standard integration runs")
 }
 
+func TestIntegrationSessionTitleField(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	t.Skip("not triggerable from CLI: session_title only emits when user explicitly renames the session, which the standard integration run does not invoke")
+}
+
 func TestIntegrationMessageDisplayHook(t *testing.T) {
 	// Registering HookTypeMessageDisplay against a streamed assistant turn
 	// (with WithMaxTurns(1) and a normal prompt) yields zero callback
