@@ -378,6 +378,51 @@ func TestSettingsRequiredVersionsJSON(t *testing.T) {
 	assert.NotContains(t, empty, "requiredMaximumVersion")
 }
 
+func TestSettingsParity0177JSON(t *testing.T) {
+	in := Settings{
+		EnforceAvailableModels:         boolPtr(true),
+		DisableBundledSkills:           boolPtr(true),
+		DisableArtifact:                boolPtr(false),
+		WheelScrollAccelerationEnabled: boolPtr(true),
+		FooterLinksRegexes: []SettingsFooterLinkRegex{
+			{Type: "regex", Pattern: `PR #(?<id>\d+)`, URL: "https://example.com/pr/{id}", Label: "PR"},
+		},
+	}
+	data, err := json.Marshal(in)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, true, got["enforceAvailableModels"])
+	assert.Equal(t, true, got["disableBundledSkills"])
+	assert.Equal(t, false, got["disableArtifact"])
+	assert.Equal(t, true, got["wheelScrollAccelerationEnabled"])
+	regexes, ok := got["footerLinksRegexes"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, regexes, 1)
+	entry := regexes[0].(map[string]interface{})
+	assert.Equal(t, "regex", entry["type"])
+	assert.Equal(t, "https://example.com/pr/{id}", entry["url"])
+
+	var out Settings
+	require.NoError(t, json.Unmarshal(data, &out))
+	require.NotNil(t, out.EnforceAvailableModels)
+	assert.True(t, *out.EnforceAvailableModels)
+	require.Len(t, out.FooterLinksRegexes, 1)
+	assert.Equal(t, "PR", out.FooterLinksRegexes[0].Label)
+
+	empty := map[string]interface{}{}
+	data, err = json.Marshal(Settings{})
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &empty))
+	for _, k := range []string{
+		"enforceAvailableModels", "disableBundledSkills", "disableArtifact",
+		"footerLinksRegexes", "wheelScrollAccelerationEnabled",
+	} {
+		assert.NotContains(t, empty, k)
+	}
+}
+
 func TestSettingsSwitchModelsOnFlagJSON(t *testing.T) {
 	t.Run("nil omits key", func(t *testing.T) {
 		data, err := json.Marshal(Settings{})
