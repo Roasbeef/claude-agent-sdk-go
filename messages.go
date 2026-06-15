@@ -89,6 +89,15 @@ type AssistantMessage struct {
 	// when available. Optional.
 	RequestID string `json:"request_id,omitempty"`
 
+	// Supersedes lists wire UUIDs of previously-delivered messages that this
+	// message replaces (refusal-fallback supersede). The list can include
+	// tombstoned tool_result frames from the refused leg, not only assistant
+	// frames. Evict the named messages on arrival and treat this frame as
+	// their canonical replacement; eviction is idempotent. The end-of-turn
+	// ModelRefusalFallbackMessage.RetractedMessageUUIDs remains the complete
+	// audit record for the turn. Absent when emitted by an older CLI.
+	Supersedes []string `json:"supersedes,omitempty"`
+
 	// SubagentType is the subagent type that produced this message, when
 	// the message originated from a subagent task. Empty for top-level
 	// assistant turns.
@@ -843,6 +852,46 @@ type APIRetryMessage struct {
 // MessageType implements Message.
 func (m APIRetryMessage) MessageType() string { return "system" }
 
+// ModelRefusalFallbackMessage is emitted when the primary model ends the stream
+// with stop_reason "refusal" and the turn is retried once on a fallback model
+// with the swap made persistent for the session (Direction "retry"). "revert"
+// and "sticky" are retained in the Direction enum for SDK-consumer compat and
+// are no longer emitted.
+type ModelRefusalFallbackMessage struct {
+	Type          string  `json:"type"`           // Always "system"
+	Subtype       string  `json:"subtype"`        // "model_refusal_fallback"
+	Trigger       string  `json:"trigger"`        // Always "refusal"
+	Direction     string  `json:"direction"`      // "retry" | "revert" | "sticky"
+	OriginalModel string  `json:"original_model"` // Model that refused
+	FallbackModel string  `json:"fallback_model"` // Model the turn retried on
+	RequestID     *string `json:"request_id"`     // Upstream request id; nil for JSON null
+
+	// APIRefusalCategory is stop_details.category from the refused API
+	// response ("cyber", "bio", …). Open string — new categories ship on the
+	// wire ahead of schema updates. nil when the response carried no category
+	// (normal, not an error) or when emitted by an older CLI.
+	APIRefusalCategory *string `json:"api_refusal_category,omitempty"`
+
+	// APIRefusalExplanation is stop_details.explanation from the refused API
+	// response. Unstable human prose — display only, never parse. nil under
+	// the same rules as APIRefusalCategory.
+	APIRefusalExplanation *string `json:"api_refusal_explanation,omitempty"`
+
+	// RetractedMessageUUIDs lists wire UUIDs of the messages this fallback
+	// retracted — the refused partial as the consumer received it plus any
+	// tombstoned tool_results. Emitted AFTER the retraction: a resolution-time
+	// eviction signal. Idempotent; unknown/already-removed UUIDs are a no-op.
+	// Absent when emitted by an older CLI.
+	RetractedMessageUUIDs []string `json:"retracted_message_uuids,omitempty"`
+
+	Content   string `json:"content"`    // Human-readable fallback notice
+	UUID      string `json:"uuid"`       // Unique message ID
+	SessionID string `json:"session_id"` // Session identifier
+}
+
+// MessageType implements Message.
+func (m ModelRefusalFallbackMessage) MessageType() string { return "system" }
+
 // ElicitationCompleteMessage reports completion of a URL-mode MCP elicitation.
 type ElicitationCompleteMessage struct {
 	Type          string `json:"type"`            // Always "system"
@@ -1260,6 +1309,10 @@ func ParseMessage(data []byte) (Message, error) {
 			return msg, err
 		case "memory_recall":
 			var msg MemoryRecallMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "model_refusal_fallback":
+			var msg ModelRefusalFallbackMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
 		case "mirror_error":
