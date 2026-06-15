@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.168 catchup work, using Go idioms where the API shape differs.
+v0.3.177 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -210,7 +210,7 @@ For detailed guides and examples, see [docs/examples/](docs/examples/):
 ## TypeScript SDK Parity
 
 The SDK tracks the upstream TypeScript Agent SDK release cadence. Coverage
-landed across three catchup cycles.
+landed across four catchup cycles.
 
 The v0.2.119 catchup added:
 
@@ -281,6 +281,27 @@ Stop/SubagentStop additionalContext, #106 OnUserDialog + request_user_dialog,
 managed required/maximum version + switchModelsOnFlag + forceLoginMethod
 "gateway".
 
+The v0.3.177 catchup added:
+
+- the `ModelRefusalFallbackMessage` system subtype (`model_refusal_fallback`)
+  and `AssistantMessage.Supersedes` — the refusal-fallback supersede/retract
+  signals emitted when a refused turn is retried on a fallback model
+- the experimental `get_usage` control request (`Stream.GetUsageExperimental`)
+  returning session cost/usage totals, claude.ai plan rate-limit windows, and
+  local-transcript behavioral attribution
+- `Options.SupportedDialogKinds` (+ `WithSupportedDialogKinds`) plumbed into
+  the initialize request, rejected at init without `OnUserDialog`
+- `pending_user_dialog_requests` on control responses,
+  `MCPServerToolPolicy.OrgMaxPermission`, `PluginConfig.SkipMcpDiscovery`, and
+  `RateLimitInfo.OverageInUse`
+- managed Settings parity: `EnforceAvailableModels`, `DisableBundledSkills`,
+  `DisableArtifact`, `FooterLinksRegexes`, `WheelScrollAccelerationEnabled`
+
+PRs in this cycle (squash-merged): #116 model_refusal_fallback + supersedes,
+#117 get_usage control request, #118 SupportedDialogKinds, #119
+pending_user_dialog_requests, #120 OrgMaxPermission, #121 SkipMcpDiscovery,
+#122 OverageInUse, #123 Settings parity.
+
 Some areas remain intentionally limited by the CLI or integration harness:
 desktop/IDE-only settings are not modeled exhaustively, several runtime control
 paths have unit coverage plus skipped integration slots until stable live CLI
@@ -322,7 +343,10 @@ you are translating TS code, watch for these:
   emits cancelled on the host's behalf. Callbacks that do recognize the kind
   should still return `UserDialogBehaviorCancelled` (rather than fabricating a
   result) for any branch they cannot honor — a misbehaving host should never
-  wedge the CLI on an unresolved dialog.
+  wedge the CLI on an unresolved dialog. As of TS SDK v0.3.177, declare the
+  kinds the host can actually render via `Options.SupportedDialogKinds`: the
+  CLI fails closed and never emits an undeclared kind, so the flow behind it
+  degrades to its no-dialog behavior instead.
 
 For internal architecture, see [DESIGN.md](docs/DESIGN.md). For CLI protocol
 details (how this and the official Typescript SDK actually work), see
