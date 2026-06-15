@@ -789,9 +789,13 @@ type SandboxIgnoreViolations struct {
 // PluginConfig configures a plugin to load.
 type PluginConfig struct {
 	// Type must be "local" (only local plugins currently supported).
-	Type string
+	Type string `json:"type"`
 	// Path is the absolute or relative path to the plugin directory.
-	Path string
+	Path string `json:"path"`
+	// SkipMcpDiscovery, when true, loads skills/hooks/agents/commands from
+	// this plugin but does NOT read its .mcp.json or manifest mcpServers.
+	// Use when the SDK host owns this plugin's MCP connections.
+	SkipMcpDiscovery bool `json:"skipMcpDiscovery,omitempty"`
 }
 
 // OutputFormat defines structured output format for agent results.
