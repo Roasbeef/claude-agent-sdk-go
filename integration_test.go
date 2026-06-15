@@ -2215,3 +2215,9 @@ func TestIntegrationCommandsChangedMessage(t *testing.T) {
 	skipIfNoCLI(t)
 	t.Skip("not triggerable from CLI: commands_changed fires when the CLI dynamically discovers new skills mid-session, which requires modifying the skills directory while a session is live - not exercisable in standard integration runs; tracked in INTEGRATION-FOLLOWUPS.md")
 }
+
+func TestIntegrationGetUsageExperimental(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	t.Skip("get_usage is EXPERIMENTAL upstream (unstable wire shape) and its response is account-dependent — rate_limits/behaviors are null for non-claude.ai-subscriber sessions and the installed CLI may not support the subtype; a live assertion would be brittle. Mirrors GetContextUsage, which ships without an integration test. Tracked in INTEGRATION-FOLLOWUPS.md")
+}
