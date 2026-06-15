@@ -521,6 +521,7 @@ type RateLimitInfo struct {
 	OverageResetsAt       *int64                          `json:"overageResetsAt,omitempty"`
 	OverageDisabledReason *RateLimitOverageDisabledReason `json:"overageDisabledReason,omitempty"`
 	IsUsingOverage        *bool                           `json:"isUsingOverage,omitempty"`
+	OverageInUse          *bool                           `json:"overageInUse,omitempty"`
 	SurpassedThreshold    *float64                        `json:"surpassedThreshold,omitempty"`
 }
 
