@@ -3570,6 +3570,48 @@ func TestSDKControlResponseBodyPendingPermissionRequestsOmitEmpty(t *testing.T) 
 			require.NoError(t, json.Unmarshal(data, &got))
 
 			assert.NotContains(t, got, "pending_permission_requests")
+			assert.NotContains(t, got, "pending_user_dialog_requests")
+		})
+	}
+}
+
+func TestSDKControlResponseBodyPendingUserDialogRequestsRoundTrip(t *testing.T) {
+	pending := []SDKControlRequest{
+		{
+			Type:      "control_request",
+			RequestID: "req-dialog-1",
+			Request: SDKControlRequestBody{
+				Subtype: "request_user_dialog",
+			},
+		},
+	}
+
+	for _, subtype := range []string{"success", "error"} {
+		t.Run(subtype, func(t *testing.T) {
+			body := SDKControlResponseBody{
+				Subtype:                   subtype,
+				RequestID:                 "req-init-1",
+				PendingUserDialogRequests: pending,
+			}
+			if subtype == "success" {
+				body.Response = map[string]interface{}{"ok": true}
+			} else {
+				body.Error = "boom"
+			}
+
+			data, err := json.Marshal(body)
+			require.NoError(t, err)
+
+			var got map[string]interface{}
+			require.NoError(t, json.Unmarshal(data, &got))
+
+			raw, ok := got["pending_user_dialog_requests"].([]interface{})
+			require.True(t, ok, "pending_user_dialog_requests must be present on %q", subtype)
+			require.Len(t, raw, 1)
+
+			var decoded SDKControlResponseBody
+			require.NoError(t, json.Unmarshal(data, &decoded))
+			assert.Equal(t, pending, decoded.PendingUserDialogRequests)
 		})
 	}
 }
