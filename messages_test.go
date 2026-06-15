@@ -23,6 +23,7 @@ func TestSDKControlRequestBodyInitializeOptions(t *testing.T) {
 		AgentProgressSummaries: &trueVal,
 		ForwardSubagentText:    &falseVal,
 		ToolAliases:            map[string]string{"Bash": "mcp__workspace__bash"},
+		SupportedDialogKinds:   []string{"refusal_fallback_prompt"},
 	}
 
 	data, err := json.Marshal(body)
@@ -32,6 +33,7 @@ func TestSDKControlRequestBodyInitializeOptions(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &got))
 
 	assert.Equal(t, "initialize", got["subtype"])
+	assert.Equal(t, []interface{}{"refusal_fallback_prompt"}, got["supportedDialogKinds"])
 	assert.Equal(t, "plan first", got["planModeInstructions"])
 	assert.Equal(t, true, got["excludeDynamicSections"])
 	assert.Equal(t, "custom title", got["title"])
@@ -58,6 +60,7 @@ func TestSDKControlRequestBodyInitializeOptionsOmitUnset(t *testing.T) {
 		"agentProgressSummaries",
 		"forwardSubagentText",
 		"toolAliases",
+		"supportedDialogKinds",
 	} {
 		assert.NotContains(t, got, key)
 	}
