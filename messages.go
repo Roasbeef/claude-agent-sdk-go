@@ -362,16 +362,18 @@ type SDKControlResponse struct {
 
 // SDKControlResponseBody contains the actual response data.
 //
-// PendingPermissionRequests is emitted on both "success" and "error"
-// subtypes. The TS SDK attaches it to the `initialize` response so a
-// client joining an already-initialized session learns about in-flight
-// permission prompts. See sdk.d.ts (v0.3.168) L294-L312.
+// PendingPermissionRequests and PendingUserDialogRequests are emitted on
+// both "success" and "error" subtypes. The TS SDK attaches them to the
+// `initialize` response so a client joining an already-initialized session
+// learns about in-flight permission prompts and user dialogs. See sdk.d.ts
+// (v0.3.177) L298-L320.
 type SDKControlResponseBody struct {
-	Subtype                   string                 `json:"subtype"`                               // "success" or "error"
-	RequestID                 string                 `json:"request_id"`                            // Correlates to request
-	Response                  map[string]interface{} `json:"response,omitempty"`                    // Success response data
-	Error                     string                 `json:"error,omitempty"`                       // Error message
-	PendingPermissionRequests []SDKControlRequest    `json:"pending_permission_requests,omitempty"` // In-flight permission prompts (success+error)
+	Subtype                   string                 `json:"subtype"`                                // "success" or "error"
+	RequestID                 string                 `json:"request_id"`                             // Correlates to request
+	Response                  map[string]interface{} `json:"response,omitempty"`                     // Success response data
+	Error                     string                 `json:"error,omitempty"`                        // Error message
+	PendingPermissionRequests []SDKControlRequest    `json:"pending_permission_requests,omitempty"`  // In-flight permission prompts (success+error)
+	PendingUserDialogRequests []SDKControlRequest    `json:"pending_user_dialog_requests,omitempty"` // In-flight user dialogs (success+error)
 }
 
 // MessageType implements Message.
