@@ -1048,3 +1048,38 @@ func TestUserDialogRequest_ToolUseIDOmitempty(t *testing.T) {
 		assert.Equal(t, "tu_42", got.ToolUseID)
 	})
 }
+
+func TestPluginConfigJSON(t *testing.T) {
+	t.Run("marshal includes skipMcpDiscovery when set", func(t *testing.T) {
+		data, err := json.Marshal(PluginConfig{
+			Type:             "local",
+			Path:             "./plugins/foo",
+			SkipMcpDiscovery: true,
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, "local", got["type"])
+		assert.Equal(t, "./plugins/foo", got["path"])
+		assert.Equal(t, true, got["skipMcpDiscovery"])
+	})
+
+	t.Run("omits skipMcpDiscovery when false", func(t *testing.T) {
+		data, err := json.Marshal(PluginConfig{Type: "local", Path: "./plugins/bar"})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "skipMcpDiscovery")
+	})
+
+	t.Run("WithPlugins round-trips the field", func(t *testing.T) {
+		opts := NewOptions()
+		WithPlugins([]PluginConfig{
+			{Type: "local", Path: "./p", SkipMcpDiscovery: true},
+		})(opts)
+		require.Len(t, opts.Plugins, 1)
+		assert.True(t, opts.Plugins[0].SkipMcpDiscovery)
+	})
+}
