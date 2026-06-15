@@ -1209,6 +1209,35 @@ func (s *Stream) GetContextUsage(
 	return &out, nil
 }
 
+// GetUsageExperimental fetches the structured data behind the `/usage`
+// command: session cost/usage totals plus claude.ai plan rate-limit
+// utilization windows (5-hour, 7-day, per-model) when available.
+// RateLimitsAvailable is false (and RateLimits nil) for API key, Bedrock,
+// Vertex, and other sessions where plan limits do not apply.
+//
+// EXPERIMENTAL: this control request is unstable upstream and may change or
+// be removed in any release without notice — do not rely on it yet. The
+// method name will change when the API stabilizes.
+func (s *Stream) GetUsageExperimental(
+	ctx context.Context,
+) (*SDKControlGetUsageResponse, error) {
+	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "get_usage",
+	})
+	if err != nil {
+		return nil, err
+	}
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return nil, fmt.Errorf("get_usage: marshal: %w", err)
+	}
+	var out SDKControlGetUsageResponse
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return nil, fmt.Errorf("get_usage: unmarshal: %w", err)
+	}
+	return &out, nil
+}
+
 // ReconnectMcpServer asks the CLI to reconnect the named MCP server.
 // Returns an error if the server is unknown or reconnection fails.
 func (s *Stream) ReconnectMcpServer(ctx context.Context, serverName string) error {

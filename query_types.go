@@ -172,6 +172,109 @@ type SDKControlGetContextUsageResponse struct {
 	APIUsage             *ContextUsageAPIUsage         `json:"apiUsage"`
 }
 
+// SDKControlGetUsageResponse is the structured data behind the `/usage`
+// command: session cost/usage totals plus claude.ai plan rate-limit
+// utilization windows.
+//
+// EXPERIMENTAL: the wire shape is unstable upstream and may change or be
+// removed in any release without notice. See Stream.GetUsageExperimental.
+type SDKControlGetUsageResponse struct {
+	// Session is the cost and usage accumulated by the current session.
+	Session UsageSession `json:"session"`
+
+	// SubscriptionType is the claude.ai subscription tier ('pro', 'max',
+	// 'team', 'enterprise') or nil for API key / 3P provider sessions.
+	SubscriptionType *string `json:"subscription_type"`
+
+	// RateLimitsAvailable is false when plan rate limits do not apply (API
+	// key, Bedrock, Vertex, or missing profile scope) — RateLimits is nil.
+	RateLimitsAvailable bool `json:"rate_limits_available"`
+
+	// RateLimits holds plan rate-limit utilization windows from the
+	// claude.ai usage endpoint, or nil when unavailable.
+	RateLimits *UsageRateLimits `json:"rate_limits"`
+
+	// Behaviors describes what's contributing to limits usage, from a scan
+	// of local transcripts on this machine. Approximate; nil for
+	// non-claude.ai-subscriber sessions or when the scan fails.
+	Behaviors *UsageBehaviors `json:"behaviors"`
+}
+
+// UsageSession is the per-session cost/usage rollup.
+type UsageSession struct {
+	TotalCostUSD       float64               `json:"total_cost_usd"`
+	TotalAPIDurationMS int                   `json:"total_api_duration_ms"`
+	TotalDurationMS    int                   `json:"total_duration_ms"`
+	TotalLinesAdded    int                   `json:"total_lines_added"`
+	TotalLinesRemoved  int                   `json:"total_lines_removed"`
+	ModelUsage         map[string]ModelUsage `json:"model_usage"`
+}
+
+// UsageRateLimits holds the plan rate-limit utilization windows. Each window
+// is a pointer so absent (nil) and present-but-null are both representable.
+type UsageRateLimits struct {
+	FiveHour          *UsageRateLimitWindow `json:"five_hour,omitempty"`
+	SevenDay          *UsageRateLimitWindow `json:"seven_day,omitempty"`
+	SevenDayOAuthApps *UsageRateLimitWindow `json:"seven_day_oauth_apps,omitempty"`
+	SevenDayOpus      *UsageRateLimitWindow `json:"seven_day_opus,omitempty"`
+	SevenDaySonnet    *UsageRateLimitWindow `json:"seven_day_sonnet,omitempty"`
+	ExtraUsage        *UsageExtraUsage      `json:"extra_usage,omitempty"`
+}
+
+// UsageRateLimitWindow is a single rate-limit window's utilization.
+type UsageRateLimitWindow struct {
+	// Utilization is the percentage of the window used, 0-100, or nil.
+	Utilization *float64 `json:"utilization"`
+	// ResetsAt is the ISO 8601 timestamp when the window resets, or nil.
+	ResetsAt *string `json:"resets_at"`
+}
+
+// UsageExtraUsage describes overage/extra-usage credit state.
+type UsageExtraUsage struct {
+	IsEnabled    bool     `json:"is_enabled"`
+	MonthlyLimit *float64 `json:"monthly_limit"`
+	UsedCredits  *float64 `json:"used_credits"`
+	Utilization  *float64 `json:"utilization"`
+	Currency     *string  `json:"currency,omitempty"`
+}
+
+// UsageBehaviors holds the day/week behavioral attribution scanned from local
+// transcripts.
+type UsageBehaviors struct {
+	Day  UsageBehaviorsWindow `json:"day"`  // Last 24 hours.
+	Week UsageBehaviorsWindow `json:"week"` // Last 7 days.
+}
+
+// UsageBehaviorsWindow is the attribution for a single time window.
+type UsageBehaviorsWindow struct {
+	RequestCount int                     `json:"request_count"`
+	SessionCount int                     `json:"session_count"`
+	Behaviors    []UsageBehaviorEntry    `json:"behaviors"`
+	Agents       []UsageAttributionEntry `json:"agents"`
+	Skills       []UsageAttributionEntry `json:"skills"`
+	Plugins      []UsageAttributionEntry `json:"plugins"`
+	McpServers   []UsageAttributionEntry `json:"mcp_servers"`
+}
+
+// UsageBehaviorEntry is one behavioral characteristic. Categories overlap —
+// percentages do not sum to 100.
+type UsageBehaviorEntry struct {
+	// Key is one of cache_miss, long_context, subagent_heavy, high_parallel,
+	// cron. Open string for forward-compat with new categories on the wire.
+	Key string `json:"key"`
+	// Pct is the share of weighted local usage for this behavior, 0-100.
+	Pct float64 `json:"pct"`
+	// Count is requests in the window exhibiting the behavior.
+	Count int `json:"count"`
+}
+
+// UsageAttributionEntry attributes a share of local usage to a named
+// agent/skill/plugin/MCP server.
+type UsageAttributionEntry struct {
+	Name string  `json:"name"`
+	Pct  float64 `json:"pct"` // Share of weighted local usage, 0-100.
+}
+
 type ContextUsageCategory struct {
 	Name       string `json:"name"`
 	Tokens     int    `json:"tokens"`

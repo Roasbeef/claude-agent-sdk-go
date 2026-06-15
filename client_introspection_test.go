@@ -359,6 +359,135 @@ func TestStreamGetContextUsageApiUsageNullable(t *testing.T) {
 	assert.Nil(t, got.APIUsage)
 }
 
+func TestStreamGetUsageExperimentalParsesCanonicalPayload(t *testing.T) {
+	payload := map[string]interface{}{
+		"session": map[string]interface{}{
+			"total_cost_usd":        1.25,
+			"total_api_duration_ms": 4200,
+			"total_duration_ms":     9000,
+			"total_lines_added":     120,
+			"total_lines_removed":   40,
+			"model_usage": map[string]interface{}{
+				"claude-opus-4-8": map[string]interface{}{
+					"inputTokens": 1000, "outputTokens": 500, "costUSD": 1.25,
+				},
+			},
+		},
+		"subscription_type":     "max",
+		"rate_limits_available": true,
+		"rate_limits": map[string]interface{}{
+			"five_hour": map[string]interface{}{
+				"utilization": 42.5, "resets_at": "2026-06-15T20:00:00Z",
+			},
+			"seven_day": nil,
+			"extra_usage": map[string]interface{}{
+				"is_enabled": true, "monthly_limit": 50.0,
+				"used_credits": 12.5, "utilization": 25.0, "currency": "USD",
+			},
+		},
+		"behaviors": map[string]interface{}{
+			"day": map[string]interface{}{
+				"request_count": 10, "session_count": 3,
+				"behaviors": []interface{}{
+					map[string]interface{}{"key": "cache_miss", "pct": 30.0, "count": 3},
+				},
+				"agents":      []interface{}{map[string]interface{}{"name": "Explore", "pct": 20.0}},
+				"skills":      []interface{}{},
+				"plugins":     []interface{}{},
+				"mcp_servers": []interface{}{map[string]interface{}{"name": "github", "pct": 5.0}},
+			},
+			"week": map[string]interface{}{
+				"request_count": 70, "session_count": 14,
+				"behaviors":   []interface{}{},
+				"agents":      []interface{}{},
+				"skills":      []interface{}{},
+				"plugins":     []interface{}{},
+				"mcp_servers": []interface{}{},
+			},
+		},
+	}
+
+	var gotSubtype string
+	stream, _, _ := newStreamControlTest(func(req SDKControlRequest) SDKControlResponse {
+		gotSubtype = req.Request.Subtype
+		return SDKControlResponse{
+			Type: "control_response",
+			Response: SDKControlResponseBody{
+				Subtype:   "success",
+				RequestID: req.RequestID,
+				Response:  payload,
+			},
+		}
+	})
+
+	got, err := stream.GetUsageExperimental(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, got)
+
+	assert.Equal(t, "get_usage", gotSubtype)
+
+	assert.InDelta(t, 1.25, got.Session.TotalCostUSD, 1e-9)
+	assert.Equal(t, 120, got.Session.TotalLinesAdded)
+	require.Contains(t, got.Session.ModelUsage, "claude-opus-4-8")
+	assert.Equal(t, 1000, got.Session.ModelUsage["claude-opus-4-8"].InputTokens)
+
+	require.NotNil(t, got.SubscriptionType)
+	assert.Equal(t, "max", *got.SubscriptionType)
+	assert.True(t, got.RateLimitsAvailable)
+
+	require.NotNil(t, got.RateLimits)
+	require.NotNil(t, got.RateLimits.FiveHour)
+	require.NotNil(t, got.RateLimits.FiveHour.Utilization)
+	assert.InDelta(t, 42.5, *got.RateLimits.FiveHour.Utilization, 1e-9)
+	assert.Nil(t, got.RateLimits.SevenDay) // present-but-null window
+	require.NotNil(t, got.RateLimits.ExtraUsage)
+	assert.True(t, got.RateLimits.ExtraUsage.IsEnabled)
+	require.NotNil(t, got.RateLimits.ExtraUsage.Currency)
+	assert.Equal(t, "USD", *got.RateLimits.ExtraUsage.Currency)
+
+	require.NotNil(t, got.Behaviors)
+	assert.Equal(t, 10, got.Behaviors.Day.RequestCount)
+	require.Len(t, got.Behaviors.Day.Behaviors, 1)
+	assert.Equal(t, "cache_miss", got.Behaviors.Day.Behaviors[0].Key)
+	assert.Equal(t, 3, got.Behaviors.Day.Behaviors[0].Count)
+	require.Len(t, got.Behaviors.Day.Agents, 1)
+	assert.Equal(t, "Explore", got.Behaviors.Day.Agents[0].Name)
+	assert.Equal(t, 70, got.Behaviors.Week.RequestCount)
+}
+
+func TestStreamGetUsageExperimentalNullables(t *testing.T) {
+	payload := map[string]interface{}{
+		"session": map[string]interface{}{
+			"total_cost_usd": 0.0, "total_api_duration_ms": 0,
+			"total_duration_ms": 0, "total_lines_added": 0,
+			"total_lines_removed": 0, "model_usage": map[string]interface{}{},
+		},
+		"subscription_type":     nil,
+		"rate_limits_available": false,
+		"rate_limits":           nil,
+		"behaviors":             nil,
+	}
+
+	stream, _, _ := newStreamControlTest(func(req SDKControlRequest) SDKControlResponse {
+		return SDKControlResponse{
+			Type: "control_response",
+			Response: SDKControlResponseBody{
+				Subtype:   "success",
+				RequestID: req.RequestID,
+				Response:  payload,
+			},
+		}
+	})
+
+	got, err := stream.GetUsageExperimental(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Nil(t, got.SubscriptionType)
+	assert.False(t, got.RateLimitsAvailable)
+	assert.Nil(t, got.RateLimits)
+	assert.Nil(t, got.Behaviors)
+}
+
 // Sanity-check that AccountInfo with apiProvider round-trips through JSON.
 func TestAccountInfoAPIProviderJSON(t *testing.T) {
 	tests := []struct {
