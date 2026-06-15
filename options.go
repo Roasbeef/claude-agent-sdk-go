@@ -449,6 +449,28 @@ type Settings struct {
 	DisableDeepLinkRegistration string `json:"disableDeepLinkRegistration,omitempty"`
 	// DefaultView controls the default transcript view. Mirrors sdk.d.ts v0.3.150 L5431.
 	DefaultView string `json:"defaultView,omitempty"`
+	// EnforceAvailableModels restricts model selection to AvailableModels. Mirrors sdk.d.ts v0.3.177 L4608.
+	EnforceAvailableModels *bool `json:"enforceAvailableModels,omitempty"`
+	// DisableBundledSkills removes the skills and workflows that ship with Claude Code: bundled skills/workflows are removed entirely and built-in slash commands stay typable but hidden from the model. Plugins, .claude/skills/, and .claude/commands/ are unaffected. Equivalent to CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1. Mirrors sdk.d.ts v0.3.177 L4636.
+	DisableBundledSkills *bool `json:"disableBundledSkills,omitempty"`
+	// DisableArtifact disables the artifact view. Mirrors sdk.d.ts v0.3.177 L4905.
+	DisableArtifact *bool `json:"disableArtifact,omitempty"`
+	// FooterLinksRegexes adds clickable footer badges when a regex matches turn output. Read from user, flag, and managed settings only. At most 5 badges render. Mirrors sdk.d.ts v0.3.177 L4973.
+	FooterLinksRegexes []SettingsFooterLinkRegex `json:"footerLinksRegexes,omitempty"`
+	// WheelScrollAccelerationEnabled enables mouse-wheel scroll acceleration. Mirrors sdk.d.ts v0.3.177 L5988.
+	WheelScrollAccelerationEnabled *bool `json:"wheelScrollAccelerationEnabled,omitempty"`
+}
+
+// SettingsFooterLinkRegex is a footer-badge rule: when Pattern matches turn
+// output, a badge linking to URL (with {name} placeholders filled from named
+// regex capture groups) is rendered. Type is the config variant — this client
+// understands "regex"; entries with other variants are preserved but skipped
+// at runtime.
+type SettingsFooterLinkRegex struct {
+	Type    string `json:"type"`
+	Pattern string `json:"pattern,omitempty"`
+	URL     string `json:"url,omitempty"`
+	Label   string `json:"label,omitempty"`
 }
 
 type SettingsFileSuggestion struct {
