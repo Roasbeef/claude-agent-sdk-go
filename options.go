@@ -2364,12 +2364,22 @@ type MCPServerConfig struct {
 type MCPServerToolPolicy struct {
 	Name             string `json:"name"`
 	PermissionPolicy string `json:"permission_policy"`
+	// OrgMaxPermission is the org admin's per-tool ceiling. It drives the
+	// auto-mode isOrgAskCeiling gate so an admin 'ask' cap forces a user
+	// prompt even in auto mode. One of MCPOrgMaxPermission*; empty when unset.
+	OrgMaxPermission string `json:"org_max_permission,omitempty"`
 }
 
 const (
 	MCPToolPolicyAllowAlways = "always_allow"
 	MCPToolPolicyAskAlways   = "always_ask"
 	MCPToolPolicyDenyAlways  = "always_deny"
+)
+
+const (
+	MCPOrgMaxPermissionAllow   = "allow"
+	MCPOrgMaxPermissionAsk     = "ask"
+	MCPOrgMaxPermissionBlocked = "blocked"
 )
 
 // SkillsConfig controls how Skills are loaded.
