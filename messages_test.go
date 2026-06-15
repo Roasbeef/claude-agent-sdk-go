@@ -1055,6 +1055,7 @@ func TestRateLimitEventMessageRoundTripAndParse(t *testing.T) {
 			"overageResetsAt",
 			"overageDisabledReason",
 			"isUsingOverage",
+			"overageInUse",
 			"surpassedThreshold",
 		} {
 			assert.NotContains(t, info, key)
@@ -1079,6 +1080,7 @@ func TestRateLimitEventMessageRoundTripAndParse(t *testing.T) {
 				OverageResetsAt:       int64Ptr(1763942400),
 				OverageDisabledReason: rateLimitOverageDisabledReasonPtr(RateLimitOverageDisabledReasonOutOfCredits),
 				IsUsingOverage:        boolPtr(true),
+				OverageInUse:          boolPtr(true),
 				SurpassedThreshold:    float64Ptr(0.8),
 			},
 			UUID:      "550e8400-e29b-41d4-a716-446655440033",
@@ -1098,6 +1100,7 @@ func TestRateLimitEventMessageRoundTripAndParse(t *testing.T) {
 				"overageResetsAt": 1763942400,
 				"overageDisabledReason": "out_of_credits",
 				"isUsingOverage": true,
+				"overageInUse": true,
 				"surpassedThreshold": 0.8
 			},
 			"uuid": "550e8400-e29b-41d4-a716-446655440033",
