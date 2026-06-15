@@ -1329,7 +1329,7 @@ func TestSubprocessTransportMCPConfigEncoding(t *testing.T) {
 				},
 				Tools: []MCPServerToolPolicy{
 					{Name: "foo", PermissionPolicy: MCPToolPolicyAllowAlways},
-					{Name: "bar", PermissionPolicy: MCPToolPolicyAskAlways},
+					{Name: "bar", PermissionPolicy: MCPToolPolicyAskAlways, OrgMaxPermission: MCPOrgMaxPermissionAsk},
 				},
 			},
 			want: map[string]interface{}{
@@ -1344,8 +1344,9 @@ func TestSubprocessTransportMCPConfigEncoding(t *testing.T) {
 						"permission_policy": "always_allow",
 					},
 					map[string]interface{}{
-						"name":              "bar",
-						"permission_policy": "always_ask",
+						"name":               "bar",
+						"permission_policy":  "always_ask",
+						"org_max_permission": "ask",
 					},
 				},
 			},
