@@ -311,6 +311,7 @@ type SDKControlRequestBody struct {
 	AgentProgressSummaries *bool                               `json:"agentProgressSummaries,omitempty"` // For initialize
 	ForwardSubagentText    *bool                               `json:"forwardSubagentText,omitempty"`    // For initialize
 	ToolAliases            map[string]string                   `json:"toolAliases,omitempty"`            // For initialize
+	SupportedDialogKinds   []string                            `json:"supportedDialogKinds,omitempty"`   // For initialize
 	ToolName               string                              `json:"tool_name,omitempty"`              // For can_use_tool/hook_callback
 	Input                  map[string]interface{}              `json:"input,omitempty"`                  // For can_use_tool/hook_callback
 	ToolUseID              string                              `json:"tool_use_id,omitempty"`            // For can_use_tool/hooks/background_tasks

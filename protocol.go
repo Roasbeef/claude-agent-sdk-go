@@ -52,6 +52,13 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 		return nil // Already initialized
 	}
 
+	// SupportedDialogKinds is meaningless without a dialog handler, and the
+	// CLI would never route a dialog to a consumer that can't render it.
+	// Mirror the TS SDK and reject the contradictory option pairing here.
+	if len(p.options.SupportedDialogKinds) > 0 && p.options.OnUserDialog == nil {
+		return fmt.Errorf("SupportedDialogKinds requires WithOnUserDialog")
+	}
+
 	// Build hook configuration in TypeScript SDK format.
 	var hooks map[string][]SDKHookCallbackMatcher
 	if len(p.options.Hooks) > 0 {
@@ -120,6 +127,7 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 			AgentProgressSummaries: p.options.AgentProgressSummaries,
 			ForwardSubagentText:    p.options.ForwardSubagentText,
 			ToolAliases:            p.options.ToolAliases,
+			SupportedDialogKinds:   p.options.SupportedDialogKinds,
 		},
 	}
 

@@ -103,6 +103,21 @@ func TestProtocolInitialize(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestProtocolInitializeSupportedDialogKindsRequiresCallback(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	opts.SupportedDialogKinds = []string{"refusal_fallback_prompt"}
+	// No OnUserDialog set — the pairing is invalid. The check fires before
+	// any transport interaction, so an unconnected transport is fine.
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	protocol := NewProtocol(transport, opts)
+
+	err := protocol.Initialize(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "WithOnUserDialog")
+}
+
 func TestProtocolInitializeOptions(t *testing.T) {
 	tests := []struct {
 		name       string

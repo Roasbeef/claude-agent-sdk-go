@@ -83,6 +83,15 @@ type Options struct {
 	// with cancelled.
 	OnUserDialog OnUserDialogFunc
 
+	// SupportedDialogKinds declares the request_user_dialog dialog_kind
+	// values this consumer's OnUserDialog can actually render (e.g.
+	// "refusal_fallback_prompt"). The CLI fails closed on absence: a dialog
+	// kind not declared here is never emitted to this session, and the flow
+	// behind it degrades to its no-dialog behavior. Requires OnUserDialog —
+	// a non-empty list without the callback is rejected at initialize. On
+	// multi-client sessions the first-attached client's declaration wins.
+	SupportedDialogKinds []string
+
 	// GetHostAuthToken handles host-auth-token refresh requests from the CLI.
 	// If unset, the SDK replies with an error response.
 	GetHostAuthToken GetHostAuthTokenFunc
@@ -1032,6 +1041,15 @@ func WithOnElicitation(fn OnElicitationFunc) Option {
 func WithOnUserDialog(fn OnUserDialogFunc) Option {
 	return func(o *Options) {
 		o.OnUserDialog = fn
+	}
+}
+
+// WithSupportedDialogKinds declares the request_user_dialog dialog_kind values
+// this consumer can render. Requires WithOnUserDialog; a non-empty list
+// without the callback is rejected when the session initializes.
+func WithSupportedDialogKinds(kinds ...string) Option {
+	return func(o *Options) {
+		o.SupportedDialogKinds = kinds
 	}
 }
 

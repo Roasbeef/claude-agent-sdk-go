@@ -38,3 +38,12 @@ func TestWithToolAliases(t *testing.T) {
 
 	assert.Equal(t, aliases, opts.ToolAliases)
 }
+
+func TestWithSupportedDialogKinds(t *testing.T) {
+	opts := NewOptions()
+	require.Nil(t, opts.SupportedDialogKinds)
+
+	WithSupportedDialogKinds("refusal_fallback_prompt", "other")(opts)
+
+	assert.Equal(t, []string{"refusal_fallback_prompt", "other"}, opts.SupportedDialogKinds)
+}
