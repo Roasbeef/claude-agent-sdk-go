@@ -2567,6 +2567,91 @@ func TestParseMessageAPIRetry(t *testing.T) {
 	}
 }
 
+func TestParseMessageModelRefusalFallback(t *testing.T) {
+	t.Run("full payload", func(t *testing.T) {
+		input := `{
+			"type": "system",
+			"subtype": "model_refusal_fallback",
+			"trigger": "refusal",
+			"direction": "retry",
+			"original_model": "claude-opus-4-8",
+			"fallback_model": "claude-sonnet-4-6",
+			"request_id": "req_01HXYZ",
+			"api_refusal_category": "cyber",
+			"api_refusal_explanation": "declined for safety",
+			"retracted_message_uuids": ["550e8400-e29b-41d4-a716-446655440300"],
+			"content": "Retried on a fallback model.",
+			"uuid": "550e8400-e29b-41d4-a716-446655440301",
+			"session_id": "sess_refusal_001"
+		}`
+
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+
+		fb, ok := msg.(ModelRefusalFallbackMessage)
+		require.True(t, ok, "expected ModelRefusalFallbackMessage")
+		assert.Equal(t, "system", fb.MessageType())
+		assert.Equal(t, "model_refusal_fallback", fb.Subtype)
+		assert.Equal(t, "refusal", fb.Trigger)
+		assert.Equal(t, "retry", fb.Direction)
+		assert.Equal(t, "claude-opus-4-8", fb.OriginalModel)
+		assert.Equal(t, "claude-sonnet-4-6", fb.FallbackModel)
+		require.NotNil(t, fb.RequestID)
+		assert.Equal(t, "req_01HXYZ", *fb.RequestID)
+		require.NotNil(t, fb.APIRefusalCategory)
+		assert.Equal(t, "cyber", *fb.APIRefusalCategory)
+		require.NotNil(t, fb.APIRefusalExplanation)
+		assert.Equal(t, "declined for safety", *fb.APIRefusalExplanation)
+		assert.Equal(t, []string{"550e8400-e29b-41d4-a716-446655440300"}, fb.RetractedMessageUUIDs)
+	})
+
+	t.Run("older CLI: null request_id, optional fields absent", func(t *testing.T) {
+		input := `{
+			"type": "system",
+			"subtype": "model_refusal_fallback",
+			"trigger": "refusal",
+			"direction": "retry",
+			"original_model": "claude-opus-4-8",
+			"fallback_model": "claude-sonnet-4-6",
+			"request_id": null,
+			"content": "Retried on a fallback model.",
+			"uuid": "550e8400-e29b-41d4-a716-446655440302",
+			"session_id": "sess_refusal_002"
+		}`
+
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+
+		fb, ok := msg.(ModelRefusalFallbackMessage)
+		require.True(t, ok, "expected ModelRefusalFallbackMessage")
+		assert.Nil(t, fb.RequestID)
+		assert.Nil(t, fb.APIRefusalCategory)
+		assert.Nil(t, fb.APIRefusalExplanation)
+		assert.Nil(t, fb.RetractedMessageUUIDs)
+	})
+}
+
+func TestParseMessageAssistantSupersedes(t *testing.T) {
+	input := `{
+		"type": "assistant",
+		"uuid": "550e8400-e29b-41d4-a716-446655440400",
+		"session_id": "sess_refusal_003",
+		"message": {"role": "assistant", "content": []},
+		"parent_tool_use_id": null,
+		"supersedes": ["550e8400-e29b-41d4-a716-446655440401", "550e8400-e29b-41d4-a716-446655440402"]
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	am, ok := msg.(AssistantMessage)
+	require.True(t, ok, "expected AssistantMessage")
+	assert.Equal(t, []string{
+		"550e8400-e29b-41d4-a716-446655440401",
+		"550e8400-e29b-41d4-a716-446655440402",
+	}, am.Supersedes)
+}
+
 func TestParseMessageElicitationComplete(t *testing.T) {
 	input := `{
 		"type": "system",
