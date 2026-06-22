@@ -314,6 +314,26 @@ func TestParseMessageUserMessageSubagentFields(t *testing.T) {
 	assert.Equal(t, "Inspect repo", userMsg.TaskDescription)
 }
 
+func TestParseMessageUserMessageSenderTaskID(t *testing.T) {
+	input := `{
+		"type": "user",
+		"session_id": "s1",
+		"message": {
+			"role": "user",
+			"content": [{"type": "text", "text": "from a bg subagent"}]
+		},
+		"parent_tool_use_id": null,
+		"senderTaskId": "task_abc123"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	userMsg, ok := msg.(UserMessage)
+	require.True(t, ok, "expected UserMessage")
+	assert.Equal(t, "task_abc123", userMsg.SenderTaskID)
+}
+
 func TestUserMessageSubagentFieldsOmitEmpty(t *testing.T) {
 	msg := UserMessage{Type: "user", SessionID: "s1"}
 
@@ -325,6 +345,7 @@ func TestUserMessageSubagentFieldsOmitEmpty(t *testing.T) {
 
 	assert.NotContains(t, got, "subagent_type")
 	assert.NotContains(t, got, "task_description")
+	assert.NotContains(t, got, "senderTaskId")
 }
 
 func TestUserMessageSubagentFieldsRoundTrip(t *testing.T) {
