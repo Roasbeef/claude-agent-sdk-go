@@ -3245,6 +3245,49 @@ func TestParseMessageWorkerShuttingDown(t *testing.T) {
 	assert.Equal(t, "sess_misc_012", shutdownMsg.SessionID)
 }
 
+func TestParseMessageInformational(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "informational",
+		"content": "hook blocked the prompt",
+		"level": "warning",
+		"tool_use_id": "toolu_01",
+		"prevent_continuation": true,
+		"uuid": "550e8400-e29b-41d4-a716-4466554402D0",
+		"session_id": "sess_misc_013"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	infoMsg, ok := msg.(InformationalMessage)
+	require.True(t, ok, "expected InformationalMessage")
+
+	assert.Equal(t, "system", infoMsg.MessageType())
+	assert.Equal(t, "informational", infoMsg.Subtype)
+	assert.Equal(t, "hook blocked the prompt", infoMsg.Content)
+	assert.Equal(t, InformationalLevelWarning, infoMsg.Level)
+	assert.Equal(t, "toolu_01", infoMsg.ToolUseID)
+	assert.True(t, infoMsg.PreventContinuation)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-4466554402D0", infoMsg.UUID)
+	assert.Equal(t, "sess_misc_013", infoMsg.SessionID)
+}
+
+func TestInformationalMessageOmitempty(t *testing.T) {
+	data, err := json.Marshal(InformationalMessage{
+		Type:    "system",
+		Subtype: "informational",
+		Content: "compacting",
+		Level:   InformationalLevelInfo,
+	})
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.NotContains(t, got, "tool_use_id")
+	assert.NotContains(t, got, "prevent_continuation")
+}
+
 func TestParseMessageThinkingTokensZeroDelta(t *testing.T) {
 	input := `{
 		"type": "system",

@@ -1158,6 +1158,41 @@ type WorkerShuttingDownMessage struct {
 // MessageType implements Message.
 func (m WorkerShuttingDownMessage) MessageType() string { return "system" }
 
+// InformationalLevel is the render level of an InformationalMessage.
+type InformationalLevel string
+
+const (
+	// InformationalLevelInfo shows only in transcript mode.
+	InformationalLevelInfo InformationalLevel = "info"
+	// InformationalLevelNotice renders in inactive gray.
+	InformationalLevelNotice InformationalLevel = "notice"
+	// InformationalLevelSuggestion renders more prominently than notice.
+	InformationalLevelSuggestion InformationalLevel = "suggestion"
+	// InformationalLevelWarning is the most prominent render level.
+	InformationalLevelWarning InformationalLevel = "warning"
+)
+
+// InformationalMessage is a generic text banner emitted by the loop —
+// non-error status lines, hook feedback (e.g. a UserPromptSubmit hook's block
+// reason), slash-command output. Hosts render Content as plaintext at the
+// given Level.
+type InformationalMessage struct {
+	Type    string             `json:"type"`    // Always "system"
+	Subtype string             `json:"subtype"` // "informational"
+	Content string             `json:"content"` // Plaintext banner content
+	Level   InformationalLevel `json:"level"`   // Render level
+	// ToolUseID dedupes progress messages for the same tool use.
+	ToolUseID string `json:"tool_use_id,omitempty"`
+	// PreventContinuation, when true, stops execution after this message
+	// (e.g. a Stop hook denied continuation).
+	PreventContinuation bool   `json:"prevent_continuation,omitempty"`
+	UUID                string `json:"uuid"`       // Unique message ID
+	SessionID           string `json:"session_id"` // Session identifier
+}
+
+// MessageType implements Message.
+func (m InformationalMessage) MessageType() string { return "system" }
+
 // SDKStatusValue is the non-null status payload for a status message.
 type SDKStatusValue string
 
@@ -1292,6 +1327,10 @@ func ParseMessage(data []byte) (Message, error) {
 			return msg, err
 		case "hook_started":
 			var msg HookStartedMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "informational":
+			var msg InformationalMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
 		case "hook_progress":
