@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"iter"
 	"strings"
 	"sync"
@@ -358,6 +360,53 @@ func TestSubprocessTransportCloseAfterEndInput(t *testing.T) {
 	assert.True(t, transport.closed.Load())
 	assert.False(t, transport.IsReady())
 }
+
+func TestSubprocessTransportWaitForExit(t *testing.T) {
+	t.Run("returns runner exit error", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		runner.exited = true
+		runner.exitErr = errors.New("boom")
+
+		transport := NewSubprocessTransportWithRunner(runner, NewOptions())
+		require.NoError(t, transport.Connect(context.Background()))
+
+		// ExitWaiter capability is advertised.
+		ew, ok := Transport(transport).(ExitWaiter)
+		require.True(t, ok)
+
+		err := ew.WaitForExit(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "boom")
+
+		// Idempotent: a second call observes the same cached result.
+		assert.Equal(t, err, ew.WaitForExit(context.Background()))
+	})
+
+	t.Run("honors context cancellation", func(t *testing.T) {
+		runner := &blockingExitRunner{released: make(chan struct{})}
+		transport := NewSubprocessTransportWithRunner(runner, NewOptions())
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		err := transport.WaitForExit(ctx)
+		require.ErrorIs(t, err, context.Canceled)
+		close(runner.released)
+	})
+}
+
+// blockingExitRunner is a SubprocessRunner whose Wait blocks until released,
+// used to exercise WaitForExit's context cancellation path.
+type blockingExitRunner struct {
+	released chan struct{}
+}
+
+func (r *blockingExitRunner) Start(context.Context, []string, []string, string) (io.WriteCloser, io.ReadCloser, io.ReadCloser, error) {
+	return nil, nil, nil, nil
+}
+func (r *blockingExitRunner) Wait() error   { <-r.released; return nil }
+func (r *blockingExitRunner) Kill() error   { return nil }
+func (r *blockingExitRunner) IsAlive() bool { return true }
 
 // TestSubprocessTransportContextCancellation tests that context cancellation
 // stops message reading.
