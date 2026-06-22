@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.177 catchup work, using Go idioms where the API shape differs.
+v0.3.185 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -301,6 +301,32 @@ PRs in this cycle (squash-merged): #116 model_refusal_fallback + supersedes,
 #117 get_usage control request, #118 SupportedDialogKinds, #119
 pending_user_dialog_requests, #120 OrgMaxPermission, #121 SkipMcpDiscovery,
 #122 OverageInUse, #123 Settings parity.
+
+The v0.3.185 catchup added:
+
+- two new system message subtypes: `WorkerShuttingDownMessage`
+  (`worker_shutting_down`, a live-tail-only graceful-teardown signal) and
+  `InformationalMessage` (`informational`, a leveled text banner for hook
+  feedback / slash-command output)
+- `thinking_display` on `set_max_thinking_tokens`: `SetMaxThinkingTokens` now
+  takes optional `WithThinkingDisplay` / `WithThinkingDisplayAPIDefault`,
+  modeling the omit / value / explicit-null wire states
+- the optional `ExitWaiter` transport capability (`WaitForExit`), implemented
+  by `SubprocessTransport` and kept off the core `Transport` interface
+- new fields: `RateLimitInfo` credit-exhaustion (`ErrorCode`,
+  `CanUserPurchaseCredits`, `HasChargeableSavedPaymentMethod`),
+  `ResultMessage.TimeOriginMs`, `UserMessage.SenderTaskID`
+- Settings parity: `Settings.DisableClaudeAiConnectors`,
+  `SettingsAttribution.SessionURL`, `SettingsSandbox.AllowAppleEvents`
+
+PRs in this cycle (squash-merged): #126 worker_shutting_down, #129
+informational, #130 thinking_display, #131 RateLimitInfo credit fields, #132
+ResultMessage time_origin_ms, #133 UserMessage senderTaskId, #127 Settings
+parity, #128 transport WaitForExit, #134 docs refresh.
+
+Not ported this cycle: `set_mcp_permission_mode_override` is referenced in the
+upstream control-request union but ships without a type body or wire constant,
+so there is nothing to model yet — deferred until upstream emits a definition.
 
 Some areas remain intentionally limited by the CLI or integration harness:
 desktop/IDE-only settings are not modeled exhaustively, several runtime control

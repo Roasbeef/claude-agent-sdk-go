@@ -193,7 +193,9 @@ type Options struct {
 	// loading allowlist, which is a different surface).
 	AllowedTools []string
 
-	// DisallowedTools is a list of disallowed tool names.
+	// DisallowedTools is a list of tool names to explicitly disallow for this
+	// agent. MCP server-level specs (mcp__server, mcp__server__*, mcp__*)
+	// remove every tool from the named server (or all MCP tools).
 	DisallowedTools []string
 
 	// Tools configures available built-in tools.
@@ -1943,7 +1945,10 @@ type TaskCompletedInput struct {
 	TaskSubject     string `json:"task_subject"`
 	TaskDescription string `json:"task_description,omitempty"`
 	TeammateName    string `json:"teammate_name,omitempty"`
-	TeamName        string `json:"team_name,omitempty"`
+	// Deprecated: sessions have a single implicit team; this carries the
+	// session-derived team name and will be removed upstream in a future
+	// release.
+	TeamName string `json:"team_name,omitempty"`
 }
 
 // HookType implements HookInput.
@@ -1959,7 +1964,10 @@ type TaskCreatedInput struct {
 	TaskSubject     string `json:"task_subject"`
 	TaskDescription string `json:"task_description,omitempty"`
 	TeammateName    string `json:"teammate_name,omitempty"`
-	TeamName        string `json:"team_name,omitempty"`
+	// Deprecated: sessions have a single implicit team; this carries the
+	// session-derived team name and will be removed upstream in a future
+	// release.
+	TeamName string `json:"team_name,omitempty"`
 }
 
 // HookType implements HookInput.
@@ -1972,7 +1980,10 @@ func (i TaskCreatedInput) Base() BaseHookInput { return i.BaseHookInput }
 type TeammateIdleInput struct {
 	BaseHookInput
 	TeammateName string `json:"teammate_name"`
-	TeamName     string `json:"team_name"`
+	// Deprecated: sessions have a single implicit team; this carries the
+	// session-derived team name and will be removed upstream in a future
+	// release.
+	TeamName string `json:"team_name"`
 }
 
 // HookType implements HookInput.
