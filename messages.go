@@ -556,7 +556,20 @@ type RateLimitInfo struct {
 	IsUsingOverage        *bool                           `json:"isUsingOverage,omitempty"`
 	OverageInUse          *bool                           `json:"overageInUse,omitempty"`
 	SurpassedThreshold    *float64                        `json:"surpassedThreshold,omitempty"`
+	// ErrorCode signals a credit-exhaustion condition; the only defined value
+	// is "credits_required". Open string for forward compatibility.
+	ErrorCode string `json:"errorCode,omitempty"`
+	// CanUserPurchaseCredits reports whether the user can buy credits to lift
+	// the limit.
+	CanUserPurchaseCredits *bool `json:"canUserPurchaseCredits,omitempty"`
+	// HasChargeableSavedPaymentMethod reports whether a chargeable payment
+	// method is already on file.
+	HasChargeableSavedPaymentMethod *bool `json:"hasChargeableSavedPaymentMethod,omitempty"`
 }
+
+// RateLimitErrorCodeCreditsRequired is the only defined RateLimitInfo.ErrorCode
+// value: the limit can be lifted by purchasing credits.
+const RateLimitErrorCodeCreditsRequired = "credits_required"
 
 // AuthStatusMessage reports authentication status.
 type AuthStatusMessage struct {

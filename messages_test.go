@@ -1139,6 +1139,47 @@ func TestRateLimitEventMessageRoundTripAndParse(t *testing.T) {
 		require.NotNil(t, rateLimitMsg.RateLimitInfo.OverageDisabledReason)
 		assert.Equal(t, RateLimitOverageDisabledReason("future_reason"), *rateLimitMsg.RateLimitInfo.OverageDisabledReason)
 	})
+
+	t.Run("credit fields round-trip", func(t *testing.T) {
+		msg := RateLimitEventMessage{
+			Type: "rate_limit_event",
+			RateLimitInfo: RateLimitInfo{
+				Status:                          RateLimitStatusRejected,
+				ErrorCode:                       RateLimitErrorCodeCreditsRequired,
+				CanUserPurchaseCredits:          boolPtr(true),
+				HasChargeableSavedPaymentMethod: boolPtr(false),
+			},
+			UUID:      "550e8400-e29b-41d4-a716-446655440036",
+			SessionID: "sess_top_123",
+		}
+
+		data, err := json.Marshal(msg)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		info := got["rate_limit_info"].(map[string]interface{})
+		assert.Equal(t, "credits_required", info["errorCode"])
+		assert.Equal(t, true, info["canUserPurchaseCredits"])
+		assert.Equal(t, false, info["hasChargeableSavedPaymentMethod"])
+
+		parsed, err := ParseMessage(data)
+		require.NoError(t, err)
+		rateLimitMsg, ok := parsed.(RateLimitEventMessage)
+		require.True(t, ok, "expected RateLimitEventMessage")
+		assert.Equal(t, msg, rateLimitMsg)
+	})
+
+	t.Run("credit fields omitted when unset", func(t *testing.T) {
+		data, err := json.Marshal(RateLimitInfo{Status: RateLimitStatusAllowed})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "errorCode")
+		assert.NotContains(t, got, "canUserPurchaseCredits")
+		assert.NotContains(t, got, "hasChargeableSavedPaymentMethod")
+	})
 }
 
 func TestToolProgressMessageTaskIDRoundTrip(t *testing.T) {
