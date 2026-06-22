@@ -3222,6 +3222,29 @@ func TestThinkingTokensMessageRoundTrip(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
+func TestParseMessageWorkerShuttingDown(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "worker_shutting_down",
+		"reason": "host_exit",
+		"uuid": "550e8400-e29b-41d4-a716-4466554402C0",
+		"session_id": "sess_misc_012"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	shutdownMsg, ok := msg.(WorkerShuttingDownMessage)
+	require.True(t, ok, "expected WorkerShuttingDownMessage")
+
+	assert.Equal(t, "system", shutdownMsg.MessageType())
+	assert.Equal(t, "system", shutdownMsg.Type)
+	assert.Equal(t, "worker_shutting_down", shutdownMsg.Subtype)
+	assert.Equal(t, "host_exit", shutdownMsg.Reason)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-4466554402C0", shutdownMsg.UUID)
+	assert.Equal(t, "sess_misc_012", shutdownMsg.SessionID)
+}
+
 func TestParseMessageThinkingTokensZeroDelta(t *testing.T) {
 	input := `{
 		"type": "system",

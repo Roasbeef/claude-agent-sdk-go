@@ -1135,6 +1135,29 @@ type ThinkingTokensMessage struct {
 // MessageType implements Message.
 func (m ThinkingTokensMessage) MessageType() string { return "system" }
 
+// WorkerShuttingDownMessage is emitted by the bridge on an opt-in graceful
+// worker teardown (only when the teardown caller supplied a reason), before the
+// heartbeat stops, so remote clients can show why the worker went away instead
+// of waiting for a heartbeat timeout.
+//
+// Absence is NOT a dead-host signal: handoffs (/update, /teleport, respawn),
+// auto-disable, mode transitions, and internal fatal-error paths emit nothing
+// by design, and a dead host (battery, OOM, kill -9) never reaches teardown.
+// This event also lands in the durable per-session event stream, so a resumed
+// session may carry historical instances mid-stream — treat it as a live-tail
+// signal only (honored when no further activity follows), never as a one-shot
+// session-lifetime fact.
+type WorkerShuttingDownMessage struct {
+	Type      string `json:"type"`       // Always "system"
+	Subtype   string `json:"subtype"`    // "worker_shutting_down"
+	Reason    string `json:"reason"`     // Short snake_case host reason, e.g. "host_exit"
+	UUID      string `json:"uuid"`       // Unique message ID
+	SessionID string `json:"session_id"` // Session identifier
+}
+
+// MessageType implements Message.
+func (m WorkerShuttingDownMessage) MessageType() string { return "system" }
+
 // SDKStatusValue is the non-null status payload for a status message.
 type SDKStatusValue string
 
@@ -1345,6 +1368,10 @@ func ParseMessage(data []byte) (Message, error) {
 			return msg, err
 		case "thinking_tokens":
 			var msg ThinkingTokensMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "worker_shutting_down":
+			var msg WorkerShuttingDownMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
 		default:

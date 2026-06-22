@@ -1,0 +1,22 @@
+=== RUN   TestWithOnUserDialog
+=== RUN   TestWithOnUserDialog/builder_installs_callback
+--- PASS: TestWithOnUserDialog (0.00s)
+    --- PASS: TestWithOnUserDialog/builder_installs_callback (0.00s)
+=== RUN   TestUserDialogRequest_ToolUseIDOmitempty
+=== RUN   TestUserDialogRequest_ToolUseIDOmitempty/missing_tool_use_id_is_absent_on_the_wire
+=== RUN   TestUserDialogRequest_ToolUseIDOmitempty/present_tool_use_id_round-trips
+--- PASS: TestUserDialogRequest_ToolUseIDOmitempty (0.00s)
+    --- PASS: TestUserDialogRequest_ToolUseIDOmitempty/missing_tool_use_id_is_absent_on_the_wire (0.00s)
+    --- PASS: TestUserDialogRequest_ToolUseIDOmitempty/present_tool_use_id_round-trips (0.00s)
+=== RUN   TestProtocolHandleUserDialogRequest
+=== RUN   TestProtocolHandleUserDialogRequest/invokes_callback_and_returns_completed
+=== RUN   TestProtocolHandleUserDialogRequest/nil_callback_answers_cancelled
+=== RUN   TestProtocolHandleUserDialogRequest/callback_cancels
+=== RUN   TestProtocolHandleUserDialogRequest/callback_error_answers_cancelled
+--- PASS: TestProtocolHandleUserDialogRequest (0.00s)
+    --- PASS: TestProtocolHandleUserDialogRequest/invokes_callback_and_returns_completed (0.00s)
+    --- PASS: TestProtocolHandleUserDialogRequest/nil_callback_answers_cancelled (0.00s)
+    --- PASS: TestProtocolHandleUserDialogRequest/callback_cancels (0.00s)
+    --- PASS: TestProtocolHandleUserDialogRequest/callback_error_answers_cancelled (0.00s)
+PASS
+ok  	github.com/roasbeef/claude-agent-sdk-go	0.003s
