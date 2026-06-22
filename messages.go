@@ -922,15 +922,19 @@ type ModelRefusalFallbackMessage struct {
 	FallbackModel string  `json:"fallback_model"` // Model the turn retried on
 	RequestID     *string `json:"request_id"`     // Upstream request id; nil for JSON null
 
-	// APIRefusalCategory is stop_details.category from the refused API
-	// response ("cyber", "bio", …). Open string — new categories ship on the
-	// wire ahead of schema updates. nil when the response carried no category
-	// (normal, not an error) or when emitted by an older CLI.
+	// APIRefusalCategory is the refusal category ("cyber", "bio", …):
+	// stop_details.category from the refused API response (client lane), or
+	// the fallback block's server-gated trigger.category (server lane). Open
+	// string — new categories ship on the wire ahead of schema updates. nil
+	// when neither source carried a category (normal, not an error) or when
+	// emitted by an older CLI.
 	APIRefusalCategory *string `json:"api_refusal_category,omitempty"`
 
 	// APIRefusalExplanation is stop_details.explanation from the refused API
-	// response. Unstable human prose — display only, never parse. nil under
-	// the same rules as APIRefusalCategory.
+	// response (client lane only — the server-lane trigger carries no
+	// explanation). Unstable human prose — display only, never parse. nil when
+	// the response carried none, always nil on server-lane banners, and under
+	// the same older-CLI rule as APIRefusalCategory.
 	APIRefusalExplanation *string `json:"api_refusal_explanation,omitempty"`
 
 	// RetractedMessageUUIDs lists wire UUIDs of the messages this fallback
