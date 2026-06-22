@@ -783,13 +783,52 @@ func (s *Stream) SetModel(ctx context.Context, model string) error {
 	return err
 }
 
+// setMaxThinkingTokensOptions accumulates optional set_max_thinking_tokens
+// parameters.
+type setMaxThinkingTokensOptions struct {
+	display *ThinkingDisplayOverride
+}
+
+// SetMaxThinkingTokensOption configures Stream.SetMaxThinkingTokens.
+type SetMaxThinkingTokensOption func(*setMaxThinkingTokensOptions)
+
+// WithThinkingDisplay sets the thinking display mode for the rest of the
+// session. The supplied value replaces the current session display mode.
+func WithThinkingDisplay(mode ThinkingDisplay) SetMaxThinkingTokensOption {
+	return func(o *setMaxThinkingTokensOptions) {
+		o.display = &ThinkingDisplayOverride{Mode: &mode}
+	}
+}
+
+// WithThinkingDisplayAPIDefault clears the thinking display mode back to the
+// API default for the rest of the session (wire null). Use this rather than
+// omitting the option when the goal is to reset rather than keep the
+// session-start display mode.
+func WithThinkingDisplayAPIDefault() SetMaxThinkingTokensOption {
+	return func(o *setMaxThinkingTokensOptions) {
+		o.display = &ThinkingDisplayOverride{}
+	}
+}
+
 // SetMaxThinkingTokens dynamically changes the max thinking tokens limit.
-// Pass nil to remove the limit.
+// Pass nil tokens to remove the limit.
+//
+// An optional WithThinkingDisplay / WithThinkingDisplayAPIDefault controls the
+// thinking display mode for the rest of the session; when no display option is
+// given the display mode from session start is kept. Note a session started
+// with thinking disabled has no display mode, so re-enabling thinking without
+// a display option yields the API's default display.
+//
 // It blocks until the CLI acknowledges the request or returns an error.
-func (s *Stream) SetMaxThinkingTokens(ctx context.Context, tokens *int) error {
+func (s *Stream) SetMaxThinkingTokens(ctx context.Context, tokens *int, opts ...SetMaxThinkingTokensOption) error {
+	var cfg setMaxThinkingTokensOptions
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
 		Subtype:           "set_max_thinking_tokens",
 		MaxThinkingTokens: tokens,
+		ThinkingDisplay:   cfg.display,
 	})
 	return err
 }

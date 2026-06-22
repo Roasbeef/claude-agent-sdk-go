@@ -242,6 +242,46 @@ func TestStreamSetMaxThinkingTokensRoundTrip(t *testing.T) {
 	}
 }
 
+func TestStreamSetMaxThinkingTokensThinkingDisplay(t *testing.T) {
+	t.Run("omitted when no option", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			return stream.SetMaxThinkingTokens(ctx, intPtr(4096))
+		})
+		require.NoError(t, err)
+
+		_, generic := decodeWrittenSDKControlRequest(t, transport)
+		body := genericRequestBody(t, generic)
+		assert.NotContains(t, body, "thinking_display")
+	})
+
+	t.Run("mode value", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			return stream.SetMaxThinkingTokens(ctx, nil, WithThinkingDisplay(ThinkingDisplayOmitted))
+		})
+		require.NoError(t, err)
+
+		_, generic := decodeWrittenSDKControlRequest(t, transport)
+		body := genericRequestBody(t, generic)
+		assert.Equal(t, "omitted", body["thinking_display"])
+	})
+
+	t.Run("api default is explicit null", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			return stream.SetMaxThinkingTokens(ctx, nil, WithThinkingDisplayAPIDefault())
+		})
+		require.NoError(t, err)
+
+		_, generic := decodeWrittenSDKControlRequest(t, transport)
+		body := genericRequestBody(t, generic)
+		got, ok := body["thinking_display"]
+		require.True(t, ok, "thinking_display should be present as null")
+		assert.Nil(t, got)
+	})
+}
+
 func TestStreamRegisterRepoRootMinimal(t *testing.T) {
 	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
 

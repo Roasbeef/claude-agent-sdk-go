@@ -292,6 +292,38 @@ type SDKControlRequest struct {
 	Request   SDKControlRequestBody `json:"request"`    // Nested request payload
 }
 
+// ThinkingDisplayOverride is the optional thinking_display payload of a
+// set_max_thinking_tokens control request. It distinguishes setting a mode
+// from clearing the mode back to the API default: a nil Mode marshals as JSON
+// null (clear to API default), while a non-nil Mode marshals as that value.
+// Omitting the whole field (a nil *ThinkingDisplayOverride) keeps the display
+// mode from session start.
+type ThinkingDisplayOverride struct {
+	Mode *ThinkingDisplay
+}
+
+// MarshalJSON implements json.Marshaler.
+func (d ThinkingDisplayOverride) MarshalJSON() ([]byte, error) {
+	if d.Mode == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(*d.Mode)
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (d *ThinkingDisplayOverride) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		d.Mode = nil
+		return nil
+	}
+	var mode ThinkingDisplay
+	if err := json.Unmarshal(data, &mode); err != nil {
+		return err
+	}
+	d.Mode = &mode
+	return nil
+}
+
 // SDKControlRequestBody contains the actual request data.
 // Note: This is a union type - different fields are used for different subtypes.
 type SDKControlRequestBody struct {
@@ -320,6 +352,7 @@ type SDKControlRequestBody struct {
 	Mode                   string                              `json:"mode,omitempty"`                   // For set_permission_mode
 	Model                  string                              `json:"model,omitempty"`                  // For set_model
 	MaxThinkingTokens      *int                                `json:"max_thinking_tokens,omitempty"`    // For set_max_thinking_tokens
+	ThinkingDisplay        *ThinkingDisplayOverride            `json:"thinking_display,omitempty"`       // For set_max_thinking_tokens
 	Directory              string                              `json:"directory,omitempty"`              // For register_repo_root
 	ReloadClaudeMD         *bool                               `json:"reload_claude_md,omitempty"`       // For register_repo_root
 	ReloadPlugins          *bool                               `json:"reload_plugins,omitempty"`         // For register_repo_root
