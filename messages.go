@@ -177,6 +177,7 @@ type ResultMessage struct {
 	TimeToRequestMs          *int64 `json:"time_to_request_ms,omitempty"`            // Time to request in milliseconds
 	TimeToRequestFromSpawnMs *int64 `json:"time_to_request_from_spawn_ms,omitempty"` // Time to request from spawn in milliseconds
 	WarmSpareClaimed         *bool  `json:"warm_spare_claimed,omitempty"`            // Whether a warm spare was claimed
+	TimeOriginMs             *int64 `json:"time_origin_ms,omitempty"`                // Wall-clock origin for the above timings, in milliseconds (success only)
 	IsError                  bool   `json:"is_error,omitempty"`                      // Whether this is an error result
 	NumTurns                 int    `json:"num_turns,omitempty"`                     // Number of conversation turns
 
