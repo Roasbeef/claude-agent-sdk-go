@@ -29,6 +29,11 @@ type UserMessage struct {
 	Priority        *UserMessagePriority `json:"priority,omitempty"`         // Scheduling priority
 	SubagentType    string               `json:"subagent_type,omitempty"`    // Subagent type that produced this message
 	TaskDescription string               `json:"task_description,omitempty"` // Description of the subagent task that produced this message
+	// SenderTaskID is the task id of the in-process background subagent that
+	// sent this message, stamped by the harness from the sending loop (never
+	// from tool input). Absent for cross-session peers. Note: camelCase wire
+	// key, matching the TS SDK.
+	SenderTaskID string `json:"senderTaskId,omitempty"`
 }
 
 // APIUserMessage represents the message content in Anthropic API format.
