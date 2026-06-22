@@ -60,6 +60,25 @@ type Transport interface {
 	IsReady() bool
 }
 
+// ExitWaiter is an optional capability implemented by transports backed by a
+// subprocess whose exit can be awaited. Network and in-process transports do
+// not implement it. Mirrors the optional Transport.waitForExit in the TS SDK
+// (sdk.d.ts v0.3.185 L6418): cleanup awaits it (bounded) so teardown does not
+// resolve while the child is still draining the stdin EOF that Close sent.
+//
+// Callers should type-assert before use:
+//
+//	if ew, ok := transport.(ExitWaiter); ok {
+//		_ = ew.WaitForExit(ctx)
+//	}
+type ExitWaiter interface {
+	// WaitForExit blocks until the underlying subprocess exits, returning its
+	// exit error, or until ctx is done. Safe to call concurrently with Close
+	// and multiple times: the subprocess is waited on exactly once and every
+	// caller observes the same result.
+	WaitForExit(ctx context.Context) error
+}
+
 type SubprocessTransport struct {
 	runner    SubprocessRunner
 	stdin     io.WriteCloser
@@ -70,6 +89,19 @@ type SubprocessTransport struct {
 	options   *Options
 	mu        sync.Mutex
 	errLogger atomic.Pointer[writerRef]
+	exitOnce  sync.Once
+	exitErr   error
+}
+
+// awaitExit blocks on the subprocess exit exactly once and caches the result,
+// so Close and WaitForExit never double-Wait the underlying os/exec.Cmd.
+func (t *SubprocessTransport) awaitExit() error {
+	t.exitOnce.Do(func() {
+		if t.runner != nil {
+			t.exitErr = t.runner.Wait()
+		}
+	})
+	return t.exitErr
 }
 
 // NewSubprocessTransport creates a new transport for the Claude CLI.
@@ -549,7 +581,7 @@ func (t *SubprocessTransport) Close() error {
 	if t.runner != nil {
 		done := make(chan error, 1)
 		go func() {
-			done <- t.runner.Wait()
+			done <- t.awaitExit()
 		}()
 
 		// Wait with timeout
@@ -589,4 +621,26 @@ func (t *SubprocessTransport) IsReady() bool {
 	return t.IsAlive()
 }
 
-var _ Transport = (*SubprocessTransport)(nil)
+// WaitForExit blocks until the CLI subprocess exits or ctx is done. It
+// implements ExitWaiter. The wait is shared with Close, so the underlying
+// process is reaped exactly once.
+func (t *SubprocessTransport) WaitForExit(ctx context.Context) error {
+	if t.runner == nil {
+		return nil
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- t.awaitExit()
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+var (
+	_ Transport  = (*SubprocessTransport)(nil)
+	_ ExitWaiter = (*SubprocessTransport)(nil)
+)
