@@ -459,6 +459,8 @@ type Settings struct {
 	FooterLinksRegexes []SettingsFooterLinkRegex `json:"footerLinksRegexes,omitempty"`
 	// WheelScrollAccelerationEnabled enables mouse-wheel scroll acceleration. Mirrors sdk.d.ts v0.3.177 L5988.
 	WheelScrollAccelerationEnabled *bool `json:"wheelScrollAccelerationEnabled,omitempty"`
+	// DisableClaudeAiConnectors, when true in any settings source, prevents claude.ai MCP cloud connectors from being auto-fetched or connected. Only gates auto-fetched connectors — a claudeai-proxy server passed explicitly (via --mcp-config or the SDK mcpServers option) still follows the normal MCP config trust flow. Any-source-true wins: a project can opt out, but a project-level false cannot override a user-level true. Mirrors sdk.d.ts v0.3.185 L4629.
+	DisableClaudeAiConnectors *bool `json:"disableClaudeAiConnectors,omitempty"`
 }
 
 // SettingsFooterLinkRegex is a footer-badge rule: when Pattern matches turn
@@ -488,6 +490,11 @@ type SettingsPolicyHelper struct {
 type SettingsAttribution struct {
 	Commit *string `json:"commit,omitempty"`
 	PR     *string `json:"pr,omitempty"`
+	// SessionURL controls whether the claude.ai session link is appended to
+	// commits and PRs created from web or Remote Control sessions (default:
+	// true). Set false to omit the Claude-Session trailer and PR-body link.
+	// Mirrors sdk.d.ts v0.3.185 L4551.
+	SessionURL *bool `json:"sessionUrl,omitempty"`
 }
 
 type SettingsPermissions struct {
@@ -706,8 +713,17 @@ type SettingsSandbox struct {
 	// SocatPath is the absolute path to the socat binary used by the sandbox
 	// network proxy on Linux/WSL. Overrides auto-detection via PATH. Honored
 	// only from admin-controlled managed settings. Mirrors sdk.d.ts v0.3.150 L5137.
-	SocatPath string                 `json:"socatPath,omitempty"`
-	Extra     map[string]interface{} `json:"-"`
+	SocatPath string `json:"socatPath,omitempty"`
+	// AllowAppleEvents (macOS only) lets sandboxed commands send Apple Events
+	// (and look up the appleeventsd Mach service), needed for `open`,
+	// `osascript`, and browser-based auth flows that open URLs. It REMOVES
+	// code-execution isolation: sandboxed commands can launch other
+	// applications unsandboxed with no user prompt and script running apps
+	// (e.g. Terminal) subject to per-app TCC automation consent. Honored only
+	// from user, managed/policy, or CLI (--settings) settings — project
+	// settings are ignored. Default false. Mirrors sdk.d.ts v0.3.185 L5718.
+	AllowAppleEvents *bool                  `json:"allowAppleEvents,omitempty"`
+	Extra            map[string]interface{} `json:"-"`
 }
 
 func (s SettingsSandbox) MarshalJSON() ([]byte, error) {

@@ -423,6 +423,53 @@ func TestSettingsParity0177JSON(t *testing.T) {
 	}
 }
 
+func TestSettingsParity0185JSON(t *testing.T) {
+	in := Settings{
+		DisableClaudeAiConnectors: boolPtr(true),
+		Attribution:               &SettingsAttribution{SessionURL: boolPtr(false)},
+		Sandbox:                   &SettingsSandbox{AllowAppleEvents: boolPtr(true)},
+	}
+	data, err := json.Marshal(in)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.Equal(t, true, got["disableClaudeAiConnectors"])
+	attr, ok := got["attribution"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, false, attr["sessionUrl"])
+	sandbox, ok := got["sandbox"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, true, sandbox["allowAppleEvents"])
+
+	var out Settings
+	require.NoError(t, json.Unmarshal(data, &out))
+	require.NotNil(t, out.DisableClaudeAiConnectors)
+	assert.True(t, *out.DisableClaudeAiConnectors)
+	require.NotNil(t, out.Attribution.SessionURL)
+	assert.False(t, *out.Attribution.SessionURL)
+	require.NotNil(t, out.Sandbox.AllowAppleEvents)
+	assert.True(t, *out.Sandbox.AllowAppleEvents)
+
+	empty := map[string]interface{}{}
+	data, err = json.Marshal(Settings{})
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &empty))
+	assert.NotContains(t, empty, "disableClaudeAiConnectors")
+
+	attrEmpty := map[string]interface{}{}
+	data, err = json.Marshal(SettingsAttribution{})
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &attrEmpty))
+	assert.NotContains(t, attrEmpty, "sessionUrl")
+
+	sandboxEmpty := map[string]interface{}{}
+	data, err = json.Marshal(SettingsSandbox{})
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(data, &sandboxEmpty))
+	assert.NotContains(t, sandboxEmpty, "allowAppleEvents")
+}
+
 func TestSettingsSwitchModelsOnFlagJSON(t *testing.T) {
 	t.Run("nil omits key", func(t *testing.T) {
 		data, err := json.Marshal(Settings{})
