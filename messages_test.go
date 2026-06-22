@@ -706,7 +706,8 @@ func TestParseResultMessageTimingFields(t *testing.T) {
 		"ttft_stream_ms": 42,
 		"time_to_request_ms": 84,
 		"time_to_request_from_spawn_ms": 126,
-		"warm_spare_claimed": true
+		"warm_spare_claimed": true,
+		"time_origin_ms": 1763856000000
 	}`)
 
 	msg, err := ParseMessage(input)
@@ -722,6 +723,8 @@ func TestParseResultMessageTimingFields(t *testing.T) {
 	assert.Equal(t, int64(126), *resultMsg.TimeToRequestFromSpawnMs)
 	require.NotNil(t, resultMsg.WarmSpareClaimed)
 	assert.True(t, *resultMsg.WarmSpareClaimed)
+	require.NotNil(t, resultMsg.TimeOriginMs)
+	assert.Equal(t, int64(1763856000000), *resultMsg.TimeOriginMs)
 }
 
 func TestResultMessageTimingFieldsOmitempty(t *testing.T) {
@@ -739,6 +742,7 @@ func TestResultMessageTimingFieldsOmitempty(t *testing.T) {
 	assert.NotContains(t, got, "time_to_request_ms")
 	assert.NotContains(t, got, "time_to_request_from_spawn_ms")
 	assert.NotContains(t, got, "warm_spare_claimed")
+	assert.NotContains(t, got, "time_origin_ms")
 }
 
 func TestResultMessageTimingFieldsExplicitFalse(t *testing.T) {
