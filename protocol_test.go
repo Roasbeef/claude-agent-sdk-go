@@ -103,6 +103,83 @@ func TestProtocolInitialize(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestProtocolReinitializeBypassesGuard(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	protocol := NewProtocol(transport, opts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	require.NoError(t, transport.Connect(ctx))
+	defer transport.Close()
+
+	readerReady := make(chan struct{})
+	go func() {
+		close(readerReady)
+		for msg, err := range transport.ReadMessages(ctx) {
+			if err != nil {
+				continue
+			}
+			if ctrlResp, ok := msg.(SDKControlResponse); ok {
+				protocol.handleSDKControlResponse(ctrlResp)
+			}
+		}
+	}()
+	<-readerReady
+
+	// Answer every initialize request the CLI receives with a distinguishable
+	// output_style so we can prove a fresh request was actually sent.
+	go func() {
+		decoder := json.NewDecoder(runner.StdinPipe)
+		for {
+			var req SDKControlRequest
+			if err := decoder.Decode(&req); err != nil {
+				return
+			}
+			resp := SDKControlResponse{
+				Type: "control_response",
+				Response: SDKControlResponseBody{
+					Subtype:   "success",
+					RequestID: req.RequestID,
+					Response:  map[string]interface{}{"output_style": "fresh"},
+				},
+			}
+			data, _ := json.Marshal(resp)
+			data = append(data, '\n')
+			runner.StdoutPipe.Write(data)
+		}
+	}()
+
+	// Simulate an already-initialized session: Initialize would no-op, but
+	// Reinitialize must still issue a fresh request and refresh the cache.
+	protocol.initialized.Store(true)
+
+	type result struct {
+		resp *SDKControlInitializeResponse
+		err  error
+	}
+	done := make(chan result, 1)
+	go func() {
+		resp, err := protocol.Reinitialize(ctx)
+		done <- result{resp, err}
+	}()
+
+	select {
+	case r := <-done:
+		require.NoError(t, r.err)
+		require.NotNil(t, r.resp)
+		assert.Equal(t, "fresh", r.resp.OutputStyle)
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for Reinitialize to complete")
+	}
+
+	assert.Equal(t, "fresh", protocol.initResult().OutputStyle,
+		"Reinitialize should refresh the cached initialize response")
+}
+
 func TestProtocolInitializeSupportedDialogKindsRequiresCallback(t *testing.T) {
 	runner := NewMockSubprocessRunner()
 	opts := NewOptions()

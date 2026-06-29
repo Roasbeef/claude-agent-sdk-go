@@ -1244,6 +1244,24 @@ func (s *Stream) InitializationResult() (*SDKControlInitializeResponse, error) {
 	return cloneInitializeResponse(initResp), nil
 }
 
+// Reinitialize re-sends the initialize control request to the running CLI and
+// returns the fresh response. Unlike InitializationResult, which returns the
+// cached first-connect result, this always issues a new request. Use it after
+// a transport gap so the CLI redelivers any can_use_tool / request_user_dialog
+// control requests the loop is still blocked on; the SDK dedupes in-flight
+// request_ids, but callbacks should be idempotent per request_id since a
+// request whose response was lost in the gap is dispatched again.
+func (s *Stream) Reinitialize(ctx context.Context) (*SDKControlInitializeResponse, error) {
+	initResp, err := s.client.protocol.Reinitialize(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if initResp == nil {
+		return nil, ErrNotInitialized
+	}
+	return cloneInitializeResponse(initResp), nil
+}
+
 // SupportedCommands returns the cached list of available slash commands.
 // The context is accepted for API compatibility and is not used.
 func (s *Stream) SupportedCommands(ctx context.Context) ([]SlashCommand, error) {
