@@ -315,46 +315,55 @@ type Settings struct {
 	AWSAuthRefresh      string `json:"awsAuthRefresh,omitempty"`
 	GCPAuthRefresh      string `json:"gcpAuthRefresh,omitempty"`
 	// PolicyHelper configures the admin-controlled policy executable invoked at startup to compute managed settings. Honored only from policy sources. Mirrors sdk.d.ts v0.3.150 L3993.
-	PolicyHelper                    *SettingsPolicyHelper            `json:"policyHelper,omitempty"`
-	FileSuggestion                  *SettingsFileSuggestion          `json:"fileSuggestion,omitempty"`
-	RespectGitignore                *bool                            `json:"respectGitignore,omitempty"`
-	CleanupPeriodDays               *int                             `json:"cleanupPeriodDays,omitempty"`
-	SkillListingMaxDescChars        *int                             `json:"skillListingMaxDescChars,omitempty"`
-	SkillListingBudgetFraction      *float64                         `json:"skillListingBudgetFraction,omitempty"`
-	WSLInheritsWindowsSettings      *bool                            `json:"wslInheritsWindowsSettings,omitempty"`
-	Env                             map[string]string                `json:"env,omitempty"`
-	Attribution                     *SettingsAttribution             `json:"attribution,omitempty"`
-	IncludeCoAuthoredBy             *bool                            `json:"includeCoAuthoredBy,omitempty"`
-	IncludeGitInstructions          *bool                            `json:"includeGitInstructions,omitempty"`
-	Permissions                     *SettingsPermissions             `json:"permissions,omitempty"`
-	Model                           string                           `json:"model,omitempty"`
-	FallbackModel                   []string                         `json:"fallbackModel,omitempty"`
-	AvailableModels                 []string                         `json:"availableModels,omitempty"`
-	ModelOverrides                  map[string]string                `json:"modelOverrides,omitempty"`
-	EnableAllProjectMCPServers      *bool                            `json:"enableAllProjectMcpServers,omitempty"`
-	EnabledMCPJSONServers           []string                         `json:"enabledMcpjsonServers,omitempty"`
-	DisabledMCPJSONServers          []string                         `json:"disabledMcpjsonServers,omitempty"`
-	SkillOverrides                  map[string]SettingsSkillOverride `json:"skillOverrides,omitempty"`
-	AllowedMCPServers               []SettingsMCPServerMatcher       `json:"allowedMcpServers,omitempty"`
-	DeniedMCPServers                []SettingsMCPServerMatcher       `json:"deniedMcpServers,omitempty"`
-	Hooks                           map[string][]SettingsHookMatcher `json:"hooks,omitempty"`
-	Worktree                        *SettingsWorktree                `json:"worktree,omitempty"`
-	DisableAllHooks                 *bool                            `json:"disableAllHooks,omitempty"`
-	DisableSkillShellExecution      *bool                            `json:"disableSkillShellExecution,omitempty"`
-	DefaultShell                    string                           `json:"defaultShell,omitempty"`
-	AllowManagedHooksOnly           *bool                            `json:"allowManagedHooksOnly,omitempty"`
-	AllowedHTTPHookURLs             []string                         `json:"allowedHttpHookUrls,omitempty"`
-	HTTPHookAllowedEnvVars          []string                         `json:"httpHookAllowedEnvVars,omitempty"`
-	AllowManagedPermissionRulesOnly *bool                            `json:"allowManagedPermissionRulesOnly,omitempty"`
-	AllowManagedMCPServersOnly      *bool                            `json:"allowManagedMcpServersOnly,omitempty"`
-	StrictPluginOnlyCustomization   interface{}                      `json:"strictPluginOnlyCustomization,omitempty"`
-	StatusLine                      *SettingsCommand                 `json:"statusLine,omitempty"`
-	PRURLTemplate                   string                           `json:"prUrlTemplate,omitempty"`
-	SubagentStatusLine              *SettingsCommand                 `json:"subagentStatusLine,omitempty"`
-	EnabledPlugins                  map[string]interface{}           `json:"enabledPlugins,omitempty"`
-	ExtraKnownMarketplaces          map[string]SettingsMarketplace   `json:"extraKnownMarketplaces,omitempty"`
-	StrictKnownMarketplaces         []SettingsMarketplaceSource      `json:"strictKnownMarketplaces,omitempty"`
-	BlockedMarketplaces             []SettingsMarketplaceSource      `json:"blockedMarketplaces,omitempty"`
+	PolicyHelper               *SettingsPolicyHelper            `json:"policyHelper,omitempty"`
+	FileSuggestion             *SettingsFileSuggestion          `json:"fileSuggestion,omitempty"`
+	RespectGitignore           *bool                            `json:"respectGitignore,omitempty"`
+	CleanupPeriodDays          *int                             `json:"cleanupPeriodDays,omitempty"`
+	SkillListingMaxDescChars   *int                             `json:"skillListingMaxDescChars,omitempty"`
+	SkillListingBudgetFraction *float64                         `json:"skillListingBudgetFraction,omitempty"`
+	WSLInheritsWindowsSettings *bool                            `json:"wslInheritsWindowsSettings,omitempty"`
+	Env                        map[string]string                `json:"env,omitempty"`
+	Attribution                *SettingsAttribution             `json:"attribution,omitempty"`
+	IncludeCoAuthoredBy        *bool                            `json:"includeCoAuthoredBy,omitempty"`
+	IncludeGitInstructions     *bool                            `json:"includeGitInstructions,omitempty"`
+	Permissions                *SettingsPermissions             `json:"permissions,omitempty"`
+	Model                      string                           `json:"model,omitempty"`
+	FallbackModel              []string                         `json:"fallbackModel,omitempty"`
+	AvailableModels            []string                         `json:"availableModels,omitempty"`
+	ModelOverrides             map[string]string                `json:"modelOverrides,omitempty"`
+	EnableAllProjectMCPServers *bool                            `json:"enableAllProjectMcpServers,omitempty"`
+	EnabledMCPJSONServers      []string                         `json:"enabledMcpjsonServers,omitempty"`
+	DisabledMCPJSONServers     []string                         `json:"disabledMcpjsonServers,omitempty"`
+	SkillOverrides             map[string]SettingsSkillOverride `json:"skillOverrides,omitempty"`
+	AllowedMCPServers          []SettingsMCPServerMatcher       `json:"allowedMcpServers,omitempty"`
+	DeniedMCPServers           []SettingsMCPServerMatcher       `json:"deniedMcpServers,omitempty"`
+	Hooks                      map[string][]SettingsHookMatcher `json:"hooks,omitempty"`
+	Worktree                   *SettingsWorktree                `json:"worktree,omitempty"`
+	DisableAllHooks            *bool                            `json:"disableAllHooks,omitempty"`
+	DisableSkillShellExecution *bool                            `json:"disableSkillShellExecution,omitempty"`
+	DefaultShell               string                           `json:"defaultShell,omitempty"`
+	// RespondToBashCommands controls whether Claude responds after an
+	// input-box ! bash command runs. Set to false to add the command output to
+	// context without a response. Default true. Mirrors sdk.d.ts v0.3.195 L5032.
+	RespondToBashCommands           *bool                          `json:"respondToBashCommands,omitempty"`
+	AllowManagedHooksOnly           *bool                          `json:"allowManagedHooksOnly,omitempty"`
+	AllowedHTTPHookURLs             []string                       `json:"allowedHttpHookUrls,omitempty"`
+	HTTPHookAllowedEnvVars          []string                       `json:"httpHookAllowedEnvVars,omitempty"`
+	AllowManagedPermissionRulesOnly *bool                          `json:"allowManagedPermissionRulesOnly,omitempty"`
+	AllowManagedMCPServersOnly      *bool                          `json:"allowManagedMcpServersOnly,omitempty"`
+	StrictPluginOnlyCustomization   interface{}                    `json:"strictPluginOnlyCustomization,omitempty"`
+	StatusLine                      *SettingsCommand               `json:"statusLine,omitempty"`
+	PRURLTemplate                   string                         `json:"prUrlTemplate,omitempty"`
+	SubagentStatusLine              *SettingsCommand               `json:"subagentStatusLine,omitempty"`
+	EnabledPlugins                  map[string]interface{}         `json:"enabledPlugins,omitempty"`
+	ExtraKnownMarketplaces          map[string]SettingsMarketplace `json:"extraKnownMarketplaces,omitempty"`
+	StrictKnownMarketplaces         []SettingsMarketplaceSource    `json:"strictKnownMarketplaces,omitempty"`
+	BlockedMarketplaces             []SettingsMarketplaceSource    `json:"blockedMarketplaces,omitempty"`
+	// DisableSideloadFlags, when true and set in managed settings, rejects the
+	// --plugin-dir, --plugin-url, --agents, and non-sdk --mcp-config CLI flags
+	// at startup, closing the CLI-flag bypass of strictKnownMarketplaces.
+	// Honored only from managed settings. Mirrors sdk.d.ts v0.3.195 L5712.
+	DisableSideloadFlags *bool `json:"disableSideloadFlags,omitempty"`
 	// PluginSuggestionMarketplaces names managed marketplaces whose plugins may surface as contextual install suggestions. Honored only from managed settings. Mirrors sdk.d.ts v0.3.168 L5242.
 	PluginSuggestionMarketplaces []string `json:"pluginSuggestionMarketplaces,omitempty"`
 	// ForceLoginMethod pins the login flow: "claudeai" for Claude Pro/Max, "console" for Console billing, "gateway" for the Cloud gateway OIDC device flow (the "gateway" variant was added in v0.3.168). Mirrors sdk.d.ts v0.3.168 L5246.
@@ -416,18 +425,20 @@ type Settings struct {
 	PreferredNotifChannel string   `json:"preferredNotifChannel,omitempty"`
 	AutoCompactEnabled    *bool    `json:"autoCompactEnabled,omitempty"`
 	// SwitchModelsOnFlag switches models automatically when safety measures flag a message. Mirrors sdk.d.ts v0.3.168 L5620.
-	SwitchModelsOnFlag         *bool  `json:"switchModelsOnFlag,omitempty"`
-	AutoScrollEnabled          *bool  `json:"autoScrollEnabled,omitempty"`
-	FileCheckpointingEnabled   *bool  `json:"fileCheckpointingEnabled,omitempty"`
-	ShowTurnDuration           *bool  `json:"showTurnDuration,omitempty"`
-	ShowMessageTimestamps      *bool  `json:"showMessageTimestamps,omitempty"`
-	TerminalProgressBarEnabled *bool  `json:"terminalProgressBarEnabled,omitempty"`
-	TodoFeatureEnabled         *bool  `json:"todoFeatureEnabled,omitempty"`
-	TeammateMode               string `json:"teammateMode,omitempty"`
-	RemoteControlAtStartup     *bool  `json:"remoteControlAtStartup,omitempty"`
-	AutoUploadSessions         *bool  `json:"autoUploadSessions,omitempty"`
-	InputNeededNotifEnabled    *bool  `json:"inputNeededNotifEnabled,omitempty"`
-	AgentPushNotifEnabled      *bool  `json:"agentPushNotifEnabled,omitempty"`
+	SwitchModelsOnFlag         *bool `json:"switchModelsOnFlag,omitempty"`
+	AutoScrollEnabled          *bool `json:"autoScrollEnabled,omitempty"`
+	FileCheckpointingEnabled   *bool `json:"fileCheckpointingEnabled,omitempty"`
+	ShowTurnDuration           *bool `json:"showTurnDuration,omitempty"`
+	ShowMessageTimestamps      *bool `json:"showMessageTimestamps,omitempty"`
+	TerminalProgressBarEnabled *bool `json:"terminalProgressBarEnabled,omitempty"`
+	TodoFeatureEnabled         *bool `json:"todoFeatureEnabled,omitempty"`
+	// TeammateMode controls how spawned teammates execute: "auto", "tmux",
+	// "iterm2", or "in-process" ("iterm2" added in sdk.d.ts v0.3.195 L6162).
+	TeammateMode            string `json:"teammateMode,omitempty"`
+	RemoteControlAtStartup  *bool  `json:"remoteControlAtStartup,omitempty"`
+	AutoUploadSessions      *bool  `json:"autoUploadSessions,omitempty"`
+	InputNeededNotifEnabled *bool  `json:"inputNeededNotifEnabled,omitempty"`
+	AgentPushNotifEnabled   *bool  `json:"agentPushNotifEnabled,omitempty"`
 	// Managed-org / policy tier additions (sdk.d.ts v0.3.150).
 	// DisableAgentView disables the agent view. Typically set in managed settings. Mirrors sdk.d.ts v0.3.150 L4375.
 	DisableAgentView *bool `json:"disableAgentView,omitempty"`
