@@ -163,6 +163,14 @@ func callWithTimeout(t *testing.T, fn func(context.Context) error) error {
 	return fn(ctx)
 }
 
+func withResult[T any](t *testing.T, fn func(context.Context) (T, error)) (T, error) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	return fn(ctx)
+}
+
 func TestStreamInterruptSendsControlRequest(t *testing.T) {
 	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
 
@@ -204,6 +212,61 @@ func TestStreamSetModelSendsModelField(t *testing.T) {
 	body := genericRequestBody(t, generic)
 	assert.Equal(t, "set_model", body["subtype"])
 	assert.Equal(t, "claude-sonnet-4-5-20250929", body["model"])
+}
+
+func TestStreamSetMcpPermissionModeOverrideRoundTrip(t *testing.T) {
+	defaultMode := McpPermissionOverrideModeDefault
+	autoMode := McpPermissionOverrideModeAuto
+
+	tests := []struct {
+		name     string
+		mode     *McpPermissionOverrideMode
+		wantMode interface{} // string for a value, nil for explicit JSON null
+	}{
+		{name: "default", mode: &defaultMode, wantMode: "default"},
+		{name: "auto", mode: &autoMode, wantMode: "auto"},
+		{name: "clear sends null", mode: nil, wantMode: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+			_, err := withResult(t, func(ctx context.Context) (McpPermissionModeOverrideResult, error) {
+				return stream.SetMcpPermissionModeOverride(ctx, "my-server", tt.mode)
+			})
+			require.NoError(t, err)
+
+			_, generic := decodeWrittenSDKControlRequest(t, transport)
+			body := genericRequestBody(t, generic)
+			assert.Equal(t, "set_mcp_permission_mode_override", body["subtype"])
+			assert.Equal(t, "my-server", body["serverName"])
+			// mode key is always present (tristate): a string, or explicit null.
+			require.Contains(t, body, "mode")
+			assert.Equal(t, tt.wantMode, body["mode"])
+		})
+	}
+}
+
+func TestStreamSetMcpPermissionModeOverrideParsesWarning(t *testing.T) {
+	warnResponse := func(req SDKControlRequest) SDKControlResponse {
+		return SDKControlResponse{
+			Type: "control_response",
+			Response: SDKControlResponseBody{
+				Subtype:   "success",
+				RequestID: req.RequestID,
+				Response:  map[string]interface{}{"warning": "unknown server"},
+			},
+		}
+	}
+	stream, _, _ := newStreamControlTest(warnResponse)
+
+	mode := McpPermissionOverrideModeDefault
+	result, err := withResult(t, func(ctx context.Context) (McpPermissionModeOverrideResult, error) {
+		return stream.SetMcpPermissionModeOverride(ctx, "typo-server", &mode)
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "unknown server", result.Warning)
 }
 
 func TestStreamSetMaxThinkingTokensRoundTrip(t *testing.T) {

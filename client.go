@@ -783,6 +783,80 @@ func (s *Stream) SetModel(ctx context.Context, model string) error {
 	return err
 }
 
+// McpPermissionOverrideMode is a per-MCP-server permission-mode override. The
+// override is tighten-only: it applies only when the session mode would
+// already auto-allow (bypassPermissions/auto), so it can never widen
+// privilege.
+type McpPermissionOverrideMode string
+
+const (
+	// McpPermissionOverrideModeDefault forces per-action permission prompts
+	// for the server.
+	McpPermissionOverrideModeDefault McpPermissionOverrideMode = "default"
+	// McpPermissionOverrideModeAuto routes the server through the auto-mode
+	// classifier.
+	McpPermissionOverrideModeAuto McpPermissionOverrideMode = "auto"
+)
+
+// McpPermissionModeOverrideResult is the result of SetMcpPermissionModeOverride.
+type McpPermissionModeOverrideResult struct {
+	// Warning is set when serverName matched no currently known MCP server.
+	// The override is stored regardless and applies once a server with that
+	// exact name connects; the warning is informational (typo detection).
+	Warning string
+}
+
+// mcpPermissionModeOverrideRequest is the wire envelope for
+// set_mcp_permission_mode_override. It is sent instead of the shared
+// SDKControlRequestBody because mode must serialize as an explicit JSON null
+// (to clear the override), which the shared body's omitempty mode field cannot
+// express.
+type mcpPermissionModeOverrideRequest struct {
+	Type      string                               `json:"type"`
+	RequestID string                               `json:"request_id"`
+	Request   mcpPermissionModeOverrideRequestBody `json:"request"`
+}
+
+type mcpPermissionModeOverrideRequestBody struct {
+	Subtype    string                     `json:"subtype"`
+	ServerName string                     `json:"serverName"`
+	Mode       *McpPermissionOverrideMode `json:"mode"`
+}
+
+// MessageType implements Message so the envelope can be written to the transport.
+func (m mcpPermissionModeOverrideRequest) MessageType() string { return "control_request" }
+
+// SetMcpPermissionModeOverride pins (or, with a nil mode, clears) a
+// per-MCP-server permission-mode override. Only McpPermissionOverrideModeDefault,
+// McpPermissionOverrideModeAuto, or nil (clear) are accepted; the override is
+// tighten-only and can never widen privilege. Only available in streaming
+// input mode. It blocks until the CLI acknowledges the request or returns an
+// error.
+func (s *Stream) SetMcpPermissionModeOverride(
+	ctx context.Context, serverName string, mode *McpPermissionOverrideMode,
+) (McpPermissionModeOverrideResult, error) {
+	requestID := s.client.protocol.nextRequestID()
+	req := mcpPermissionModeOverrideRequest{
+		Type:      "control_request",
+		RequestID: requestID,
+		Request: mcpPermissionModeOverrideRequestBody{
+			Subtype:    "set_mcp_permission_mode_override",
+			ServerName: serverName,
+			Mode:       mode,
+		},
+	}
+	resp, err := s.dispatchControlRequest(ctx, requestID, req.Request.Subtype, req)
+	if err != nil {
+		return McpPermissionModeOverrideResult{}, err
+	}
+
+	var result McpPermissionModeOverrideResult
+	if w, ok := resp.Response.Response["warning"].(string); ok {
+		result.Warning = w
+	}
+	return result, nil
+}
+
 // setMaxThinkingTokensOptions accumulates optional set_max_thinking_tokens
 // parameters.
 type setMaxThinkingTokensOptions struct {
@@ -1122,21 +1196,31 @@ func (s *Stream) BackgroundTasks(
 func (s *Stream) sendSDKControlRequest(
 	ctx context.Context, body SDKControlRequestBody,
 ) (*SDKControlResponse, error) {
-	p := s.client.protocol
-	requestID := p.nextRequestID()
+	requestID := s.client.protocol.nextRequestID()
 	req := SDKControlRequest{
 		Type:      "control_request",
 		RequestID: requestID,
 		Request:   body,
 	}
+	return s.dispatchControlRequest(ctx, requestID, body.Subtype, req)
+}
+
+// dispatchControlRequest writes a pre-built control-request envelope and waits
+// for its correlated response. envelope is marshaled as-is, so callers whose
+// payload does not fit SDKControlRequestBody (e.g. a field that must serialize
+// as an explicit JSON null) can supply their own request struct.
+func (s *Stream) dispatchControlRequest(
+	ctx context.Context, requestID, subtype string, envelope Message,
+) (*SDKControlResponse, error) {
+	p := s.client.protocol
 
 	// Register before writing so a fast CLI response cannot race the waiter.
 	ch := make(chan SDKControlResponse, 1)
 	p.pendingReqs.Store(requestID, ch)
 
-	if err := s.client.transport.Write(ctx, req); err != nil {
+	if err := s.client.transport.Write(ctx, envelope); err != nil {
 		p.pendingReqs.Delete(requestID)
-		return nil, fmt.Errorf("control request %q: write: %w", body.Subtype, err)
+		return nil, fmt.Errorf("control request %q: write: %w", subtype, err)
 	}
 
 	select {
@@ -1145,7 +1229,7 @@ func (s *Stream) sendSDKControlRequest(
 		return nil, ctx.Err()
 	case resp := <-ch:
 		if resp.Response.Subtype == "error" {
-			return nil, fmt.Errorf("control request %q: %s", body.Subtype, resp.Response.Error)
+			return nil, fmt.Errorf("control request %q: %s", subtype, resp.Response.Error)
 		}
 		return &resp, nil
 	}

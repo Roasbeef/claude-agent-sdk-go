@@ -2221,3 +2221,43 @@ func TestIntegrationGetUsageExperimental(t *testing.T) {
 	skipIfNoCLI(t)
 	t.Skip("get_usage is EXPERIMENTAL upstream (unstable wire shape) and its response is account-dependent — rate_limits/behaviors are null for non-claude.ai-subscriber sessions and the installed CLI may not support the subtype; a live assertion would be brittle. Mirrors GetContextUsage, which ships without an integration test. Tracked in INTEGRATION-FOLLOWUPS.md")
 }
+
+// TestIntegrationSetMcpPermissionModeOverride exercises the
+// set_mcp_permission_mode_override control request against the live CLI. The
+// override targets an unknown server name, which a supporting CLI answers with
+// a typo-detection warning (the override is stored regardless). CLIs predating
+// the control request reject the subtype; the test skips in that case so the
+// slot activates once the CLI catches up.
+func TestIntegrationSetMcpPermissionModeOverride(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	mode := McpPermissionOverrideModeDefault
+	result, err := stream.SetMcpPermissionModeOverride(ctx, "no-such-server", &mode)
+	if err != nil {
+		t.Skipf("CLI does not support set_mcp_permission_mode_override: %v", err)
+	}
+
+	// Unknown server name => informational typo-detection warning.
+	assert.NotEmpty(t, result.Warning,
+		"expected a warning for an unknown server name")
+
+	// Clearing the override (nil mode => explicit wire null) must round-trip.
+	_, err = stream.SetMcpPermissionModeOverride(ctx, "no-such-server", nil)
+	require.NoError(t, err)
+}
