@@ -3869,3 +3869,8 @@ func BenchmarkContentText(b *testing.B) {
 		_ = msg.ContentText()
 	}
 }
+
+func TestV0195EnumWireValues(t *testing.T) {
+	assert.Equal(t, "background_requested", string(TerminalReasonBackgroundRequested))
+	assert.Equal(t, "seven_day_overage_included", string(RateLimitTypeSevenDayOverageIncluded))
+}
