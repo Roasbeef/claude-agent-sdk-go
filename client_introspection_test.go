@@ -380,6 +380,15 @@ func TestStreamGetUsageExperimentalParsesCanonicalPayload(t *testing.T) {
 				"utilization": 42.5, "resets_at": "2026-06-15T20:00:00Z",
 			},
 			"seven_day": nil,
+			"model_scoped": []interface{}{
+				map[string]interface{}{
+					"display_name": "Fable", "utilization": 60.0,
+					"resets_at": "2026-06-22T00:00:00Z",
+				},
+				map[string]interface{}{
+					"display_name": "Opus", "utilization": nil, "resets_at": nil,
+				},
+			},
 			"extra_usage": map[string]interface{}{
 				"is_enabled": true, "monthly_limit": 50.0,
 				"used_credits": 12.5, "utilization": 25.0, "currency": "USD",
@@ -440,6 +449,14 @@ func TestStreamGetUsageExperimentalParsesCanonicalPayload(t *testing.T) {
 	require.NotNil(t, got.RateLimits.FiveHour.Utilization)
 	assert.InDelta(t, 42.5, *got.RateLimits.FiveHour.Utilization, 1e-9)
 	assert.Nil(t, got.RateLimits.SevenDay) // present-but-null window
+	require.Len(t, got.RateLimits.ModelScoped, 2)
+	assert.Equal(t, "Fable", got.RateLimits.ModelScoped[0].DisplayName)
+	require.NotNil(t, got.RateLimits.ModelScoped[0].Utilization)
+	assert.InDelta(t, 60.0, *got.RateLimits.ModelScoped[0].Utilization, 1e-9)
+	require.NotNil(t, got.RateLimits.ModelScoped[0].ResetsAt)
+	assert.Equal(t, "Opus", got.RateLimits.ModelScoped[1].DisplayName)
+	assert.Nil(t, got.RateLimits.ModelScoped[1].Utilization) // present-but-null
+	assert.Nil(t, got.RateLimits.ModelScoped[1].ResetsAt)
 	require.NotNil(t, got.RateLimits.ExtraUsage)
 	assert.True(t, got.RateLimits.ExtraUsage.IsEnabled)
 	require.NotNil(t, got.RateLimits.ExtraUsage.Currency)

@@ -218,7 +218,22 @@ type UsageRateLimits struct {
 	SevenDayOAuthApps *UsageRateLimitWindow `json:"seven_day_oauth_apps,omitempty"`
 	SevenDayOpus      *UsageRateLimitWindow `json:"seven_day_opus,omitempty"`
 	SevenDaySonnet    *UsageRateLimitWindow `json:"seven_day_sonnet,omitempty"`
-	ExtraUsage        *UsageExtraUsage      `json:"extra_usage,omitempty"`
+	// ModelScoped holds per-model weekly windows from the server limits[]
+	// array, filtered by the overage-included-models allowlist. Additive —
+	// present only when the server emits them. Mirrors sdk.d.ts v0.3.195 L3088.
+	ModelScoped []UsageModelScopedWindow `json:"model_scoped,omitempty"`
+	ExtraUsage  *UsageExtraUsage         `json:"extra_usage,omitempty"`
+}
+
+// UsageModelScopedWindow is a per-model weekly rate-limit window.
+type UsageModelScopedWindow struct {
+	// DisplayName is the server-supplied label for the model bucket (e.g.
+	// "Fable").
+	DisplayName string `json:"display_name"`
+	// Utilization is the percentage of the window used, or nil.
+	Utilization *float64 `json:"utilization"`
+	// ResetsAt is the ISO 8601 timestamp when the window resets, or nil.
+	ResetsAt *string `json:"resets_at"`
 }
 
 // UsageRateLimitWindow is a single rate-limit window's utilization.

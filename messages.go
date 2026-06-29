@@ -508,7 +508,10 @@ const (
 	TerminalReasonHookStopped        TerminalReason = "hook_stopped"
 	TerminalReasonToolDeferred       TerminalReason = "tool_deferred"
 	TerminalReasonMaxTurns           TerminalReason = "max_turns"
-	TerminalReasonCompleted          TerminalReason = "completed"
+	// TerminalReasonBackgroundRequested marks a loop that yielded because the
+	// turn was moved to a background task. Added in sdk.d.ts v0.3.195 L6475.
+	TerminalReasonBackgroundRequested TerminalReason = "background_requested"
+	TerminalReasonCompleted           TerminalReason = "completed"
 )
 
 // FastModeState is the current state of Claude Code fast mode.
@@ -528,7 +531,10 @@ const (
 	RateLimitTypeSevenDay       RateLimitType = "seven_day"
 	RateLimitTypeSevenDayOpus   RateLimitType = "seven_day_opus"
 	RateLimitTypeSevenDaySonnet RateLimitType = "seven_day_sonnet"
-	RateLimitTypeOverage        RateLimitType = "overage"
+	// RateLimitTypeSevenDayOverageIncluded is the seven-day window for the
+	// overage-included model bucket. Added in sdk.d.ts v0.3.195 L3926.
+	RateLimitTypeSevenDayOverageIncluded RateLimitType = "seven_day_overage_included"
+	RateLimitTypeOverage                 RateLimitType = "overage"
 )
 
 // RateLimitOverageDisabledReason explains why overage is unavailable.
