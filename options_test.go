@@ -9,6 +9,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestWithExistingAuth(t *testing.T) {
+	opts := NewOptions()
+
+	WithExistingAuth()(opts)
+
+	assert.True(t, opts.ExistingAuth)
+}
+
 func TestSettingsHookArgsJSON(t *testing.T) {
 	t.Run("marshal includes args", func(t *testing.T) {
 		data, err := json.Marshal(SettingsHook{

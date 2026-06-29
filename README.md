@@ -52,7 +52,8 @@ go get github.com/roasbeef/claude-agent-sdk-go
 Requirements:
 - Go 1.23+ (for `iter.Seq`)
 - Claude Code CLI: `npm install -g @anthropic-ai/claude-code`
-- `ANTHROPIC_API_KEY` or `CLAUDE_CODE_OAUTH_TOKEN` in your environment
+- Either `ANTHROPIC_API_KEY` / `CLAUDE_CODE_OAUTH_TOKEN` in your environment,
+  or a completed Claude Code TUI login with `WithExistingAuth()`
 
 ## Quick Start
 
@@ -87,6 +88,19 @@ func main() {
     }
 }
 ```
+
+If Claude Code has already been authenticated through the TUI login flow, use
+`WithExistingAuth()` instead of passing API keys or OAuth tokens:
+
+```go
+client, err := claudeagent.NewClient(
+    claudeagent.WithExistingAuth(),
+    claudeagent.WithSystemPrompt("You are a helpful assistant."),
+)
+```
+
+The SDK will spawn the Claude Code subprocess without known Claude auth token
+environment variables, allowing the CLI to use its existing on-disk login.
 
 ## Streaming
 

@@ -58,8 +58,15 @@ type Options struct {
 	// there is no opt-in flag for replace mode.
 	//
 	// ANTHROPIC_API_KEY should be set here or in the parent
-	// environment.
+	// environment unless ExistingAuth is enabled.
 	Env map[string]string
+
+	// ExistingAuth uses the Claude Code CLI's existing on-disk login state
+	// rather than forwarding SDK-provided auth secrets. When enabled, the
+	// subprocess is spawned without known Claude auth token environment
+	// variables so it can authenticate from the user's Claude Code config
+	// created by the TUI login flow.
+	ExistingAuth bool
 
 	// PermissionMode controls tool execution permissions.
 	// Default: PermissionModeDefault
@@ -1091,6 +1098,18 @@ func WithEnv(env map[string]string) Option {
 		for k, v := range env {
 			o.Env[k] = v
 		}
+	}
+}
+
+// WithExistingAuth uses the Claude Code CLI's existing login state.
+//
+// Use this when Claude Code has already been authenticated through the TUI
+// login flow. The SDK will not require callers to provide an API key or OAuth
+// token, and the subprocess environment will omit known Claude auth token
+// variables so the CLI falls back to its on-disk credentials.
+func WithExistingAuth() Option {
+	return func(o *Options) {
+		o.ExistingAuth = true
 	}
 }
 

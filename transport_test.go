@@ -73,6 +73,16 @@ func argIndex(args []string, flag string) int {
 	return -1
 }
 
+func envValue(env []string, key string) (string, bool) {
+	prefix := key + "="
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			return strings.TrimPrefix(entry, prefix), true
+		}
+	}
+	return "", false
+}
+
 type mockTransport struct {
 	mu       sync.Mutex
 	written  []Message
@@ -985,6 +995,64 @@ func TestSubprocessTransportExtraArgs(t *testing.T) {
 			assert.Equal(t, tt.wantTail, runner.StartArgs[len(runner.StartArgs)-len(tt.wantTail):])
 		})
 	}
+}
+
+func TestSubprocessTransportExistingAuthOmitsClaudeAuthEnv(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "parent-api-key")
+	t.Setenv("CLAUDE_CODE_OAUTH_TOKEN", "parent-oauth-token")
+	t.Setenv("CLAUDE_CONFIG_DIR", "/tmp/existing-claude-config")
+
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	WithExistingAuth()(opts)
+	WithEnv(map[string]string{
+		"ANTHROPIC_API_KEY":       "option-api-key",
+		"CLAUDE_CODE_OAUTH_TOKEN": "option-oauth-token",
+		"OTHER_SETTING":           "kept",
+	})(opts)
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	_, ok := envValue(runner.StartEnv, "ANTHROPIC_API_KEY")
+	assert.False(t, ok)
+	_, ok = envValue(runner.StartEnv, "CLAUDE_CODE_OAUTH_TOKEN")
+	assert.False(t, ok)
+
+	gotConfigDir, ok := envValue(runner.StartEnv, "CLAUDE_CONFIG_DIR")
+	require.True(t, ok)
+	assert.Equal(t, "/tmp/existing-claude-config", gotConfigDir)
+
+	gotOther, ok := envValue(runner.StartEnv, "OTHER_SETTING")
+	require.True(t, ok)
+	assert.Equal(t, "kept", gotOther)
+}
+
+func TestSubprocessTransportDefaultAuthEnvBehavior(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "parent-api-key")
+
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	WithEnv(map[string]string{
+		"CLAUDE_CODE_OAUTH_TOKEN": "option-oauth-token",
+	})(opts)
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.NoError(t, err)
+	defer transport.Close()
+
+	gotAPIKey, ok := envValue(runner.StartEnv, "ANTHROPIC_API_KEY")
+	require.True(t, ok)
+	assert.Equal(t, "parent-api-key", gotAPIKey)
+
+	gotOAuth, ok := envValue(runner.StartEnv, "CLAUDE_CODE_OAUTH_TOKEN")
+	require.True(t, ok)
+	assert.Equal(t, "option-oauth-token", gotOAuth)
 }
 
 func TestSubprocessTransportSettingsPath(t *testing.T) {

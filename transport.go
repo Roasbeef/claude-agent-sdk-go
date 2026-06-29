@@ -161,7 +161,7 @@ func (t *SubprocessTransport) SetStderrLogger(w io.Writer) {
 // - --resume-session-at: Resume from a specific message UUID (if SessionOptions.ResumeSessionAt is set)
 //
 // Environment variables are set for:
-// - ANTHROPIC_API_KEY: API authentication
+// - ANTHROPIC_API_KEY: API authentication, unless WithExistingAuth is used
 // - CLAUDE_CODE_ENTRYPOINT: "sdk-go"
 // - CLAUDE_AGENT_SDK_VERSION: SDK version
 func (t *SubprocessTransport) Connect(ctx context.Context) error {
@@ -398,7 +398,13 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 
 	// Build environment - start with current process env, then overlay options.
 	env := os.Environ()
+	if t.options.ExistingAuth {
+		env = withoutClaudeAuthEnv(env)
+	}
 	for k, v := range t.options.Env {
+		if t.options.ExistingAuth && isClaudeAuthEnvKey(k) {
+			continue
+		}
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
 	// Add SDK markers.
@@ -447,6 +453,27 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	}()
 
 	return nil
+}
+
+func withoutClaudeAuthEnv(env []string) []string {
+	filtered := env[:0]
+	for _, entry := range env {
+		key, _, ok := strings.Cut(entry, "=")
+		if ok && isClaudeAuthEnvKey(key) {
+			continue
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
+}
+
+func isClaudeAuthEnvKey(key string) bool {
+	switch key {
+	case "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN":
+		return true
+	default:
+		return false
+	}
 }
 
 // Write sends a JSON message to the CLI stdin.
