@@ -2262,6 +2262,36 @@ func TestIntegrationSetMcpPermissionModeOverride(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestIntegrationReinitialize exercises Stream.Reinitialize against the live
+// CLI. Reinitialize re-sends the initialize control request to an
+// already-initialized session and must return a fresh response. CLIs that
+// reject a second initialize cause a clean skip.
+func TestIntegrationReinitialize(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	resp, err := stream.Reinitialize(ctx)
+	if err != nil {
+		t.Skipf("CLI does not support reinitialize: %v", err)
+	}
+	require.NotNil(t, resp, "expected a fresh initialize response")
+}
+
 func TestIntegrationModelRefusalNoFallback(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)

@@ -51,7 +51,23 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 	if p.initialized.Load() {
 		return nil // Already initialized
 	}
+	return p.doInitialize(ctx)
+}
 
+// Reinitialize re-sends the initialize control request to an already-running
+// CLI, bypassing the initialized guard. Unlike Initialize, it always issues a
+// fresh request rather than short-circuiting, and refreshes the cached
+// initialize response. Use it after a transport gap (e.g. reattaching to a
+// daemon whose ring buffer evicted frames) so the CLI redelivers any
+// control requests the loop is still blocked on.
+func (p *Protocol) Reinitialize(ctx context.Context) (*SDKControlInitializeResponse, error) {
+	if err := p.doInitialize(ctx); err != nil {
+		return nil, err
+	}
+	return p.initResult(), nil
+}
+
+func (p *Protocol) doInitialize(ctx context.Context) error {
 	// SupportedDialogKinds is meaningless without a dialog handler, and the
 	// CLI would never route a dialog to a consumer that can't render it.
 	// Mirror the TS SDK and reject the contradictory option pairing here.
