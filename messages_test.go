@@ -2652,6 +2652,7 @@ func TestParseMessageModelRefusalFallback(t *testing.T) {
 			"api_refusal_category": "cyber",
 			"api_refusal_explanation": "declined for safety",
 			"retracted_message_uuids": ["550e8400-e29b-41d4-a716-446655440300"],
+			"refused_user_message_uuid": "550e8400-e29b-41d4-a716-446655440310",
 			"content": "Retried on a fallback model.",
 			"uuid": "550e8400-e29b-41d4-a716-446655440301",
 			"session_id": "sess_refusal_001"
@@ -2675,6 +2676,8 @@ func TestParseMessageModelRefusalFallback(t *testing.T) {
 		require.NotNil(t, fb.APIRefusalExplanation)
 		assert.Equal(t, "declined for safety", *fb.APIRefusalExplanation)
 		assert.Equal(t, []string{"550e8400-e29b-41d4-a716-446655440300"}, fb.RetractedMessageUUIDs)
+		require.NotNil(t, fb.RefusedUserMessageUUID)
+		assert.Equal(t, "550e8400-e29b-41d4-a716-446655440310", *fb.RefusedUserMessageUUID)
 	})
 
 	t.Run("older CLI: null request_id, optional fields absent", func(t *testing.T) {
@@ -2700,6 +2703,7 @@ func TestParseMessageModelRefusalFallback(t *testing.T) {
 		assert.Nil(t, fb.APIRefusalCategory)
 		assert.Nil(t, fb.APIRefusalExplanation)
 		assert.Nil(t, fb.RetractedMessageUUIDs)
+		assert.Nil(t, fb.RefusedUserMessageUUID)
 	})
 }
 
