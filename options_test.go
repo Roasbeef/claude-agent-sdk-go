@@ -1223,3 +1223,35 @@ func TestPluginConfigJSON(t *testing.T) {
 		assert.True(t, opts.Plugins[0].SkipMcpDiscovery)
 	})
 }
+
+func TestSettingsParityV0195FieldsJSON(t *testing.T) {
+	t.Run("explicit false is emitted", func(t *testing.T) {
+		f := false
+		data, err := json.Marshal(Settings{
+			RespondToBashCommands: &f,
+			DisableSideloadFlags:  &f,
+		})
+		require.NoError(t, err)
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, false, got["respondToBashCommands"])
+		assert.Equal(t, false, got["disableSideloadFlags"])
+	})
+
+	t.Run("nil omits keys", func(t *testing.T) {
+		data, err := json.Marshal(Settings{})
+		require.NoError(t, err)
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "respondToBashCommands")
+		assert.NotContains(t, got, "disableSideloadFlags")
+	})
+
+	t.Run("teammateMode iterm2 round-trips", func(t *testing.T) {
+		data, err := json.Marshal(Settings{TeammateMode: "iterm2"})
+		require.NoError(t, err)
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		assert.Equal(t, "iterm2", out.TeammateMode)
+	})
+}
