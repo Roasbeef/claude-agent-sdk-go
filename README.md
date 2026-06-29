@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.185 catchup work, using Go idioms where the API shape differs.
+v0.3.195 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -324,9 +324,41 @@ informational, #130 thinking_display, #131 RateLimitInfo credit fields, #132
 ResultMessage time_origin_ms, #133 UserMessage senderTaskId, #127 Settings
 parity, #128 transport WaitForExit, #134 docs refresh.
 
-Not ported this cycle: `set_mcp_permission_mode_override` is referenced in the
-upstream control-request union but ships without a type body or wire constant,
-so there is nothing to model yet — deferred until upstream emits a definition.
+The v0.3.195 catchup added:
+
+- `Stream.SetMcpPermissionModeOverride` — the
+  `set_mcp_permission_mode_override` control request (deferred in v0.3.185 for
+  want of a wire shape) now ships upstream. Pins or clears a tighten-only
+  per-MCP-server permission-mode override; the `mode` argument is a tristate
+  (`default` / `auto` / nil-clears, the last serialized as explicit JSON null)
+  and the result carries an optional typo-detection `warning`
+- `Stream.Reinitialize` — re-sends the `initialize` control request to a
+  running CLI (past the cached first-connect result), so a client reattaching
+  after a transport gap has blocked `can_use_tool` / `request_user_dialog`
+  requests redelivered
+- the `ModelRefusalNoFallbackMessage` system subtype
+  (`model_refusal_no_fallback`), emitted when a turn refuses with no fallback
+  model configured, plus `RefusedUserMessageUUID` on
+  `ModelRefusalFallbackMessage` (the rewind/edit-and-retry target)
+- `SettingsSandbox.Credentials` — credential-file / env-var `deny` protection
+  for sandboxed commands
+- Settings parity: `RespondToBashCommands`, `DisableSideloadFlags`, and
+  `teammateMode: iterm2`
+- additive enum/usage parity: `RateLimitType` `seven_day_overage_included`,
+  `TerminalReason` `background_requested`, and `UsageRateLimits.ModelScoped`
+  (per-model weekly windows on the `get_usage` response)
+
+PRs in this cycle (squash-merged): #136 SetMcpPermissionModeOverride, #138
+Reinitialize, #139 model_refusal_no_fallback, #141 RefusedUserMessageUUID, #137
+sandbox credentials, #140 Settings parity, #142 usage/enum parity, #143 docs
+refresh.
+
+Not ported this cycle: `listSessions`' `includeProgrammatic` filter — a
+local-filesystem session-picker option whose sibling `includeWorktrees` the Go
+`ListSessions` never mirrored, and `SDKSessionInfo` carries no entrypoint field
+to filter on. The `rewind_conversation` and `add_directory` control-request
+union members ship without an exported wire body or a public Query method, so
+there is nothing to model yet — both deferred until upstream exposes them.
 
 Some areas remain intentionally limited by the CLI or integration harness:
 desktop/IDE-only settings are not modeled exhaustively, several runtime control
