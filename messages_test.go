@@ -2703,6 +2703,63 @@ func TestParseMessageModelRefusalFallback(t *testing.T) {
 	})
 }
 
+func TestParseMessageModelRefusalNoFallback(t *testing.T) {
+	t.Run("full payload", func(t *testing.T) {
+		input := `{
+			"type": "system",
+			"subtype": "model_refusal_no_fallback",
+			"original_model": "claude-opus-4-8",
+			"request_id": "req_01NOFB",
+			"api_refusal_category": "cyber",
+			"api_refusal_explanation": "declined for safety",
+			"refused_user_message_uuid": "550e8400-e29b-41d4-a716-446655440500",
+			"content": "The model declined and no fallback was configured.",
+			"uuid": "550e8400-e29b-41d4-a716-446655440501",
+			"session_id": "sess_nofb_001"
+		}`
+
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+
+		nf, ok := msg.(ModelRefusalNoFallbackMessage)
+		require.True(t, ok, "expected ModelRefusalNoFallbackMessage")
+		assert.Equal(t, "system", nf.MessageType())
+		assert.Equal(t, "model_refusal_no_fallback", nf.Subtype)
+		assert.Equal(t, "claude-opus-4-8", nf.OriginalModel)
+		require.NotNil(t, nf.RequestID)
+		assert.Equal(t, "req_01NOFB", *nf.RequestID)
+		require.NotNil(t, nf.APIRefusalCategory)
+		assert.Equal(t, "cyber", *nf.APIRefusalCategory)
+		require.NotNil(t, nf.APIRefusalExplanation)
+		assert.Equal(t, "declined for safety", *nf.APIRefusalExplanation)
+		require.NotNil(t, nf.RefusedUserMessageUUID)
+		assert.Equal(t, "550e8400-e29b-41d4-a716-446655440500", *nf.RefusedUserMessageUUID)
+		assert.Equal(t, "sess_nofb_001", nf.SessionID)
+	})
+
+	t.Run("older CLI: null request_id, optional fields absent", func(t *testing.T) {
+		input := `{
+			"type": "system",
+			"subtype": "model_refusal_no_fallback",
+			"original_model": "claude-opus-4-8",
+			"request_id": null,
+			"content": "The model declined and no fallback was configured.",
+			"uuid": "550e8400-e29b-41d4-a716-446655440502",
+			"session_id": "sess_nofb_002"
+		}`
+
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+
+		nf, ok := msg.(ModelRefusalNoFallbackMessage)
+		require.True(t, ok, "expected ModelRefusalNoFallbackMessage")
+		assert.Nil(t, nf.RequestID)
+		assert.Nil(t, nf.APIRefusalCategory)
+		assert.Nil(t, nf.APIRefusalExplanation)
+		assert.Nil(t, nf.RefusedUserMessageUUID)
+	})
+}
+
 func TestParseMessageAssistantSupersedes(t *testing.T) {
 	input := `{
 		"type": "assistant",

@@ -2261,3 +2261,9 @@ func TestIntegrationSetMcpPermissionModeOverride(t *testing.T) {
 	_, err = stream.SetMcpPermissionModeOverride(ctx, "no-such-server", nil)
 	require.NoError(t, err)
 }
+
+func TestIntegrationModelRefusalNoFallback(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	t.Skip("not triggerable from CLI: model_refusal_no_fallback requires the model to end a turn with stop_reason \"refusal\" while no fallback model is configured - a server-side refusal condition that cannot be deterministically reproduced in an integration run; tracked in INTEGRATION-FOLLOWUPS.md")
+}
