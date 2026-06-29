@@ -675,6 +675,54 @@ func TestSettingsSandboxFieldsJSON(t *testing.T) {
 		assert.Equal(t, "/etc/claude/ca.key", out.Sandbox.Network.TLSTerminate.CAKeyPath)
 	})
 
+	t.Run("credentials round-trip files and envVars", func(t *testing.T) {
+		in := Settings{
+			Sandbox: &SettingsSandbox{
+				Credentials: &SettingsSandboxCredentials{
+					Files: []SettingsSandboxCredentialFile{
+						{Path: "~/.aws/credentials", Mode: "deny"},
+					},
+					EnvVars: []SettingsSandboxCredentialEnvVar{
+						{Name: "AWS_SECRET_ACCESS_KEY", Mode: "deny"},
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		sb := got["sandbox"].(map[string]interface{})
+		creds, ok := sb["credentials"].(map[string]interface{})
+		require.True(t, ok)
+		files := creds["files"].([]interface{})
+		require.Len(t, files, 1)
+		assert.Equal(t, "~/.aws/credentials", files[0].(map[string]interface{})["path"])
+		assert.Equal(t, "deny", files[0].(map[string]interface{})["mode"])
+		envVars := creds["envVars"].([]interface{})
+		require.Len(t, envVars, 1)
+		assert.Equal(t, "AWS_SECRET_ACCESS_KEY", envVars[0].(map[string]interface{})["name"])
+		assert.Equal(t, "deny", envVars[0].(map[string]interface{})["mode"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.Sandbox.Credentials)
+		require.Len(t, out.Sandbox.Credentials.Files, 1)
+		assert.Equal(t, "~/.aws/credentials", out.Sandbox.Credentials.Files[0].Path)
+		require.Len(t, out.Sandbox.Credentials.EnvVars, 1)
+		assert.Equal(t, "AWS_SECRET_ACCESS_KEY", out.Sandbox.Credentials.EnvVars[0].Name)
+	})
+
+	t.Run("nil credentials omits key", func(t *testing.T) {
+		data, err := json.Marshal(Settings{Sandbox: &SettingsSandbox{}})
+		require.NoError(t, err)
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		sb := got["sandbox"].(map[string]interface{})
+		assert.NotContains(t, sb, "credentials")
+	})
+
 	t.Run("tlsTerminate empty struct emits empty object", func(t *testing.T) {
 		in := Settings{
 			Sandbox: &SettingsSandbox{

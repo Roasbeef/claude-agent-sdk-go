@@ -724,8 +724,40 @@ type SettingsSandbox struct {
 	// (e.g. Terminal) subject to per-app TCC automation consent. Honored only
 	// from user, managed/policy, or CLI (--settings) settings — project
 	// settings are ignored. Default false. Mirrors sdk.d.ts v0.3.185 L5718.
-	AllowAppleEvents *bool                  `json:"allowAppleEvents,omitempty"`
-	Extra            map[string]interface{} `json:"-"`
+	AllowAppleEvents *bool `json:"allowAppleEvents,omitempty"`
+	// Credentials protects credential files/directories and environment
+	// variables from sandboxed commands. Mirrors sdk.d.ts v0.3.195 L5822.
+	Credentials *SettingsSandboxCredentials `json:"credentials,omitempty"`
+	Extra       map[string]interface{}      `json:"-"`
+}
+
+// SettingsSandboxCredentials configures credential protection inside the
+// sandbox. Only the "deny" mode is supported on each entry.
+type SettingsSandboxCredentials struct {
+	// Files are credential files or directories to protect. "deny" blocks
+	// reads inside the sandbox.
+	Files []SettingsSandboxCredentialFile `json:"files,omitempty"`
+	// EnvVars are environment variables to protect. "deny" unsets the
+	// variable for sandboxed commands.
+	EnvVars []SettingsSandboxCredentialEnvVar `json:"envVars,omitempty"`
+}
+
+// SettingsSandboxCredentialFile protects a single credential file or directory.
+type SettingsSandboxCredentialFile struct {
+	// Path is the credential file or directory. Same resolution as
+	// sandbox.filesystem.* paths: absolute, ~ expanded, or relative to the
+	// settings file root.
+	Path string `json:"path"`
+	// Mode is the access mode for this path. Only "deny" is supported.
+	Mode string `json:"mode"`
+}
+
+// SettingsSandboxCredentialEnvVar protects a single environment variable.
+type SettingsSandboxCredentialEnvVar struct {
+	// Name is the environment variable name.
+	Name string `json:"name"`
+	// Mode is the access mode for this variable. Only "deny" is supported.
+	Mode string `json:"mode"`
 }
 
 func (s SettingsSandbox) MarshalJSON() ([]byte, error) {
