@@ -952,6 +952,41 @@ type ModelRefusalFallbackMessage struct {
 // MessageType implements Message.
 func (m ModelRefusalFallbackMessage) MessageType() string { return "system" }
 
+// ModelRefusalNoFallbackMessage is emitted when the model ends the stream with
+// stop_reason "refusal" and no fallback model is configured, so the turn ends
+// as an error. It is the structured counterpart to detecting stop_reason
+// "refusal" on the assistant error frame. Not emitted when a fallback existed
+// but was declined or gate-failed — ModelRefusalFallbackMessage covers the
+// retry case. Absent from older CLIs.
+type ModelRefusalNoFallbackMessage struct {
+	Type          string  `json:"type"`           // Always "system"
+	Subtype       string  `json:"subtype"`        // "model_refusal_no_fallback"
+	OriginalModel string  `json:"original_model"` // Model that refused
+	RequestID     *string `json:"request_id"`     // Upstream request id; nil for JSON null
+
+	// APIRefusalCategory is the refusal category ("cyber", "bio", …). Open
+	// string — new categories ship on the wire ahead of schema updates. nil
+	// when none was carried or when emitted by an older CLI.
+	APIRefusalCategory *string `json:"api_refusal_category,omitempty"`
+
+	// APIRefusalExplanation is the refusal explanation. Unstable human prose —
+	// display only, never parse. nil when none was carried or on older CLIs.
+	APIRefusalExplanation *string `json:"api_refusal_explanation,omitempty"`
+
+	// RefusedUserMessageUUID is the UUID of the user message the refused
+	// request was for — the rewind target and composer prefill for
+	// edit-and-retry. nil when the refused turn was not human-authored or
+	// cannot be identified; absent from older CLIs.
+	RefusedUserMessageUUID *string `json:"refused_user_message_uuid,omitempty"`
+
+	Content   string `json:"content"`    // Human-readable refusal notice
+	UUID      string `json:"uuid"`       // Unique message ID
+	SessionID string `json:"session_id"` // Session identifier
+}
+
+// MessageType implements Message.
+func (m ModelRefusalNoFallbackMessage) MessageType() string { return "system" }
+
 // ElicitationCompleteMessage reports completion of a URL-mode MCP elicitation.
 type ElicitationCompleteMessage struct {
 	Type          string `json:"type"`            // Always "system"
@@ -1435,6 +1470,10 @@ func ParseMessage(data []byte) (Message, error) {
 			return msg, err
 		case "model_refusal_fallback":
 			var msg ModelRefusalFallbackMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "model_refusal_no_fallback":
+			var msg ModelRefusalNoFallbackMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
 		case "mirror_error":
