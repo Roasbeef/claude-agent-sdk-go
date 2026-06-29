@@ -944,6 +944,13 @@ type ModelRefusalFallbackMessage struct {
 	// Absent when emitted by an older CLI.
 	RetractedMessageUUIDs []string `json:"retracted_message_uuids,omitempty"`
 
+	// RefusedUserMessageUUID is the UUID of the user message the refused
+	// request was for — the rewind target and composer prefill for
+	// edit-and-retry. nil when the refused turn was not human-authored (e.g. a
+	// background task notification or auto-continuation) or cannot be
+	// identified; absent from older CLIs.
+	RefusedUserMessageUUID *string `json:"refused_user_message_uuid,omitempty"`
+
 	Content   string `json:"content"`    // Human-readable fallback notice
 	UUID      string `json:"uuid"`       // Unique message ID
 	SessionID string `json:"session_id"` // Session identifier
