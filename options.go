@@ -1425,7 +1425,13 @@ type PermissionContext struct {
 	SessionID string
 	ToolUseID string
 	AgentID   string
-	Metadata  map[string]interface{}
+	// RequiresUserInteraction is true when the tool's approval card is
+	// itself the user-interaction surface (Tool.requiresUserInteraction()).
+	// SDK hosts must not offer a one-tap allow/deny for these — the user has
+	// to open the session and respond on the card itself (sdk.d.ts
+	// v0.3.201).
+	RequiresUserInteraction bool
+	Metadata                map[string]interface{}
 }
 
 // PermissionDecisionClassification labels how a permission decision was reached

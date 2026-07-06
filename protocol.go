@@ -257,14 +257,16 @@ func (p *Protocol) handlePermissionRequest(ctx context.Context, req ControlReque
 	input := req.Payload["input"]
 	toolUseID, _ := req.Payload["tool_use_id"].(string)
 	agentID, _ := req.Payload["agent_id"].(string)
+	requiresUserInteraction, _ := req.Payload["requires_user_interaction"].(bool)
 
 	// Build permission request.
 	permReq := ToolPermissionRequest{
 		ToolName:  toolName,
 		Arguments: marshalJSON(input),
 		Context: PermissionContext{
-			ToolUseID: toolUseID,
-			AgentID:   agentID,
+			ToolUseID:               toolUseID,
+			AgentID:                 agentID,
+			RequiresUserInteraction: requiresUserInteraction,
 		},
 	}
 
