@@ -212,6 +212,13 @@ const (
 	MessageOriginKindTaskNotification MessageOriginKind = "task-notification"
 	MessageOriginKindCoordinator      MessageOriginKind = "coordinator"
 	MessageOriginKindAutoContinuation MessageOriginKind = "auto-continuation"
+	// MessageOriginKindObserver marks a message injected by a background
+	// observer agent (AgentDefinition.observer). It carries From (the
+	// observer agent type) and SenderTaskID (the observer's task id).
+	MessageOriginKindObserver MessageOriginKind = "observer"
+	// MessageOriginKindObserverActivity marks an activity digest routed to
+	// the observer. It carries no additional fields.
+	MessageOriginKindObserverActivity MessageOriginKind = "observer-activity"
 )
 
 // MessageOrigin describes the originating actor for a message.
@@ -220,6 +227,9 @@ type MessageOrigin struct {
 	Server string            `json:"server,omitempty"`
 	From   string            `json:"from,omitempty"`
 	Name   string            `json:"name,omitempty"`
+	// SenderTaskID is the observer's task id; set only for the
+	// "observer" kind (sdk.d.ts v0.3.201).
+	SenderTaskID string `json:"senderTaskId,omitempty"`
 }
 
 // StreamEvent represents a progressive delta update during streaming.

@@ -1381,6 +1381,60 @@ func TestMessageOriginAutoContinuationRoundTrip(t *testing.T) {
 	assert.Empty(t, decoded.Origin.Name)
 }
 
+func TestMessageOriginObserverRoundTrip(t *testing.T) {
+	msg := ResultMessage{
+		Type:    "result",
+		Subtype: "success",
+		Origin: &MessageOrigin{
+			Kind:         MessageOriginKindObserver,
+			From:         "security-reviewer",
+			SenderTaskID: "task-abc123",
+		},
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &raw))
+	origin, ok := raw["origin"].(map[string]interface{})
+	require.True(t, ok, "origin must marshal to an object")
+	assert.Equal(t, "observer", origin["kind"])
+	assert.Equal(t, "security-reviewer", origin["from"])
+	assert.Equal(t, "task-abc123", origin["senderTaskId"])
+
+	var decoded ResultMessage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NotNil(t, decoded.Origin)
+	assert.Equal(t, MessageOriginKindObserver, decoded.Origin.Kind)
+	assert.Equal(t, "security-reviewer", decoded.Origin.From)
+	assert.Equal(t, "task-abc123", decoded.Origin.SenderTaskID)
+}
+
+func TestMessageOriginObserverActivityRoundTrip(t *testing.T) {
+	msg := ResultMessage{
+		Type:    "result",
+		Subtype: "success",
+		Origin:  &MessageOrigin{Kind: MessageOriginKindObserverActivity},
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &raw))
+	origin, ok := raw["origin"].(map[string]interface{})
+	require.True(t, ok, "origin must marshal to an object")
+	assert.Equal(t, "observer-activity", origin["kind"])
+	assert.NotContains(t, origin, "senderTaskId")
+
+	var decoded ResultMessage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NotNil(t, decoded.Origin)
+	assert.Equal(t, MessageOriginKindObserverActivity, decoded.Origin.Kind)
+	assert.Empty(t, decoded.Origin.SenderTaskID)
+}
+
 func TestResultMessageFieldAdditionsBackwardCompat(t *testing.T) {
 	input := []byte(`{
 		"type": "result",
