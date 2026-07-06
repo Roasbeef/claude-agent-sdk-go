@@ -94,6 +94,21 @@ func TestStreamSupportedModelsReadsCachedInit(t *testing.T) {
 	assert.Equal(t, "claude-sonnet-4-5-20250929", again[0].Value)
 }
 
+func TestModelInfoResolvedModelRoundTrip(t *testing.T) {
+	// Alias rows carry resolvedModel; explicit-id rows omit it.
+	raw := []byte(`{"value":"sonnet","displayName":"Sonnet","description":"balanced","resolvedModel":"claude-sonnet-5"}`)
+
+	var info ModelInfo
+	require.NoError(t, json.Unmarshal(raw, &info))
+	assert.Equal(t, "sonnet", info.Value)
+	assert.Equal(t, "claude-sonnet-5", info.ResolvedModel)
+
+	// Absent on explicit-id rows: omitempty drops it on the way out.
+	out, err := json.Marshal(ModelInfo{Value: "claude-opus-4-8", DisplayName: "Opus", Description: "deep"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(out), "resolvedModel")
+}
+
 func TestStreamSupportedAgentsReadsCachedInit(t *testing.T) {
 	stream, _, protocol := newStreamControlTest(nil)
 	storeInitResponse(protocol, canonicalInitResponse())

@@ -13,6 +13,11 @@ type ModelInfo struct {
 	Value       string `json:"value"`       // Model ID to use in API calls
 	DisplayName string `json:"displayName"` // Human-readable model name
 	Description string `json:"description"` // Model capabilities description
+	// ResolvedModel is the canonical wire model id this row's Value
+	// resolves to (e.g. "sonnet" -> "claude-sonnet-5"). Lets hosts match a
+	// persisted explicit id against the alias row that covers it. Present
+	// only for alias rows (sdk.d.ts v0.3.201).
+	ResolvedModel string `json:"resolvedModel,omitempty"`
 }
 
 // AgentInfo describes a subagent available to the Task tool.
