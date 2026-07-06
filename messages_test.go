@@ -112,6 +112,8 @@ func TestAgentDefinitionJSON(t *testing.T) {
 		Memory:                             AgentMemoryProject,
 		Effort:                             AgentEffort{Numeric: &effortBudget},
 		PermissionMode:                     PermissionModeAcceptEdits,
+		Observer:                           "security-reviewer",
+		ObserverMessage:                    "flag unsafe patterns",
 	}
 
 	data, err := json.Marshal(agent)
@@ -136,6 +138,8 @@ func TestAgentDefinitionJSON(t *testing.T) {
 	assert.Equal(t, "project", got["memory"])
 	assert.Equal(t, float64(30000), got["effort"])
 	assert.Equal(t, "acceptEdits", got["permissionMode"])
+	assert.Equal(t, "security-reviewer", got["observer"])
+	assert.Equal(t, "flag unsafe patterns", got["observerMessage"])
 
 	var decoded AgentDefinition
 	require.NoError(t, json.Unmarshal(data, &decoded))
@@ -156,6 +160,8 @@ func TestAgentDefinitionJSON(t *testing.T) {
 	require.NotNil(t, decoded.Effort.Numeric)
 	assert.Equal(t, effortBudget, *decoded.Effort.Numeric)
 	assert.Equal(t, agent.PermissionMode, decoded.PermissionMode)
+	assert.Equal(t, agent.Observer, decoded.Observer)
+	assert.Equal(t, agent.ObserverMessage, decoded.ObserverMessage)
 }
 
 func TestAgentDefinitionJSONOmitUnset(t *testing.T) {
@@ -170,7 +176,7 @@ func TestAgentDefinitionJSONOmitUnset(t *testing.T) {
 
 	assert.Equal(t, "Reviews changes", got["description"])
 	assert.Equal(t, "Review carefully", got["prompt"])
-	for _, key := range []string{"memory", "effort", "maxTurns", "background"} {
+	for _, key := range []string{"memory", "effort", "maxTurns", "background", "observer", "observerMessage"} {
 		assert.NotContains(t, got, key)
 	}
 }
