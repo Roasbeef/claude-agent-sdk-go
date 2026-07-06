@@ -1577,6 +1577,12 @@ type BaseHookInput struct {
 	SessionID      string `json:"session_id"`
 	TranscriptPath string `json:"transcript_path"`
 	Cwd            string `json:"cwd"`
+	// PromptID is a UUID correlating a user prompt with all subsequent
+	// events until the next prompt. The same value is emitted on
+	// OpenTelemetry events as the prompt.id attribute, so hook output can
+	// be joined to OTel events at prompt grain. Absent until the first user
+	// input of the process lifetime (sdk.d.ts v0.3.201).
+	PromptID       string `json:"prompt_id,omitempty"`
 	PermissionMode string `json:"permission_mode,omitempty"`
 	AgentID        string `json:"agent_id,omitempty"`
 	AgentType      string `json:"agent_type,omitempty"`

@@ -1137,6 +1137,30 @@ func TestBaseHookInputEffortJSON(t *testing.T) {
 	})
 }
 
+func TestBaseHookInputPromptID(t *testing.T) {
+	t.Run("unmarshal populates prompt_id", func(t *testing.T) {
+		var input PreToolUseInput
+		require.NoError(t, json.Unmarshal(
+			[]byte(`{"session_id":"s","transcript_path":"/t","cwd":"/c","prompt_id":"p-123","tool_name":"Read"}`),
+			&input,
+		))
+		assert.Equal(t, "p-123", input.PromptID)
+		assert.Equal(t, "p-123", input.Base().PromptID)
+	})
+
+	t.Run("empty omitted on marshal", func(t *testing.T) {
+		data, err := json.Marshal(PreToolUseInput{
+			BaseHookInput: BaseHookInput{SessionID: "s", TranscriptPath: "/t", Cwd: "/c"},
+			ToolName:      "Read",
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "prompt_id")
+	})
+}
+
 func TestWithOnUserDialog(t *testing.T) {
 	t.Run("builder installs callback", func(t *testing.T) {
 		opts := NewOptions()
