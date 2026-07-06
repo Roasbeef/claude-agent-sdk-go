@@ -2269,6 +2269,15 @@ type AgentDefinition struct {
 	Memory                             AgentMemoryScope     `json:"memory,omitempty"`
 	Effort                             AgentEffort          `json:"effort,omitempty"`
 	PermissionMode                     PermissionMode       `json:"permissionMode,omitempty"`
+	// Observer names an agent type auto-spawned as a background observer
+	// whenever this agent runs. The observer receives read-only activity
+	// digests and reports via the ObserverReport tool; it never
+	// participates in the task (sdk.d.ts v0.3.201).
+	Observer string `json:"observer,omitempty"`
+	// ObserverMessage is a supplemental postamble appended (after the
+	// harness-owned default) to each activity digest sent to the observer.
+	// Blank values are ignored.
+	ObserverMessage string `json:"observerMessage,omitempty"`
 }
 
 // MarshalJSON emits the TypeScript SDK agent wire shape.
@@ -2288,6 +2297,8 @@ func (a AgentDefinition) MarshalJSON() ([]byte, error) {
 		Memory                             AgentMemoryScope     `json:"memory,omitempty"`
 		Effort                             *AgentEffort         `json:"effort,omitempty"`
 		PermissionMode                     PermissionMode       `json:"permissionMode,omitempty"`
+		Observer                           string               `json:"observer,omitempty"`
+		ObserverMessage                    string               `json:"observerMessage,omitempty"`
 	}
 
 	out := agentDefinitionJSON{
@@ -2304,6 +2315,8 @@ func (a AgentDefinition) MarshalJSON() ([]byte, error) {
 		Background:                         a.Background,
 		Memory:                             a.Memory,
 		PermissionMode:                     a.PermissionMode,
+		Observer:                           a.Observer,
+		ObserverMessage:                    a.ObserverMessage,
 	}
 	if !a.Effort.IsZero() {
 		out.Effort = &a.Effort
