@@ -743,6 +743,56 @@ func TestProtocolHandlePermissionRequestClassification(t *testing.T) {
 	}
 }
 
+func TestProtocolHandlePermissionRequestRequiresUserInteraction(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload map[string]interface{}
+		want    bool
+	}{
+		{
+			name: "flag true is parsed into context",
+			payload: map[string]interface{}{
+				"tool_name":                 "AskUserQuestion",
+				"tool_use_id":               "tool_1",
+				"input":                     map[string]interface{}{},
+				"requires_user_interaction": true,
+			},
+			want: true,
+		},
+		{
+			name: "absent flag defaults to false",
+			payload: map[string]interface{}{
+				"tool_name":   "fetch_quote",
+				"tool_use_id": "tool_1",
+				"input":       map[string]interface{}{},
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var captured PermissionContext
+			opts := NewOptions()
+			opts.CanUseTool = func(ctx context.Context, req ToolPermissionRequest) PermissionResult {
+				captured = req.Context
+				return PermissionAllow{}
+			}
+			protocol := NewProtocol(nil, opts)
+
+			resp := protocol.handlePermissionRequest(context.Background(), ControlRequest{
+				Type:      "control",
+				Subtype:   "can_use_tool",
+				RequestID: "req_1",
+				Payload:   tt.payload,
+			})
+
+			require.Equal(t, "success", resp.Response.Subtype)
+			assert.Equal(t, tt.want, captured.RequiresUserInteraction)
+		})
+	}
+}
+
 func TestProtocolHandleSDKPermissionRequestClassification(t *testing.T) {
 	tests := []struct {
 		name       string
