@@ -1336,3 +1336,40 @@ func TestSettingsParityV0195FieldsJSON(t *testing.T) {
 		assert.Equal(t, "iterm2", out.TeammateMode)
 	})
 }
+
+func TestSettingsParityV0201FieldsJSON(t *testing.T) {
+	t.Run("enableArtifact explicit false is emitted", func(t *testing.T) {
+		f := false
+		data, err := json.Marshal(Settings{EnableArtifact: &f})
+		require.NoError(t, err)
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, false, got["enableArtifact"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.EnableArtifact)
+		assert.False(t, *out.EnableArtifact)
+	})
+
+	t.Run("askUserQuestionTimeout round-trips", func(t *testing.T) {
+		data, err := json.Marshal(Settings{AskUserQuestionTimeout: "5m"})
+		require.NoError(t, err)
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, "5m", got["askUserQuestionTimeout"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		assert.Equal(t, "5m", out.AskUserQuestionTimeout)
+	})
+
+	t.Run("nil/empty omits keys", func(t *testing.T) {
+		data, err := json.Marshal(Settings{})
+		require.NoError(t, err)
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "enableArtifact")
+		assert.NotContains(t, got, "askUserQuestionTimeout")
+	})
+}

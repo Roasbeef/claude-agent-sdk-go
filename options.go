@@ -385,19 +385,24 @@ type Settings struct {
 	AlwaysThinkingEnabled      *bool                        `json:"alwaysThinkingEnabled,omitempty"`
 	EffortLevel                EffortLevel                  `json:"effortLevel,omitempty"`
 	// Ultracode enables session-scoped workflow orchestration, typically via --settings or apply_flag_settings. Mirrors sdk.d.ts v0.3.168 L5413.
-	Ultracode                    *bool                           `json:"ultracode,omitempty"`
-	AutoCompactWindow            *int                            `json:"autoCompactWindow,omitempty"`
-	AdvisorModel                 string                          `json:"advisorModel,omitempty"`
-	FastMode                     *bool                           `json:"fastMode,omitempty"`
-	FastModePerSessionOptIn      *bool                           `json:"fastModePerSessionOptIn,omitempty"`
-	PromptSuggestionEnabled      *bool                           `json:"promptSuggestionEnabled,omitempty"`
-	ShowClearContextOnPlanAccept *bool                           `json:"showClearContextOnPlanAccept,omitempty"`
-	Agent                        string                          `json:"agent,omitempty"`
-	CompanyAnnouncements         []string                        `json:"companyAnnouncements,omitempty"`
-	PluginConfigs                map[string]SettingsPluginConfig `json:"pluginConfigs,omitempty"`
-	Remote                       *SettingsRemote                 `json:"remote,omitempty"`
-	AutoUpdatesChannel           string                          `json:"autoUpdatesChannel,omitempty"`
-	MinimumVersion               string                          `json:"minimumVersion,omitempty"`
+	Ultracode                    *bool  `json:"ultracode,omitempty"`
+	AutoCompactWindow            *int   `json:"autoCompactWindow,omitempty"`
+	AdvisorModel                 string `json:"advisorModel,omitempty"`
+	FastMode                     *bool  `json:"fastMode,omitempty"`
+	FastModePerSessionOptIn      *bool  `json:"fastModePerSessionOptIn,omitempty"`
+	PromptSuggestionEnabled      *bool  `json:"promptSuggestionEnabled,omitempty"`
+	ShowClearContextOnPlanAccept *bool  `json:"showClearContextOnPlanAccept,omitempty"`
+	// AskUserQuestionTimeout is the idle time before Claude's questions
+	// auto-continue with any answers selected so far. Defaults to never —
+	// auto-continue only runs when explicitly set to "60s", "5m", or "10m".
+	// Mirrors sdk.d.ts v0.3.201.
+	AskUserQuestionTimeout string                          `json:"askUserQuestionTimeout,omitempty"`
+	Agent                  string                          `json:"agent,omitempty"`
+	CompanyAnnouncements   []string                        `json:"companyAnnouncements,omitempty"`
+	PluginConfigs          map[string]SettingsPluginConfig `json:"pluginConfigs,omitempty"`
+	Remote                 *SettingsRemote                 `json:"remote,omitempty"`
+	AutoUpdatesChannel     string                          `json:"autoUpdatesChannel,omitempty"`
+	MinimumVersion         string                          `json:"minimumVersion,omitempty"`
 	// RequiredMinimumVersion prevents startup below the managed minimum version. Honored only from managed (policy) settings. Mirrors sdk.d.ts v0.3.168 L5488.
 	RequiredMinimumVersion string `json:"requiredMinimumVersion,omitempty"`
 	// RequiredMaximumVersion prevents startup above the managed maximum version. Honored only from managed (policy) settings. Mirrors sdk.d.ts v0.3.168 L5492.
@@ -468,6 +473,10 @@ type Settings struct {
 	DisableBundledSkills *bool `json:"disableBundledSkills,omitempty"`
 	// DisableArtifact disables the artifact view. Mirrors sdk.d.ts v0.3.177 L4905.
 	DisableArtifact *bool `json:"disableArtifact,omitempty"`
+	// EnableArtifact enables or disables the Artifact tool for this user.
+	// Unset defaults to enabled once the feature is available. Mirrors
+	// sdk.d.ts v0.3.201.
+	EnableArtifact *bool `json:"enableArtifact,omitempty"`
 	// FooterLinksRegexes adds clickable footer badges when a regex matches turn output. Read from user, flag, and managed settings only. At most 5 badges render. Mirrors sdk.d.ts v0.3.177 L4973.
 	FooterLinksRegexes []SettingsFooterLinkRegex `json:"footerLinksRegexes,omitempty"`
 	// WheelScrollAccelerationEnabled enables mouse-wheel scroll acceleration. Mirrors sdk.d.ts v0.3.177 L5988.
