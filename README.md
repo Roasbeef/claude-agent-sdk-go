@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.195 catchup work, using Go idioms where the API shape differs.
+v0.3.201 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -353,7 +353,54 @@ Reinitialize, #139 model_refusal_no_fallback, #141 RefusedUserMessageUUID, #137
 sandbox credentials, #140 Settings parity, #142 usage/enum parity, #143 docs
 refresh.
 
-Not ported this cycle: `listSessions`' `includeProgrammatic` filter — a
+The v0.3.201 catchup added:
+
+- `AgentDefinition.Observer` / `ObserverMessage` — an agent type auto-spawned as
+  a read-only background observer whenever the agent runs, plus a supplemental
+  postamble appended to each activity digest sent to it
+- two `MessageOrigin` provenance kinds: `observer` (a message injected by a
+  background observer agent, carrying `SenderTaskID`) and `observer-activity`
+  (an activity digest routed to the observer)
+- `BaseHookInput.PromptID` — the `prompt_id` UUID correlating a user prompt with
+  all subsequent events (also emitted as the OpenTelemetry `prompt.id`
+  attribute), so hook output can be joined to OTel events at prompt grain
+- `ModelInfo.ResolvedModel` — the canonical wire model id an alias catalog row
+  resolves to (e.g. `sonnet` → `claude-sonnet-5`)
+- sandbox credential `mask` mode: `SettingsSandboxCredentialEnvVar` gains
+  `mask` (sentinel-in-sandbox, real value injected at the proxy) alongside
+  `deny`, plus `InjectHosts` to narrow substitution and
+  `SettingsSandboxCredentials.AllowPlaintextInject` for the plain-HTTP path
+- `PermissionContext.RequiresUserInteraction` — parsed from
+  `requires_user_interaction` on the inbound permission request; true when the
+  tool's approval card is itself the interaction surface (hosts must not offer a
+  one-tap allow/deny)
+- Settings parity: `EnableArtifact` and `AskUserQuestionTimeout`
+  (`60s`/`5m`/`10m`/`never`)
+
+PRs in this cycle (squash-merged): #148 AgentDefinition observer fields, #146
+observer message-origin kinds, #149 BaseHookInput prompt_id, #147
+ModelInfo resolvedModel, #150 sandbox credential mask mode, #151 permission
+requires_user_interaction, #152 Settings parity, #153 docs refresh.
+
+Deferred this cycle (no observable wire shape or a non-mechanical port):
+
+- Out-of-band permission responses — the TS `CanUseTool` gained a
+  `PermissionResult | null` return plus a `requestId` and the
+  `Transport.expectControlResponse` / `Query.awaitControlResponse` pair, letting
+  a consumer answer a permission request out-of-band and have the SDK skip its
+  own transport write. Go's `CanUseTool` returns a `PermissionResult` with no
+  clean `null` analogue, and the feature needs a transport-interface contract
+  change; deferred to a dedicated design pass rather than forced into this cycle.
+- Type-only control-request union members (`list_models`, `get_workspace_diff`,
+  `get_plan`, `set_cwd`) and message union members (`control_request_progress`,
+  `conversation_reset`, `active_goal`) — added to the upstream unions but their
+  struct bodies are unexported and absent from the shipped runtime, so there is
+  nothing to model yet. Deferred until the wire shape is observable.
+- The `sdk-tools.d.ts` tool-schema surface (`ReportFindings`, `ClaudeDesign`,
+  `Projects` `present_to_user`, and friends) — the Go SDK models a curated
+  subset of common tool inputs, not the full tool-schema catalog.
+
+Not ported earlier cycles: `listSessions`' `includeProgrammatic` filter — a
 local-filesystem session-picker option whose sibling `includeWorktrees` the Go
 `ListSessions` never mirrored, and `SDKSessionInfo` carries no entrypoint field
 to filter on. The `rewind_conversation` and `add_directory` control-request
