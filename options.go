@@ -743,14 +743,22 @@ type SettingsSandbox struct {
 }
 
 // SettingsSandboxCredentials configures credential protection inside the
-// sandbox. Only the "deny" mode is supported on each entry.
+// sandbox.
 type SettingsSandboxCredentials struct {
 	// Files are credential files or directories to protect. "deny" blocks
 	// reads inside the sandbox.
 	Files []SettingsSandboxCredentialFile `json:"files,omitempty"`
 	// EnvVars are environment variables to protect. "deny" unsets the
-	// variable for sandboxed commands.
+	// variable for sandboxed commands; "mask" substitutes a sentinel inside
+	// the sandbox and injects the real value at the proxy.
 	EnvVars []SettingsSandboxCredentialEnvVar `json:"envVars,omitempty"`
+	// AllowPlaintextInject allows sentinel->real substitution on the
+	// plain-HTTP proxy path. Defaults to false: without TLS termination the
+	// upstream identity is unverified and the credential travels in
+	// cleartext. Set only for trusted-network test fixtures. Only honored
+	// from user, managed/policy, or CLI (--settings) settings — project
+	// settings are ignored (sdk.d.ts v0.3.201).
+	AllowPlaintextInject *bool `json:"allowPlaintextInject,omitempty"`
 }
 
 // SettingsSandboxCredentialFile protects a single credential file or directory.
@@ -767,8 +775,17 @@ type SettingsSandboxCredentialFile struct {
 type SettingsSandboxCredentialEnvVar struct {
 	// Name is the environment variable name.
 	Name string `json:"name"`
-	// Mode is the access mode for this variable. Only "deny" is supported.
+	// Mode is the access mode for this variable. "deny" unsets the variable
+	// for sandboxed commands; "mask" shows sandboxed commands a sentinel
+	// value and the host proxy swaps sentinel->real on egress to
+	// InjectHosts (sdk.d.ts v0.3.201).
 	Mode string `json:"mode"`
+	// InjectHosts optionally narrows where the proxy substitutes this
+	// credential. Only meaningful when Mode is "mask"; accepted but ignored
+	// for "deny". If unset, defaults to network.allowedDomains — the
+	// credential is injected at every reachable host. Each entry must be
+	// reachable via network.allowedDomains.
+	InjectHosts []string `json:"injectHosts,omitempty"`
 }
 
 func (s SettingsSandbox) MarshalJSON() ([]byte, error) {
