@@ -714,6 +714,63 @@ func TestSettingsSandboxFieldsJSON(t *testing.T) {
 		assert.Equal(t, "AWS_SECRET_ACCESS_KEY", out.Sandbox.Credentials.EnvVars[0].Name)
 	})
 
+	t.Run("credentials mask mode with injectHosts and allowPlaintextInject", func(t *testing.T) {
+		allowPlaintext := true
+		in := Settings{
+			Sandbox: &SettingsSandbox{
+				Credentials: &SettingsSandboxCredentials{
+					EnvVars: []SettingsSandboxCredentialEnvVar{
+						{
+							Name:        "STRIPE_KEY",
+							Mode:        "mask",
+							InjectHosts: []string{"api.stripe.com"},
+						},
+					},
+					AllowPlaintextInject: &allowPlaintext,
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		creds := got["sandbox"].(map[string]interface{})["credentials"].(map[string]interface{})
+		assert.Equal(t, true, creds["allowPlaintextInject"])
+		env := creds["envVars"].([]interface{})[0].(map[string]interface{})
+		assert.Equal(t, "mask", env["mode"])
+		assert.Equal(t, []interface{}{"api.stripe.com"}, env["injectHosts"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.Sandbox.Credentials.AllowPlaintextInject)
+		assert.True(t, *out.Sandbox.Credentials.AllowPlaintextInject)
+		require.Len(t, out.Sandbox.Credentials.EnvVars, 1)
+		assert.Equal(t, "mask", out.Sandbox.Credentials.EnvVars[0].Mode)
+		assert.Equal(t, []string{"api.stripe.com"}, out.Sandbox.Credentials.EnvVars[0].InjectHosts)
+	})
+
+	t.Run("deny envVar omits injectHosts and nil allowPlaintextInject omits key", func(t *testing.T) {
+		in := Settings{
+			Sandbox: &SettingsSandbox{
+				Credentials: &SettingsSandboxCredentials{
+					EnvVars: []SettingsSandboxCredentialEnvVar{
+						{Name: "AWS_SECRET_ACCESS_KEY", Mode: "deny"},
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		creds := got["sandbox"].(map[string]interface{})["credentials"].(map[string]interface{})
+		assert.NotContains(t, creds, "allowPlaintextInject")
+		env := creds["envVars"].([]interface{})[0].(map[string]interface{})
+		assert.NotContains(t, env, "injectHosts")
+	})
+
 	t.Run("nil credentials omits key", func(t *testing.T) {
 		data, err := json.Marshal(Settings{Sandbox: &SettingsSandbox{}})
 		require.NoError(t, err)
