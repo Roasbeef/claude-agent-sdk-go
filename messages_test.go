@@ -4125,3 +4125,29 @@ func TestV0195EnumWireValues(t *testing.T) {
 	assert.Equal(t, "background_requested", string(TerminalReasonBackgroundRequested))
 	assert.Equal(t, "seven_day_overage_included", string(RateLimitTypeSevenDayOverageIncluded))
 }
+
+func TestV0207TerminalReasonWireValues(t *testing.T) {
+	assert.Equal(t, "api_error", string(TerminalReasonAPIError))
+	assert.Equal(t, "malformed_tool_use_exhausted", string(TerminalReasonMalformedToolUseExhausted))
+	assert.Equal(t, "budget_exhausted", string(TerminalReasonBudgetExhausted))
+	assert.Equal(t, "structured_output_retry_exhausted", string(TerminalReasonStructuredOutputRetryExhausted))
+	assert.Equal(t, "tool_deferred_unavailable", string(TerminalReasonToolDeferredUnavailable))
+	assert.Equal(t, "turn_setup_failed", string(TerminalReasonTurnSetupFailed))
+}
+
+func TestParseMessageResultTerminalReasonV0207(t *testing.T) {
+	input := `{
+		"type": "result",
+		"status": "error",
+		"subtype": "error_during_execution",
+		"terminal_reason": "budget_exhausted"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	resultMsg, ok := msg.(ResultMessage)
+	require.True(t, ok)
+	require.NotNil(t, resultMsg.TerminalReason)
+	assert.Equal(t, TerminalReasonBudgetExhausted, *resultMsg.TerminalReason)
+}

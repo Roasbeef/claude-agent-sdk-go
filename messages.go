@@ -558,6 +558,14 @@ const (
 	// turn was moved to a background task. Added in sdk.d.ts v0.3.195 L6475.
 	TerminalReasonBackgroundRequested TerminalReason = "background_requested"
 	TerminalReasonCompleted           TerminalReason = "completed"
+
+	// Added in sdk.d.ts v0.3.207 L6714.
+	TerminalReasonAPIError                       TerminalReason = "api_error"
+	TerminalReasonMalformedToolUseExhausted      TerminalReason = "malformed_tool_use_exhausted"
+	TerminalReasonBudgetExhausted                TerminalReason = "budget_exhausted"
+	TerminalReasonStructuredOutputRetryExhausted TerminalReason = "structured_output_retry_exhausted"
+	TerminalReasonToolDeferredUnavailable        TerminalReason = "tool_deferred_unavailable"
+	TerminalReasonTurnSetupFailed                TerminalReason = "turn_setup_failed"
 )
 
 // FastModeState is the current state of Claude Code fast mode.
