@@ -755,11 +755,51 @@ func (s *Stream) handleSends() {
 
 // Interrupt sends an interrupt signal to stop the current generation.
 // It blocks until the CLI acknowledges the request or returns an error.
+//
+// Use InterruptWithReceipt instead when you need the interrupt receipt (the
+// uuids of async user messages that survive the interrupt); this method
+// discards it.
 func (s *Stream) Interrupt(ctx context.Context) error {
-	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+	_, err := s.InterruptWithReceipt(ctx)
+	return err
+}
+
+// InterruptReceipt is the receipt returned by an interrupt on CLIs advertising
+// the "interrupt_receipt_v1" capability (see SystemMessage.Capabilities).
+type InterruptReceipt struct {
+	// StillQueued holds the uuids of async user messages that survive this
+	// interrupt: queued commands plus any batch already dequeued for the
+	// imminent turn but not yet reachable by the abort. They will run unless
+	// cancelled first. Empty on older CLIs, which do not report a receipt.
+	StillQueued []string `json:"still_queued"`
+}
+
+// InterruptWithReceipt sends an interrupt and returns its receipt. It blocks
+// until the CLI acknowledges the request or returns an error.
+//
+// On CLIs advertising the "interrupt_receipt_v1" capability the receipt carries
+// StillQueued — the uuids of async user messages that will still run unless
+// cancelled first. Older CLIs report no receipt, so the receipt is non-nil with
+// an empty StillQueued.
+func (s *Stream) InterruptWithReceipt(ctx context.Context) (*InterruptReceipt, error) {
+	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
 		Subtype: "interrupt",
 	})
-	return err
+	if err != nil {
+		return nil, err
+	}
+
+	receipt := &InterruptReceipt{}
+	if len(resp.Response.Response) > 0 {
+		bytes, err := json.Marshal(resp.Response.Response)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(bytes, receipt); err != nil {
+			return nil, err
+		}
+	}
+	return receipt, nil
 }
 
 // SetPermissionMode dynamically changes the permission mode for this session.
