@@ -1272,6 +1272,38 @@ type ThinkingTokensMessage struct {
 // MessageType implements Message.
 func (m ThinkingTokensMessage) MessageType() string { return "system" }
 
+// ControlRequestProgressStatus discriminates a ControlRequestProgressMessage.
+type ControlRequestProgressStatus string
+
+const (
+	// ControlRequestProgressStarted means the worker accepted the request and
+	// launched the work.
+	ControlRequestProgressStarted ControlRequestProgressStatus = "started"
+	// ControlRequestProgressAPIRetry carries the retry counters (same as
+	// APIRetryMessage) and is present only for this status.
+	ControlRequestProgressAPIRetry ControlRequestProgressStatus = "api_retry"
+)
+
+// ControlRequestProgressMessage reports progress for a long-running
+// client-originated control_request (currently only side_question), correlated
+// by RequestID. The retry counters are populated only when Status is
+// ControlRequestProgressAPIRetry.
+type ControlRequestProgressMessage struct {
+	Type         string                       `json:"type"`                     // Always "system"
+	Subtype      string                       `json:"subtype"`                  // "control_request_progress"
+	RequestID    string                       `json:"request_id"`               // The in-flight control_request this progress belongs to
+	Status       ControlRequestProgressStatus `json:"status"`                   // "started" or "api_retry"
+	Attempt      *int                         `json:"attempt,omitempty"`        // Retry attempt (api_retry only)
+	MaxRetries   *int                         `json:"max_retries,omitempty"`    // Max retries (api_retry only)
+	RetryDelayMs *int                         `json:"retry_delay_ms,omitempty"` // Delay before the retry in ms (api_retry only)
+	ErrorStatus  *int                         `json:"error_status,omitempty"`   // HTTP status; nil for connection errors with no response
+	UUID         string                       `json:"uuid"`                     // Unique message ID
+	SessionID    string                       `json:"session_id"`               // Session identifier
+}
+
+// MessageType implements Message.
+func (m ControlRequestProgressMessage) MessageType() string { return "system" }
+
 // BackgroundTasksChangedMessage carries the full set of live background tasks,
 // emitted whenever membership changes (start, completion, kill, a foreground
 // agent being backgrounded). REPLACE semantics: swap the tracked set for Tasks
@@ -1572,6 +1604,10 @@ func ParseMessage(data []byte) (Message, error) {
 			return msg, err
 		case "thinking_tokens":
 			var msg ThinkingTokensMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "control_request_progress":
+			var msg ControlRequestProgressMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
 		case "background_tasks_changed":
