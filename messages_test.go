@@ -3363,6 +3363,25 @@ func TestParseMessageSessionStateChanged(t *testing.T) {
 	}
 }
 
+func TestParseMessageConversationReset(t *testing.T) {
+	input := `{
+		"type": "conversation_reset",
+		"new_conversation_id": "conv_9f00",
+		"uuid": "550e8400-e29b-41d4-a716-446655440600",
+		"session_id": "sess_reset_001"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	reset, ok := msg.(ConversationResetMessage)
+	require.True(t, ok, "expected ConversationResetMessage")
+
+	assert.Equal(t, "conversation_reset", reset.MessageType())
+	assert.Equal(t, "conv_9f00", reset.NewConversationID)
+	assert.Equal(t, "sess_reset_001", reset.SessionID)
+}
+
 func TestParseMessageActiveGoal(t *testing.T) {
 	input := `{
 		"type": "active_goal",
