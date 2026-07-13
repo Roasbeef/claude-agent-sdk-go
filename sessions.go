@@ -36,6 +36,11 @@ type SessionMessage struct {
 	SessionID       string          `json:"session_id"`
 	Message         json.RawMessage `json:"message"`
 	ParentToolUseID *string         `json:"parent_tool_use_id"`
+	// ParentAgentID is the agentId of the subagent that spawned this
+	// subagent, or nil for a depth-1 subagent (spawned by the main loop), the
+	// main session itself, or sessions whose metadata lacks the field
+	// (sdk.d.ts v0.3.207).
+	ParentAgentID *string `json:"parent_agent_id"`
 }
 
 // ListSessionsOptions controls ListSessions.
@@ -510,12 +515,17 @@ func readSessionMessages(path string, includeSystem bool) ([]SessionMessage, err
 		if v := sessionGetString(entry, "parent_tool_use_id"); v != "" {
 			parent = &v
 		}
+		var parentAgent *string
+		if v := sessionGetString(entry, "parent_agent_id"); v != "" {
+			parentAgent = &v
+		}
 		out = append(out, SessionMessage{
 			Type:            typ,
 			UUID:            sessionGetString(entry, "uuid"),
 			SessionID:       firstNonEmpty(sessionGetString(entry, "session_id"), sessionGetString(entry, "sessionId")),
 			Message:         json.RawMessage(msgBytes),
 			ParentToolUseID: parent,
+			ParentAgentID:   parentAgent,
 		})
 	}
 	return out, nil

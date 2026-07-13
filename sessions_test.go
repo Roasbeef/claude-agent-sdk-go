@@ -105,6 +105,23 @@ func TestGetSessionMessages(t *testing.T) {
 	assert.Equal(t, "assistant", decoded["role"])
 }
 
+func TestReadSessionMessagesParentAgentID(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "transcript.jsonl")
+	transcript := `{"type":"user","uuid":"u1","session_id":"s1","message":{"role":"user"},"parent_tool_use_id":null,"parent_agent_id":"agent-parent"}
+{"type":"assistant","uuid":"a1","session_id":"s1","message":{"role":"assistant"},"parent_tool_use_id":null,"parent_agent_id":null}
+`
+	require.NoError(t, os.WriteFile(path, []byte(transcript), 0600))
+
+	msgs, err := readSessionMessages(path, false)
+	require.NoError(t, err)
+	require.Len(t, msgs, 2)
+
+	require.NotNil(t, msgs[0].ParentAgentID)
+	assert.Equal(t, "agent-parent", *msgs[0].ParentAgentID)
+	assert.Nil(t, msgs[1].ParentAgentID, "null parent_agent_id decodes to nil")
+}
+
 func TestSubagentHelpers(t *testing.T) {
 	baseDir, cwd := makeSessionFixture(t)
 
