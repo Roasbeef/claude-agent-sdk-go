@@ -1785,6 +1785,32 @@ func TestParseMessageSystemInit(t *testing.T) {
 	assert.Equal(t, PermissionModeAcceptEdits, systemMsg.PermissionMode)
 	assert.Equal(t, []string{"/help"}, systemMsg.SlashCommands)
 	assert.Equal(t, "default", systemMsg.OutputStyle)
+	assert.Empty(t, systemMsg.Capabilities, "capabilities absent on older CLIs")
+}
+
+func TestParseMessageSystemInitCapabilities(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "init",
+		"uuid": "550e8400-e29b-41d4-a716-446655440700",
+		"session_id": "sess_caps_001",
+		"apiKeySource": "env",
+		"cwd": "/workspace/project",
+		"tools": ["Read"],
+		"mcp_servers": [],
+		"model": "claude-opus-4-8",
+		"permissionMode": "default",
+		"slash_commands": [],
+		"output_style": "default",
+		"capabilities": ["interrupt_receipt_v1", "some_future_cap"]
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	systemMsg, ok := msg.(SystemMessage)
+	require.True(t, ok, "expected SystemMessage")
+	assert.Equal(t, []string{"interrupt_receipt_v1", "some_future_cap"}, systemMsg.Capabilities)
 }
 
 func TestParseMessageCompactBoundary(t *testing.T) {
