@@ -3363,6 +3363,52 @@ func TestParseMessageSessionStateChanged(t *testing.T) {
 	}
 }
 
+func TestParseMessageActiveGoal(t *testing.T) {
+	input := `{
+		"type": "active_goal",
+		"value": {
+			"condition": "all tests pass",
+			"iterations": 3,
+			"set_at": 1710000000,
+			"tokens_at_start": 4096,
+			"last_reason": "two tests still red"
+		},
+		"uuid": "550e8400-e29b-41d4-a716-446655440300",
+		"session_id": "sess_goal_001"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	goalMsg, ok := msg.(ActiveGoalMessage)
+	require.True(t, ok, "expected ActiveGoalMessage")
+
+	assert.Equal(t, "active_goal", goalMsg.MessageType())
+	require.NotNil(t, goalMsg.Value)
+	assert.Equal(t, "all tests pass", goalMsg.Value.Condition)
+	assert.Equal(t, 3, goalMsg.Value.Iterations)
+	assert.Equal(t, int64(1710000000), goalMsg.Value.SetAt)
+	assert.Equal(t, 4096, goalMsg.Value.TokensAtStart)
+	assert.Equal(t, "two tests still red", goalMsg.Value.LastReason)
+	assert.Equal(t, "sess_goal_001", goalMsg.SessionID)
+}
+
+func TestParseMessageActiveGoalCleared(t *testing.T) {
+	input := `{
+		"type": "active_goal",
+		"value": null,
+		"uuid": "550e8400-e29b-41d4-a716-446655440301",
+		"session_id": "sess_goal_002"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	goalMsg, ok := msg.(ActiveGoalMessage)
+	require.True(t, ok, "expected ActiveGoalMessage")
+	assert.Nil(t, goalMsg.Value, "cleared goal carries a null value")
+}
+
 func TestParseMessageThinkingTokens(t *testing.T) {
 	input := `{
 		"type": "system",

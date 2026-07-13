@@ -483,6 +483,29 @@ type PromptSuggestionMessage struct {
 // MessageType implements Message.
 func (m PromptSuggestionMessage) MessageType() string { return "prompt_suggestion" }
 
+// ActiveGoalMessage reports the state of the session's /goal Stop hook: it fires
+// when the hook reports the goal met (Value cleared to nil) or not-yet-met
+// (Value bumps Iterations and LastReason). Any surface with a goal indicator
+// re-renders from it.
+type ActiveGoalMessage struct {
+	Type      string           `json:"type"`       // Always "active_goal"
+	Value     *ActiveGoalValue `json:"value"`      // Goal state; nil when the goal is cleared
+	UUID      string           `json:"uuid"`       // Unique message ID
+	SessionID string           `json:"session_id"` // Session identifier
+}
+
+// ActiveGoalValue is the goal state carried by an ActiveGoalMessage.
+type ActiveGoalValue struct {
+	Condition     string `json:"condition"`             // Goal condition text
+	Iterations    int    `json:"iterations"`            // Iterations elapsed while the goal is unmet
+	SetAt         int64  `json:"set_at"`                // When the goal was set
+	TokensAtStart int    `json:"tokens_at_start"`       // Token count when the goal was set
+	LastReason    string `json:"last_reason,omitempty"` // Latest not-yet-met reason from the hook
+}
+
+// MessageType implements Message.
+func (m ActiveGoalMessage) MessageType() string { return "active_goal" }
+
 // RateLimitEventMessage reports rate limit information changes.
 type RateLimitEventMessage struct {
 	Type          string        `json:"type"`            // Always "rate_limit_event"
@@ -1578,6 +1601,11 @@ func ParseMessage(data []byte) (Message, error) {
 
 	case "prompt_suggestion":
 		var msg PromptSuggestionMessage
+		err := json.Unmarshal(data, &msg)
+		return msg, err
+
+	case "active_goal":
+		var msg ActiveGoalMessage
 		err := json.Unmarshal(data, &msg)
 		return msg, err
 
