@@ -709,6 +709,12 @@ type SystemMessage struct {
 	Agents            []string        `json:"agents,omitempty"`          // Available agents
 	Betas             []string        `json:"betas,omitempty"`           // Enabled beta flags
 	FastModeState     *FastModeState  `json:"fast_mode_state,omitempty"` // Fast mode state
+	// Capabilities lists protocol capabilities this CLI supports, so consumers
+	// can feature-detect instead of version-sniffing. Open set — ignore unknown
+	// values and check each capability for exactly the behavior used.
+	// "interrupt_receipt_v1" means the interrupt control response carries
+	// still_queued. Absent on older CLIs.
+	Capabilities []string `json:"capabilities,omitempty"`
 }
 
 // MessageType implements Message.
