@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.201 catchup work, using Go idioms where the API shape differs.
+v0.3.207 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -399,6 +399,59 @@ Deferred this cycle (no observable wire shape or a non-mechanical port):
 - The `sdk-tools.d.ts` tool-schema surface (`ReportFindings`, `ClaudeDesign`,
   `Projects` `present_to_user`, and friends) — the Go SDK models a curated
   subset of common tool inputs, not the full tool-schema catalog.
+
+The v0.3.207 catchup added:
+
+- `ActiveGoalMessage` — the top-level `active_goal` message reporting the
+  `/goal` Stop hook state; `Value` is nil when the goal is cleared, otherwise
+  carries the condition plus iteration/reason bookkeeping. Concretized upstream
+  from the type-only member deferred in v0.3.201.
+- `ConversationResetMessage` — the top-level `conversation_reset` message
+  emitted by `/clear`, plan-mode exit, and fresh-session flows, carrying the
+  `NewConversationID` to mount a fresh transcript under. Also concretized from
+  the v0.3.201 type-only member.
+- `ControlRequestProgressMessage` — the `system`/`control_request_progress`
+  message for a long-running client-originated control request, correlated by
+  `RequestID`; retry counters are pointers, populated only for the `api_retry`
+  status. Concretized from the v0.3.201 type-only member.
+- `BackgroundTasksChangedMessage` — the `system`/`background_tasks_changed`
+  message carrying the full live background-task set on every membership change
+  (REPLACE semantics, a level signal rather than a task_started/notification
+  edge, reset per CLI process)
+- `SystemMessage.Capabilities` — the optional `capabilities` string array on
+  `system`/`init` for feature-detecting protocol behavior instead of
+  version-sniffing (open set; `interrupt_receipt_v1` is the first value)
+- interrupt receipt — `Stream.InterruptWithReceipt` returns the
+  `InterruptReceipt.StillQueued` uuids of async user messages that survive the
+  interrupt, on CLIs advertising `interrupt_receipt_v1`; `Stream.Interrupt`
+  stays as the fire-and-forget wrapper (no breaking signature change)
+- six new `TerminalReason` values: `api_error`,
+  `malformed_tool_use_exhausted`, `budget_exhausted`,
+  `structured_output_retry_exhausted`, `tool_deferred_unavailable`,
+  `turn_setup_failed`
+- `MessageOrigin.Body` — the decoded peer-envelope body (byte-exact with what
+  the model sees), set only for the `peer` origin kind
+- `SessionMessage.ParentAgentID` — the agentId of the subagent that spawned a
+  subagent transcript message, nil for depth-1 subagents, the main session, or
+  older metadata
+
+PRs in this cycle (squash-merged): #155 active_goal, #156
+background_tasks_changed, #157 control_request_progress, #158 conversation_reset,
+#159 init capabilities, #160 interrupt receipt, #161 TerminalReason values, #162
+MessageOrigin peer body, #163 SessionMessage parent_agent_id.
+
+Deferred this cycle (Go models no matching surface):
+
+- `mcp_call` staging (`input_files`/`output_files`/`expires_at`/`timeout_ms` on
+  the mcp_call control request) — the Go SDK implements no outbound `mcp_call`
+  control request.
+- Tool input/output schema churn: `ScheduleWakeup`'s `stop`/optional fields,
+  `Artifact`'s `action`/`favicon`/list mode, `EnterWorktree`, `ExitPlanMode`
+  permissions deprecation, and the `ArtifactOutput` type — none of these tools
+  are in the curated tool-input subset.
+- Assistant-message `usage` API sub-fields (`citations`, widened
+  `service_tier`, `inference_geo`, `speed`, `iterations`) — the Go `Usage`
+  struct is a simplified projection; the raw API usage is opaque.
 
 Not ported earlier cycles: `listSessions`' `includeProgrammatic` filter — a
 local-filesystem session-picker option whose sibling `includeWorktrees` the Go
