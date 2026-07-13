@@ -506,6 +506,19 @@ type ActiveGoalValue struct {
 // MessageType implements Message.
 func (m ActiveGoalMessage) MessageType() string { return "active_goal" }
 
+// ConversationResetMessage is emitted by /clear, plan-mode exit, and
+// fresh-session flows. The surface should mount a fresh transcript under
+// NewConversationID and reset any cached session title.
+type ConversationResetMessage struct {
+	Type              string `json:"type"`                // Always "conversation_reset"
+	NewConversationID string `json:"new_conversation_id"` // Conversation ID to mount the fresh transcript under
+	UUID              string `json:"uuid"`                // Unique message ID
+	SessionID         string `json:"session_id"`          // Session identifier
+}
+
+// MessageType implements Message.
+func (m ConversationResetMessage) MessageType() string { return "conversation_reset" }
+
 // RateLimitEventMessage reports rate limit information changes.
 type RateLimitEventMessage struct {
 	Type          string        `json:"type"`            // Always "rate_limit_event"
@@ -1670,6 +1683,11 @@ func ParseMessage(data []byte) (Message, error) {
 
 	case "active_goal":
 		var msg ActiveGoalMessage
+		err := json.Unmarshal(data, &msg)
+		return msg, err
+
+	case "conversation_reset":
+		var msg ConversationResetMessage
 		err := json.Unmarshal(data, &msg)
 		return msg, err
 
