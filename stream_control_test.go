@@ -186,6 +186,33 @@ func TestStreamInterruptSendsControlRequest(t *testing.T) {
 	assert.NotContains(t, body, "max_thinking_tokens")
 }
 
+func TestStreamInterruptWithReceiptStillQueued(t *testing.T) {
+	stream, _, _ := newStreamControlTest(
+		successSDKControlResponseWithPayload(map[string]interface{}{
+			"still_queued": []string{"uuid-a", "uuid-b"},
+		}),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	receipt, err := stream.InterruptWithReceipt(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, receipt)
+	assert.Equal(t, []string{"uuid-a", "uuid-b"}, receipt.StillQueued)
+}
+
+func TestStreamInterruptWithReceiptOlderCLI(t *testing.T) {
+	// Older CLIs send an empty success response with no still_queued field.
+	stream, _, _ := newStreamControlTest(successSDKControlResponse)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	receipt, err := stream.InterruptWithReceipt(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, receipt)
+	assert.Empty(t, receipt.StillQueued)
+}
+
 func TestStreamSetPermissionModeSendsModeField(t *testing.T) {
 	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
 
