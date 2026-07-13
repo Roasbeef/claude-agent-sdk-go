@@ -3409,6 +3409,61 @@ func TestParseMessageActiveGoalCleared(t *testing.T) {
 	assert.Nil(t, goalMsg.Value, "cleared goal carries a null value")
 }
 
+func TestParseMessageControlRequestProgressStarted(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "control_request_progress",
+		"request_id": "req_42",
+		"status": "started",
+		"uuid": "550e8400-e29b-41d4-a716-446655440500",
+		"session_id": "sess_crp_001"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	prog, ok := msg.(ControlRequestProgressMessage)
+	require.True(t, ok, "expected ControlRequestProgressMessage")
+
+	assert.Equal(t, "system", prog.MessageType())
+	assert.Equal(t, "control_request_progress", prog.Subtype)
+	assert.Equal(t, "req_42", prog.RequestID)
+	assert.Equal(t, ControlRequestProgressStarted, prog.Status)
+	assert.Nil(t, prog.Attempt, "started carries no retry counters")
+	assert.Nil(t, prog.ErrorStatus)
+}
+
+func TestParseMessageControlRequestProgressAPIRetry(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "control_request_progress",
+		"request_id": "req_42",
+		"status": "api_retry",
+		"attempt": 2,
+		"max_retries": 5,
+		"retry_delay_ms": 1000,
+		"error_status": 529,
+		"uuid": "550e8400-e29b-41d4-a716-446655440501",
+		"session_id": "sess_crp_002"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	prog, ok := msg.(ControlRequestProgressMessage)
+	require.True(t, ok, "expected ControlRequestProgressMessage")
+
+	assert.Equal(t, ControlRequestProgressAPIRetry, prog.Status)
+	require.NotNil(t, prog.Attempt)
+	assert.Equal(t, 2, *prog.Attempt)
+	require.NotNil(t, prog.MaxRetries)
+	assert.Equal(t, 5, *prog.MaxRetries)
+	require.NotNil(t, prog.RetryDelayMs)
+	assert.Equal(t, 1000, *prog.RetryDelayMs)
+	require.NotNil(t, prog.ErrorStatus)
+	assert.Equal(t, 529, *prog.ErrorStatus)
+}
+
 func TestParseMessageBackgroundTasksChanged(t *testing.T) {
 	input := `{
 		"type": "system",
