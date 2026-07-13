@@ -230,6 +230,11 @@ type MessageOrigin struct {
 	// SenderTaskID is the observer's task id; set only for the
 	// "observer" kind (sdk.d.ts v0.3.201).
 	SenderTaskID string `json:"senderTaskId,omitempty"`
+	// Body is the decoded message body with the peer envelope stripped —
+	// byte-exact with what the model sees. Set only for the "peer" kind, and
+	// only when the turn is exactly one harness-formed envelope; render it
+	// instead of re-parsing the message text (sdk.d.ts v0.3.207).
+	Body string `json:"body,omitempty"`
 }
 
 // StreamEvent represents a progressive delta update during streaming.
