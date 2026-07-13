@@ -669,7 +669,8 @@ func TestParseMessageResultMessageOriginPeer(t *testing.T) {
 		"origin": {
 			"kind": "peer",
 			"from": "agent-42",
-			"name": "reviewer"
+			"name": "reviewer",
+			"body": "please take a look"
 		}
 	}`)
 
@@ -682,6 +683,7 @@ func TestParseMessageResultMessageOriginPeer(t *testing.T) {
 	assert.Equal(t, MessageOriginKindPeer, resultMsg.Origin.Kind)
 	assert.Equal(t, "agent-42", resultMsg.Origin.From)
 	assert.Equal(t, "reviewer", resultMsg.Origin.Name)
+	assert.Equal(t, "please take a look", resultMsg.Origin.Body)
 }
 
 func TestParseMessageResultMessageOriginHuman(t *testing.T) {
