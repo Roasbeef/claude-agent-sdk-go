@@ -3409,6 +3409,51 @@ func TestParseMessageActiveGoalCleared(t *testing.T) {
 	assert.Nil(t, goalMsg.Value, "cleared goal carries a null value")
 }
 
+func TestParseMessageBackgroundTasksChanged(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "background_tasks_changed",
+		"tasks": [
+			{"task_id": "t1", "task_type": "agent", "description": "run the suite"},
+			{"task_id": "t2", "task_type": "shell", "description": "tail logs"}
+		],
+		"uuid": "550e8400-e29b-41d4-a716-446655440400",
+		"session_id": "sess_bg_001"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	bgMsg, ok := msg.(BackgroundTasksChangedMessage)
+	require.True(t, ok, "expected BackgroundTasksChangedMessage")
+
+	assert.Equal(t, "system", bgMsg.MessageType())
+	assert.Equal(t, "background_tasks_changed", bgMsg.Subtype)
+	require.Len(t, bgMsg.Tasks, 2)
+	assert.Equal(t, "t1", bgMsg.Tasks[0].TaskID)
+	assert.Equal(t, "agent", bgMsg.Tasks[0].TaskType)
+	assert.Equal(t, "run the suite", bgMsg.Tasks[0].Description)
+	assert.Equal(t, "t2", bgMsg.Tasks[1].TaskID)
+	assert.Equal(t, "sess_bg_001", bgMsg.SessionID)
+}
+
+func TestParseMessageBackgroundTasksChangedEmpty(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "background_tasks_changed",
+		"tasks": [],
+		"uuid": "550e8400-e29b-41d4-a716-446655440401",
+		"session_id": "sess_bg_002"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	bgMsg, ok := msg.(BackgroundTasksChangedMessage)
+	require.True(t, ok, "expected BackgroundTasksChangedMessage")
+	assert.Empty(t, bgMsg.Tasks, "empty task set clears all background work")
+}
+
 func TestParseMessageThinkingTokens(t *testing.T) {
 	input := `{
 		"type": "system",
