@@ -1272,6 +1272,30 @@ type ThinkingTokensMessage struct {
 // MessageType implements Message.
 func (m ThinkingTokensMessage) MessageType() string { return "system" }
 
+// BackgroundTasksChangedMessage carries the full set of live background tasks,
+// emitted whenever membership changes (start, completion, kill, a foreground
+// agent being backgrounded). REPLACE semantics: swap the tracked set for Tasks
+// on each message. It is a level signal, not an edge, and is per-process — reset
+// the set to empty whenever the CLI process restarts.
+type BackgroundTasksChangedMessage struct {
+	Type      string           `json:"type"`       // Always "system"
+	Subtype   string           `json:"subtype"`    // "background_tasks_changed"
+	Tasks     []BackgroundTask `json:"tasks"`      // Every live background task after the change
+	UUID      string           `json:"uuid"`       // Unique message ID
+	SessionID string           `json:"session_id"` // Session identifier
+}
+
+// BackgroundTask identifies one live background task in a
+// BackgroundTasksChangedMessage.
+type BackgroundTask struct {
+	TaskID      string `json:"task_id"`
+	TaskType    string `json:"task_type"`
+	Description string `json:"description"`
+}
+
+// MessageType implements Message.
+func (m BackgroundTasksChangedMessage) MessageType() string { return "system" }
+
 // WorkerShuttingDownMessage is emitted by the bridge on an opt-in graceful
 // worker teardown (only when the teardown caller supplied a reason), before the
 // heartbeat stops, so remote clients can show why the worker went away instead
@@ -1548,6 +1572,10 @@ func ParseMessage(data []byte) (Message, error) {
 			return msg, err
 		case "thinking_tokens":
 			var msg ThinkingTokensMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "background_tasks_changed":
+			var msg BackgroundTasksChangedMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
 		case "worker_shutting_down":
