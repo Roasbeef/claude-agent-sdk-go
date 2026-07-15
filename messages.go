@@ -44,8 +44,17 @@ type APIUserMessage struct {
 
 // UserContentBlock represents a content block in a user message.
 type UserContentBlock struct {
-	Type string `json:"type"`           // "text" or other types
-	Text string `json:"text,omitempty"` // Text content
+	Type   string       `json:"type"`             // "text" or "image"
+	Text   string       `json:"text,omitempty"`   // Text content (Type == "text")
+	Source *ImageSource `json:"source,omitempty"` // Image content (Type == "image")
+}
+
+// ImageSource is the source of an image content block, base64-encoded, matching
+// the Anthropic vision content-block schema.
+type ImageSource struct {
+	Type      string `json:"type"`       // "base64"
+	MediaType string `json:"media_type"` // e.g. "image/png"
+	Data      string `json:"data"`       // base64-encoded image bytes
 }
 
 // UserMessageReplay represents a replayed user message during session resume.
