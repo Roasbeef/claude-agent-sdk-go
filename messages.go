@@ -259,7 +259,24 @@ type MessageOrigin struct {
 	// only when the turn is exactly one harness-formed envelope; render it
 	// instead of re-parsing the message text (sdk.d.ts v0.3.207).
 	Body string `json:"body,omitempty"`
+	// Subkind refines the "task-notification" kind. It is set to
+	// MessageOriginSubkindScheduledTrigger when the delivery is the fired
+	// stored prompt of a scheduled task/routine (stamped from server-asserted
+	// provenance; the schedule attests storage, not authorship). The harness
+	// then frames the message as the session's assigned task instead of the
+	// generic background-notification frame. Absent on webhook, PR-steward,
+	// plugin, and background-event deliveries (sdk.d.ts v0.3.215).
+	Subkind MessageOriginSubkind `json:"subkind,omitempty"`
 }
+
+// MessageOriginSubkind refines a MessageOrigin's kind.
+type MessageOriginSubkind string
+
+const (
+	// MessageOriginSubkindScheduledTrigger marks a "task-notification" origin
+	// whose delivery is the fired stored prompt of a scheduled task/routine.
+	MessageOriginSubkindScheduledTrigger MessageOriginSubkind = "scheduled-trigger"
+)
 
 // StreamEvent represents a progressive delta update during streaming.
 //

@@ -1434,6 +1434,51 @@ func TestMessageOriginObserverRoundTrip(t *testing.T) {
 	assert.Equal(t, "task-abc123", decoded.Origin.SenderTaskID)
 }
 
+func TestMessageOriginScheduledTriggerRoundTrip(t *testing.T) {
+	msg := ResultMessage{
+		Type:    "result",
+		Subtype: "success",
+		Origin: &MessageOrigin{
+			Kind:    MessageOriginKindTaskNotification,
+			Subkind: MessageOriginSubkindScheduledTrigger,
+		},
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &raw))
+	origin, ok := raw["origin"].(map[string]interface{})
+	require.True(t, ok, "origin must marshal to an object")
+	assert.Equal(t, "task-notification", origin["kind"])
+	assert.Equal(t, "scheduled-trigger", origin["subkind"])
+
+	var decoded ResultMessage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NotNil(t, decoded.Origin)
+	assert.Equal(t, MessageOriginKindTaskNotification, decoded.Origin.Kind)
+	assert.Equal(t, MessageOriginSubkindScheduledTrigger, decoded.Origin.Subkind)
+}
+
+// A plain task-notification origin (no scheduled prompt) must omit subkind.
+func TestMessageOriginTaskNotificationSubkindOmitEmpty(t *testing.T) {
+	msg := ResultMessage{
+		Type:    "result",
+		Subtype: "success",
+		Origin:  &MessageOrigin{Kind: MessageOriginKindTaskNotification},
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &raw))
+	origin, ok := raw["origin"].(map[string]interface{})
+	require.True(t, ok, "origin must marshal to an object")
+	assert.NotContains(t, origin, "subkind")
+}
+
 func TestMessageOriginObserverActivityRoundTrip(t *testing.T) {
 	msg := ResultMessage{
 		Type:    "result",
