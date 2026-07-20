@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.207 catchup work, using Go idioms where the API shape differs.
+v0.3.215 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -459,6 +459,59 @@ local-filesystem session-picker option whose sibling `includeWorktrees` the Go
 to filter on. The `rewind_conversation` and `add_directory` control-request
 union members ship without an exported wire body or a public Query method, so
 there is nothing to model yet — both deferred until upstream exposes them.
+
+The v0.3.215 catchup added:
+
+- `APIProviderAnthropicGoogleCloud` — the `anthropicGoogleCloud` value on the
+  `apiProvider` account enum (the Anthropic-managed Google Cloud backend).
+- `AssistantMessage` wrapper fields `ResumedFromIncompleteThinking` (this turn
+  continued a truncated signed-thinking block; must survive a bridge replay),
+  `Aborted` (truncated by an interrupt before `stop_reason`), and `Timestamp`
+  (per-message ISO completion time, display-only — not an ordering key).
+- `PluginInfo.Version` — the plugin's `plugin.json` manifest version, on both
+  the `reload_plugins` response and the `initialize` system message
+  (plugin-author-controlled; validate before trusting).
+- Permission-request `PermissionContext.SuppressAlwaysAllowRule` (omit any
+  persistent "don't ask again" affordance) and `MatchedAskRule` (a user ask
+  rule forced the prompt while it still carries the tool's own decision reason;
+  render-unsafe, sanitize before display).
+- `MessageOrigin.Subkind` — `scheduled-trigger` on the `task-notification`
+  origin kind, marking a delivery that is the fired stored prompt of a
+  scheduled task/routine.
+- `ToolProgressMessage` fields `Heartbeat`, `SubagentType`, and `SubagentRetry`
+  (`{agent_id, attempt, max_retries, retry_delay_ms, error_status,
+  error_category}`; `error_status` is nil for connection errors).
+- `UserPromptSubmitInput.Source` (who authored/injected the prompt; trial-gated
+  to Anthropic-internal sessions) and the `fork` value on the `SessionStart`
+  hook source.
+- `Settings` fields `ProcessWrapper` (corporate launcher argv prefix),
+  `FeedbackDrafts` (`notify`/`quiet`/`off` for the SendFeedback tool), and
+  `VimInsertModeRemaps` (vim INSERT-mode two-char remaps to `<Esc>`).
+
+PRs in this cycle (squash-merged): #168 anthropicGoogleCloud, #169 assistant
+wrapper fields, #170 PluginInfo version, #171 permission ask-rule fields, #172
+MessageOrigin scheduled-trigger, #174 tool_progress subagent fields, #173 hook
+input source, #175 settings parity, plus this docs refresh.
+
+Deferred this cycle (Go models no matching surface):
+
+- New tool schemas `RefreshMcpTools`, `SendFeedback`, and `ProposeSkills`, plus
+  tool input/output field churn (`Artifact` `scope`/`title`, `Bash`
+  `timedOutAfterMs`/`backgroundCwdHint`, `Task` `modelsUsed`, and friends) —
+  none are in the curated tool-input subset.
+- The alpha usage/policy prefix constants (`ORG_POLICY_LIMIT_PREFIXES`,
+  `USAGE_LIMIT_ERROR_PREFIXES`, `USAGE_TRANSITION_PREFIXES`,
+  `USAGE_WARNING_PREFIXES`) — runtime string arrays with no wire type; the Go
+  `Usage` struct is a simplified projection.
+- `signalCode` on the process-exit transport type — a Node `ChildProcess`
+  detail; the Go transport models exit differently.
+- `set_max_thinking_tokens`' `max_thinking_tokens` becoming optional and the
+  `effortLevel: 'max'` session-scoped value — already representable in Go
+  (`SetMaxThinkingTokens` takes a nil-able `*int`; `EffortLevel` is a string
+  alias), so no struct change.
+- Upstream doc-only text (docs.anthropic.com → platform.claude.com /
+  code.claude.com link migrations, the `setMcpServers` plugin-exemption note,
+  and the `mcp_call` on-demand server bring-up note).
 
 Some areas remain intentionally limited by the CLI or integration harness:
 desktop/IDE-only settings are not modeled exhaustively, several runtime control
