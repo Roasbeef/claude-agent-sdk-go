@@ -103,6 +103,22 @@ type AssistantMessage struct {
 	// audit record for the turn. Absent when emitted by an older CLI.
 	Supersedes []string `json:"supersedes,omitempty"`
 
+	// ResumedFromIncompleteThinking is true when this turn continued the
+	// preceding truncated assistant turn inside its trailing signed thinking
+	// block (max-output-tokens recovery). The thinking signatures are
+	// cumulative over that preceding thinking-only turn, so history replayed
+	// through the bridge must carry this flag back for the normalizer to keep
+	// the run's prefix on the wire. A wrapper-level sibling — never inside
+	// message.content — so it is not replayed to the model (sdk.d.ts
+	// v0.3.215).
+	ResumedFromIncompleteThinking bool `json:"resumed_from_incomplete_thinking,omitempty"`
+
+	// Aborted is true when this assistant message was truncated by an
+	// interrupt/abort before the stream completed: stop_reason was never
+	// received and the content may end mid-word. Absent on normally completed
+	// messages (sdk.d.ts v0.3.215).
+	Aborted bool `json:"aborted,omitempty"`
+
 	// SubagentType is the subagent type that produced this message, when
 	// the message originated from a subagent task. Empty for top-level
 	// assistant turns.
@@ -111,6 +127,14 @@ type AssistantMessage struct {
 	// TaskDescription is a short description of the subagent task that
 	// produced this message. Set alongside SubagentType.
 	TaskDescription string `json:"task_description,omitempty"`
+
+	// Timestamp is the ISO-8601 time at which this content block finished on
+	// the originating process. One API assistant turn may produce several
+	// assistant messages sharing a message.id, each with its own timestamp.
+	// It uses the originating host's clock, so it is for display only — do not
+	// order messages by this field. Older emitters omit it; consumers should
+	// fall back to receive time (sdk.d.ts v0.3.215).
+	Timestamp string `json:"timestamp,omitempty"`
 
 	// Error is the upstream API error code, if the assistant turn failed.
 	// Empty for a successful turn. See AssistantMessageError for known
