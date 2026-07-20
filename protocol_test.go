@@ -3549,6 +3549,39 @@ func TestGetHookInput_UserPromptSubmit_NoSessionTitle(t *testing.T) {
 	})
 }
 
+func TestGetHookInput_UserPromptSubmit_Source(t *testing.T) {
+	assertSDKHookInput(t, map[string]interface{}{
+		"hook_event_name": "UserPromptSubmit",
+		"prompt":          "hello",
+		"source":          "schedule_wakeup",
+	}, func(input HookInput) {
+		ev, ok := input.(UserPromptSubmitInput)
+		require.True(t, ok)
+		assert.Equal(t, "schedule_wakeup", ev.Source)
+	})
+
+	// Absent source leaves the field empty.
+	assertSDKHookInput(t, map[string]interface{}{
+		"hook_event_name": "UserPromptSubmit",
+		"prompt":          "hello",
+	}, func(input HookInput) {
+		ev, ok := input.(UserPromptSubmitInput)
+		require.True(t, ok)
+		assert.Empty(t, ev.Source)
+	})
+}
+
+func TestGetHookInput_SessionStart_ForkSource(t *testing.T) {
+	assertSDKHookInput(t, map[string]interface{}{
+		"hook_event_name": "SessionStart",
+		"source":          "fork",
+	}, func(input HookInput) {
+		ev, ok := input.(SessionStartInput)
+		require.True(t, ok)
+		assert.Equal(t, "fork", ev.Source)
+	})
+}
+
 func assertLegacyHookInput(t *testing.T, inputData map[string]interface{}, assertInput func(HookInput)) {
 	t.Helper()
 

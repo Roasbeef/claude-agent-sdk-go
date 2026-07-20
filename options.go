@@ -1731,6 +1731,14 @@ func (i PostToolUseInput) Base() BaseHookInput { return i.BaseHookInput }
 type UserPromptSubmitInput struct {
 	BaseHookInput
 	Prompt string `json:"prompt"`
+	// Source names who authored or injected the prompt: "user" (interactive
+	// composer), "sdk" (non-interactive entrypoint, -p / Agent SDK),
+	// "loop_wakeup" (dynamic /loop wakeup), "schedule_wakeup" (scheduled-task
+	// fire), or "system" (other machine-injected turns: peer/channel messages,
+	// task notifications, auto-continuation). Empty when absent — as of
+	// v0.3.215 it is only set for Anthropic-internal sessions while the field
+	// is trialed; external payloads omit it (sdk.d.ts v0.3.215).
+	Source string `json:"source,omitempty"`
 	// SessionTitle is the optional user-facing session label from TS L6094.
 	// Nil means the field was absent on the wire.
 	SessionTitle *string `json:"session_title,omitempty"`
@@ -1880,7 +1888,7 @@ func (i NotificationInput) Base() BaseHookInput { return i.BaseHookInput }
 // SessionStartInput contains data for SessionStart hooks.
 type SessionStartInput struct {
 	BaseHookInput
-	Source string `json:"source"` // "startup", "resume", "clear", or "compact"
+	Source string `json:"source"` // "startup", "resume", "clear", "compact", or "fork" (v0.3.215)
 	// SessionTitle is the optional user-facing session label from TS L3978.
 	// Nil means the field was absent on the wire.
 	SessionTitle *string `json:"session_title,omitempty"`
