@@ -301,9 +301,10 @@ func TestStreamReloadPluginsParsesResponse(t *testing.T) {
 				},
 				"plugins": []interface{}{
 					map[string]interface{}{
-						"name":   "local",
-						"path":   "/tmp/plugin",
-						"source": "project",
+						"name":    "local",
+						"path":    "/tmp/plugin",
+						"version": "1.2.3",
+						"source":  "project",
 					},
 				},
 				"mcpServers": []interface{}{
@@ -339,9 +340,10 @@ func TestStreamReloadPluginsParsesResponse(t *testing.T) {
 			Model:       "sonnet",
 		}}, got.Agents)
 		assert.Equal(t, []PluginInfo{{
-			Name:   "local",
-			Path:   "/tmp/plugin",
-			Source: "project",
+			Name:    "local",
+			Path:    "/tmp/plugin",
+			Version: "1.2.3",
+			Source:  "project",
 		}}, got.Plugins)
 		require.Len(t, got.McpServers, 1)
 		assert.Equal(t, "github", got.McpServers[0].Name)

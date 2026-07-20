@@ -122,9 +122,14 @@ type SDKControlReloadSkillsResponse struct {
 
 // PluginInfo describes a plugin loaded by the CLI.
 type PluginInfo struct {
-	Name   string `json:"name"`
-	Path   string `json:"path"`
-	Source string `json:"source,omitempty"`
+	Name string `json:"name"`
+	Path string `json:"path"`
+	// Version is the plugin's version as declared in its plugin.json
+	// manifest, emitted verbatim. Plugin-author-controlled — validate before
+	// trusting. Omitted when the manifest declares no version (sdk.d.ts
+	// v0.3.215).
+	Version string `json:"version,omitempty"`
+	Source  string `json:"source,omitempty"`
 }
 
 // APIProvider names the active CLI API backend. Anthropic OAuth login only
