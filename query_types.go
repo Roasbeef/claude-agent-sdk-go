@@ -140,8 +140,11 @@ const (
 	APIProviderVertex       APIProvider = "vertex"
 	APIProviderFoundry      APIProvider = "foundry"
 	APIProviderAnthropicAWS APIProvider = "anthropicAws"
-	APIProviderMantle       APIProvider = "mantle"
-	APIProviderGateway      APIProvider = "gateway"
+	// APIProviderAnthropicGoogleCloud is the Anthropic-managed Google Cloud
+	// backend (sdk.d.ts v0.3.215).
+	APIProviderAnthropicGoogleCloud APIProvider = "anthropicGoogleCloud"
+	APIProviderMantle               APIProvider = "mantle"
+	APIProviderGateway              APIProvider = "gateway"
 )
 
 // AccountInfo contains user account information.
