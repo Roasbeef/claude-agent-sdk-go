@@ -1290,6 +1290,93 @@ func TestToolProgressMessageTaskIDRoundTrip(t *testing.T) {
 	})
 }
 
+func TestToolProgressMessageSubagentFieldsRoundTrip(t *testing.T) {
+	t.Run("with retry", func(t *testing.T) {
+		input := `{
+			"type": "tool_progress",
+			"tool_use_id": "toolu_child",
+			"tool_name": "Task",
+			"parent_tool_use_id": null,
+			"elapsed_time_seconds": 2.5,
+			"heartbeat": true,
+			"subagent_type": "code-reviewer",
+			"subagent_retry": {
+				"agent_id": "agent_7",
+				"attempt": 2,
+				"max_retries": 3,
+				"retry_delay_ms": 500,
+				"error_status": 529,
+				"error_category": "overloaded"
+			},
+			"uuid": "550e8400-e29b-41d4-a716-446655440037",
+			"session_id": "sess_top_123"
+		}`
+
+		parsed, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		progressMsg, ok := parsed.(ToolProgressMessage)
+		require.True(t, ok, "expected ToolProgressMessage")
+		assert.True(t, progressMsg.Heartbeat)
+		assert.Equal(t, "code-reviewer", progressMsg.SubagentType)
+		require.NotNil(t, progressMsg.SubagentRetry)
+		assert.Equal(t, "agent_7", progressMsg.SubagentRetry.AgentID)
+		assert.Equal(t, 2, progressMsg.SubagentRetry.Attempt)
+		assert.Equal(t, 3, progressMsg.SubagentRetry.MaxRetries)
+		assert.Equal(t, 500, progressMsg.SubagentRetry.RetryDelayMs)
+		require.NotNil(t, progressMsg.SubagentRetry.ErrorStatus)
+		assert.Equal(t, 529, *progressMsg.SubagentRetry.ErrorStatus)
+		assert.Equal(t, "overloaded", progressMsg.SubagentRetry.ErrorCategory)
+	})
+
+	t.Run("connection error has null error_status", func(t *testing.T) {
+		input := `{
+			"type": "tool_progress",
+			"tool_use_id": "toolu_child",
+			"tool_name": "Task",
+			"parent_tool_use_id": null,
+			"elapsed_time_seconds": 2.5,
+			"subagent_retry": {
+				"agent_id": "agent_7",
+				"attempt": 1,
+				"max_retries": 3,
+				"retry_delay_ms": 500,
+				"error_status": null,
+				"error_category": "connection"
+			},
+			"uuid": "550e8400-e29b-41d4-a716-446655440038",
+			"session_id": "sess_top_123"
+		}`
+
+		parsed, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		progressMsg, ok := parsed.(ToolProgressMessage)
+		require.True(t, ok, "expected ToolProgressMessage")
+		require.NotNil(t, progressMsg.SubagentRetry)
+		assert.Nil(t, progressMsg.SubagentRetry.ErrorStatus)
+		assert.Equal(t, "connection", progressMsg.SubagentRetry.ErrorCategory)
+	})
+
+	t.Run("subagent fields omitted", func(t *testing.T) {
+		msg := ToolProgressMessage{
+			Type:               "tool_progress",
+			ToolUseID:          "toolu_child",
+			ToolName:           "Bash",
+			ElapsedTimeSeconds: 1.0,
+			UUID:               "550e8400-e29b-41d4-a716-446655440039",
+			SessionID:          "sess_top_123",
+		}
+
+		data, err := json.Marshal(msg)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "heartbeat")
+		assert.NotContains(t, got, "subagent_type")
+		assert.NotContains(t, got, "subagent_retry")
+	})
+}
+
 func TestResultMessageFieldAdditionsRoundTrip(t *testing.T) {
 	stopReason := "stop_sequence"
 	msg := ResultMessage{

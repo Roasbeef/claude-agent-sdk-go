@@ -499,8 +499,28 @@ type ToolProgressMessage struct {
 	ParentToolUseID    *string `json:"parent_tool_use_id"`   // Parent tool if nested
 	ElapsedTimeSeconds float64 `json:"elapsed_time_seconds"` // Time elapsed
 	TaskID             *string `json:"task_id,omitempty"`    // Task ID if associated with a task
-	UUID               string  `json:"uuid"`                 // Message UUID
-	SessionID          string  `json:"session_id"`           // Session ID
+	// Heartbeat is true when this frame is a liveness heartbeat rather than a
+	// content-bearing progress update (sdk.d.ts v0.3.215).
+	Heartbeat bool `json:"heartbeat,omitempty"`
+	// SubagentType is the subagent type driving the tool, when the progress
+	// originates from a Task-tool subagent (sdk.d.ts v0.3.215).
+	SubagentType string `json:"subagent_type,omitempty"`
+	// SubagentRetry describes an in-flight subagent retry, when the progress
+	// frame marks a retry attempt. Nil otherwise (sdk.d.ts v0.3.215).
+	SubagentRetry *SubagentRetry `json:"subagent_retry,omitempty"`
+	UUID          string         `json:"uuid"`       // Message UUID
+	SessionID     string         `json:"session_id"` // Session ID
+}
+
+// SubagentRetry describes a subagent retry attempt reported on a
+// ToolProgressMessage (sdk.d.ts v0.3.215).
+type SubagentRetry struct {
+	AgentID       string `json:"agent_id"`
+	Attempt       int    `json:"attempt"`
+	MaxRetries    int    `json:"max_retries"`
+	RetryDelayMs  int    `json:"retry_delay_ms"`
+	ErrorStatus   *int   `json:"error_status"` // null for connection errors with no HTTP response
+	ErrorCategory string `json:"error_category"`
 }
 
 // MessageType implements Message.
