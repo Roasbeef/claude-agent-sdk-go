@@ -250,6 +250,23 @@ func (p *Protocol) handleControlRequest(ctx context.Context, req ControlRequest)
 	return p.transport.Write(ctx, resp)
 }
 
+// parseMatchedAskRule extracts the matched_ask_rule object from a permission
+// request payload. It returns nil when the field is absent or malformed.
+func parseMatchedAskRule(v interface{}) *MatchedAskRule {
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	source, _ := m["source"].(string)
+	toolName, _ := m["tool_name"].(string)
+	ruleContent, _ := m["rule_content"].(string)
+	return &MatchedAskRule{
+		Source:      source,
+		ToolName:    toolName,
+		RuleContent: ruleContent,
+	}
+}
+
 // handlePermissionRequest processes a permission check request.
 func (p *Protocol) handlePermissionRequest(ctx context.Context, req ControlRequest) SDKControlResponse {
 	// Extract request details (per TypeScript SDK: tool_name, input).
@@ -258,6 +275,8 @@ func (p *Protocol) handlePermissionRequest(ctx context.Context, req ControlReque
 	toolUseID, _ := req.Payload["tool_use_id"].(string)
 	agentID, _ := req.Payload["agent_id"].(string)
 	requiresUserInteraction, _ := req.Payload["requires_user_interaction"].(bool)
+	suppressAlwaysAllowRule, _ := req.Payload["suppress_always_allow_rule"].(bool)
+	matchedAskRule := parseMatchedAskRule(req.Payload["matched_ask_rule"])
 
 	// Build permission request.
 	permReq := ToolPermissionRequest{
@@ -267,6 +286,8 @@ func (p *Protocol) handlePermissionRequest(ctx context.Context, req ControlReque
 			ToolUseID:               toolUseID,
 			AgentID:                 agentID,
 			RequiresUserInteraction: requiresUserInteraction,
+			SuppressAlwaysAllowRule: suppressAlwaysAllowRule,
+			MatchedAskRule:          matchedAskRule,
 		},
 	}
 

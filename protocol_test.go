@@ -793,6 +793,67 @@ func TestProtocolHandlePermissionRequestRequiresUserInteraction(t *testing.T) {
 	}
 }
 
+func TestProtocolHandlePermissionRequestAskRule(t *testing.T) {
+	t.Run("fields parsed into context", func(t *testing.T) {
+		var captured PermissionContext
+		opts := NewOptions()
+		opts.CanUseTool = func(ctx context.Context, req ToolPermissionRequest) PermissionResult {
+			captured = req.Context
+			return PermissionAllow{}
+		}
+		protocol := NewProtocol(nil, opts)
+
+		resp := protocol.handlePermissionRequest(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "can_use_tool",
+			RequestID: "req_1",
+			Payload: map[string]interface{}{
+				"tool_name":                  "Bash",
+				"tool_use_id":                "tool_1",
+				"input":                      map[string]interface{}{},
+				"suppress_always_allow_rule": true,
+				"matched_ask_rule": map[string]interface{}{
+					"source":       "settings",
+					"tool_name":    "Bash",
+					"rule_content": "Bash(rm:*)",
+				},
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		assert.True(t, captured.SuppressAlwaysAllowRule)
+		require.NotNil(t, captured.MatchedAskRule)
+		assert.Equal(t, "settings", captured.MatchedAskRule.Source)
+		assert.Equal(t, "Bash", captured.MatchedAskRule.ToolName)
+		assert.Equal(t, "Bash(rm:*)", captured.MatchedAskRule.RuleContent)
+	})
+
+	t.Run("absent fields leave zero values", func(t *testing.T) {
+		var captured PermissionContext
+		opts := NewOptions()
+		opts.CanUseTool = func(ctx context.Context, req ToolPermissionRequest) PermissionResult {
+			captured = req.Context
+			return PermissionAllow{}
+		}
+		protocol := NewProtocol(nil, opts)
+
+		resp := protocol.handlePermissionRequest(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "can_use_tool",
+			RequestID: "req_1",
+			Payload: map[string]interface{}{
+				"tool_name":   "fetch_quote",
+				"tool_use_id": "tool_1",
+				"input":       map[string]interface{}{},
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		assert.False(t, captured.SuppressAlwaysAllowRule)
+		assert.Nil(t, captured.MatchedAskRule)
+	})
+}
+
 func TestProtocolHandleSDKPermissionRequestClassification(t *testing.T) {
 	tests := []struct {
 		name       string
