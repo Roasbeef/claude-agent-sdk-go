@@ -520,6 +520,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 		input = UserPromptSubmitInput{
 			BaseHookInput: base,
 			Prompt:        getString(inputData, "prompt"),
+			Source:        getString(inputData, "source"),
 			SessionTitle:  getOptionalString(inputData, "session_title"),
 		}
 	case HookTypeStop:
@@ -1030,6 +1031,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 		input = UserPromptSubmitInput{
 			BaseHookInput: base,
 			Prompt:        getString(hookInput, "prompt"),
+			Source:        getString(hookInput, "source"),
 			SessionTitle:  getOptionalString(hookInput, "session_title"),
 		}
 	case "Stop":
