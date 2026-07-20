@@ -308,6 +308,30 @@ func TestSettingsManagedOrgFieldsJSON(t *testing.T) {
 		assert.Equal(t, "chat", out.DefaultView)
 	})
 
+	t.Run("v0.3.215 fields round-trip and omit when zero", func(t *testing.T) {
+		empty, err := json.Marshal(Settings{})
+		require.NoError(t, err)
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(empty, &got))
+		assert.NotContains(t, got, "processWrapper")
+		assert.NotContains(t, got, "feedbackDrafts")
+		assert.NotContains(t, got, "vimInsertModeRemaps")
+
+		in := Settings{
+			ProcessWrapper:      "/usr/bin/corp-launch --",
+			FeedbackDrafts:      "quiet",
+			VimInsertModeRemaps: map[string]interface{}{"jj": "<Esc>"},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		assert.Equal(t, "/usr/bin/corp-launch --", out.ProcessWrapper)
+		assert.Equal(t, "quiet", out.FeedbackDrafts)
+		assert.Equal(t, "<Esc>", out.VimInsertModeRemaps["jj"])
+	})
+
 	t.Run("all managed-org fields round-trip together", func(t *testing.T) {
 		v := true
 		timeout := 5000
