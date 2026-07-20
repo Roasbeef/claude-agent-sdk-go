@@ -421,14 +421,19 @@ type Settings struct {
 	DisableAutoMode                   string                  `json:"disableAutoMode,omitempty"`
 	SSHConfigs                        []SettingsSSHConfig     `json:"sshConfigs,omitempty"`
 	// ClaudeMD is CLAUDE.md-style instructions injected as organization-managed memory. Honored only from managed / policy settings. Mirrors sdk.d.ts v0.3.150 L5343.
-	ClaudeMD              string   `json:"claudeMd,omitempty"`
-	ClaudeMDExcludes      []string `json:"claudeMdExcludes,omitempty"`
-	PluginTrustMessage    string   `json:"pluginTrustMessage,omitempty"`
-	Theme                 string   `json:"theme,omitempty"`
-	EditorMode            string   `json:"editorMode,omitempty"`
-	Verbose               *bool    `json:"verbose,omitempty"`
-	PreferredNotifChannel string   `json:"preferredNotifChannel,omitempty"`
-	AutoCompactEnabled    *bool    `json:"autoCompactEnabled,omitempty"`
+	ClaudeMD           string   `json:"claudeMd,omitempty"`
+	ClaudeMDExcludes   []string `json:"claudeMdExcludes,omitempty"`
+	PluginTrustMessage string   `json:"pluginTrustMessage,omitempty"`
+	Theme              string   `json:"theme,omitempty"`
+	EditorMode         string   `json:"editorMode,omitempty"`
+	// VimInsertModeRemaps holds vim INSERT-mode key-sequence remaps, e.g.
+	// {"jj": "<Esc>"}. Each key is exactly two printable characters typed in
+	// sequence; "<Esc>" (return to NORMAL mode) is the only supported target.
+	// Applies when EditorMode is "vim" (sdk.d.ts v0.3.215).
+	VimInsertModeRemaps   map[string]interface{} `json:"vimInsertModeRemaps,omitempty"`
+	Verbose               *bool                  `json:"verbose,omitempty"`
+	PreferredNotifChannel string                 `json:"preferredNotifChannel,omitempty"`
+	AutoCompactEnabled    *bool                  `json:"autoCompactEnabled,omitempty"`
 	// SwitchModelsOnFlag switches models automatically when safety measures flag a message. Mirrors sdk.d.ts v0.3.168 L5620.
 	SwitchModelsOnFlag         *bool `json:"switchModelsOnFlag,omitempty"`
 	AutoScrollEnabled          *bool `json:"autoScrollEnabled,omitempty"`
@@ -483,6 +488,19 @@ type Settings struct {
 	WheelScrollAccelerationEnabled *bool `json:"wheelScrollAccelerationEnabled,omitempty"`
 	// DisableClaudeAiConnectors, when true in any settings source, prevents claude.ai MCP cloud connectors from being auto-fetched or connected. Only gates auto-fetched connectors — a claudeai-proxy server passed explicitly (via --mcp-config or the SDK mcpServers option) still follows the normal MCP config trust flow. Any-source-true wins: a project can opt out, but a project-level false cannot override a user-level true. Mirrors sdk.d.ts v0.3.185 L4629.
 	DisableClaudeAiConnectors *bool `json:"disableClaudeAiConnectors,omitempty"`
+	// ProcessWrapper is the corporate launcher argv prefix for the
+	// background-agent supervisor, the sessions and workers it hosts, and the
+	// other covered background processes. Equivalent to the
+	// CLAUDE_CODE_PROCESS_WRAPPER environment variable, which takes precedence
+	// when set. Honored from managed settings, a --settings/SDK-supplied
+	// settings file, and user settings, in that precedence order; project and
+	// local settings are ignored (sdk.d.ts v0.3.215).
+	ProcessWrapper string `json:"processWrapper,omitempty"`
+	// FeedbackDrafts controls the model-drafted feedback tool (SendFeedback):
+	// "notify" (default) shows a one-line notice when a draft is queued,
+	// "quiet" shows only the footer counter, and "off" disables the tool
+	// entirely so drafts are never queued (sdk.d.ts v0.3.215).
+	FeedbackDrafts string `json:"feedbackDrafts,omitempty"`
 }
 
 // SettingsFooterLinkRegex is a footer-badge rule: when Pattern matches turn
