@@ -450,8 +450,11 @@ func TestParseMessageAssistantMessageSubagentFields(t *testing.T) {
 			"total_tokens": 20
 		},
 		"request_id": "req_123",
+		"resumed_from_incomplete_thinking": true,
+		"aborted": true,
 		"subagent_type": "general-purpose",
-		"task_description": "Inspect repository state"
+		"task_description": "Inspect repository state",
+		"timestamp": "2026-07-20T16:07:00.000Z"
 	}`
 
 	msg, err := ParseMessage([]byte(input))
@@ -461,8 +464,11 @@ func TestParseMessageAssistantMessageSubagentFields(t *testing.T) {
 	require.True(t, ok, "expected AssistantMessage")
 
 	assert.Equal(t, "req_123", assistantMsg.RequestID)
+	assert.True(t, assistantMsg.ResumedFromIncompleteThinking)
+	assert.True(t, assistantMsg.Aborted)
 	assert.Equal(t, "general-purpose", assistantMsg.SubagentType)
 	assert.Equal(t, "Inspect repository state", assistantMsg.TaskDescription)
+	assert.Equal(t, "2026-07-20T16:07:00.000Z", assistantMsg.Timestamp)
 }
 
 func TestParseMessageAssistantMessageError(t *testing.T) {
@@ -500,8 +506,11 @@ func TestAssistantMessageFieldsOmitEmpty(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &got))
 
 	assert.NotContains(t, got, "request_id")
+	assert.NotContains(t, got, "resumed_from_incomplete_thinking")
+	assert.NotContains(t, got, "aborted")
 	assert.NotContains(t, got, "subagent_type")
 	assert.NotContains(t, got, "task_description")
+	assert.NotContains(t, got, "timestamp")
 }
 
 func TestAssistantMessageErrorOmitEmpty(t *testing.T) {
@@ -519,10 +528,13 @@ func TestAssistantMessageErrorOmitEmpty(t *testing.T) {
 
 func TestAssistantMessageJSONRoundTrip(t *testing.T) {
 	msg := AssistantMessage{
-		Type:            "assistant",
-		RequestID:       "req_456",
-		SubagentType:    "code-reviewer",
-		TaskDescription: "Review assistant message fields",
+		Type:                          "assistant",
+		RequestID:                     "req_456",
+		ResumedFromIncompleteThinking: true,
+		Aborted:                       true,
+		SubagentType:                  "code-reviewer",
+		TaskDescription:               "Review assistant message fields",
+		Timestamp:                     "2026-07-20T16:07:00.000Z",
 	}
 	msg.Message.Role = "assistant"
 	msg.Message.Content = []ContentBlock{{Type: "text", Text: "Done."}}
@@ -534,8 +546,11 @@ func TestAssistantMessageJSONRoundTrip(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &got))
 
 	assert.Equal(t, msg.RequestID, got.RequestID)
+	assert.Equal(t, msg.ResumedFromIncompleteThinking, got.ResumedFromIncompleteThinking)
+	assert.Equal(t, msg.Aborted, got.Aborted)
 	assert.Equal(t, msg.SubagentType, got.SubagentType)
 	assert.Equal(t, msg.TaskDescription, got.TaskDescription)
+	assert.Equal(t, msg.Timestamp, got.Timestamp)
 }
 
 func TestAssistantMessageErrorRoundTrip(t *testing.T) {
