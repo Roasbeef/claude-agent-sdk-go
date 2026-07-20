@@ -1429,6 +1429,21 @@ type ToolPermissionRequest struct {
 	Context   PermissionContext
 }
 
+// MatchedAskRule describes the user-configured ask rule (permissions.ask) that
+// forced a permission prompt whose ask nonetheless carries the tool's own
+// decision reason. When set, the ask-rule substitution kept the richer
+// tool-minted ask, so the rule rides here instead of a "rule"
+// decision_reason_type. Hosts making policy on the decision reason (e.g.
+// auto-deny a safetyCheck) or running host-side auto-approval should treat asks
+// carrying this as rule-forced: the user's stated intent is a human prompt. The
+// values are producer-authored and render-unsafe like a decision reason —
+// sanitize before display (sdk.d.ts v0.3.215).
+type MatchedAskRule struct {
+	Source      string `json:"source"`
+	ToolName    string `json:"tool_name"`
+	RuleContent string `json:"rule_content,omitempty"`
+}
+
 // PermissionContext provides additional context for permission decisions.
 type PermissionContext struct {
 	SessionID string
@@ -1438,9 +1453,22 @@ type PermissionContext struct {
 	// itself the user-interaction surface (Tool.requiresUserInteraction()).
 	// SDK hosts must not offer a one-tap allow/deny for these — the user has
 	// to open the session and respond on the card itself (sdk.d.ts
-	// v0.3.201).
+	// v0.3.201). As of v0.3.215 it is also set when the pending ask is
+	// localDisplayOnly: its consent disclosure cannot ride this wire and only
+	// the local dialog renders it. Either way the user must open the session
+	// to answer.
 	RequiresUserInteraction bool
-	Metadata                map[string]interface{}
+	// SuppressAlwaysAllowRule is true when the dialog must not offer the
+	// persistent "don't ask again" affordance for this ask: accepting it would
+	// write a whole-tool allow rule broader than the ask's own verb. Hosts
+	// rendering approve options should omit any persistent-rule row when set
+	// (sdk.d.ts v0.3.215).
+	SuppressAlwaysAllowRule bool
+	// MatchedAskRule is set when a user-configured ask rule forced this prompt
+	// while the ask still carries the tool's own decision reason. Nil when no
+	// such rule applied. See MatchedAskRule (sdk.d.ts v0.3.215).
+	MatchedAskRule *MatchedAskRule
+	Metadata       map[string]interface{}
 }
 
 // PermissionDecisionClassification labels how a permission decision was reached
