@@ -149,8 +149,28 @@ func (c *Client) messagePump() {
 			continue
 		}
 		// Route control messages to protocol handler.
+		//
+		// CPN VENDOR PATCH B1 (design §9.2, review finding B1). A control
+		// REQUEST (can_use_tool / hook_callback) invokes the user's CanUseTool
+		// or hook callback INLINE inside HandleControlMessage. Those callbacks
+		// block for a CPN approval / stop-decision round-trip. Running them on
+		// this sole transport-reader goroutine froze ALL reads for the callback's
+		// full latency: output events, the terminal ResultMessage, and even a
+		// concurrent Interrupt's own control_response (also routed here) could
+		// not arrive. Dispatch control REQUESTS to a per-request goroutine so the
+		// pump keeps reading; the handler writes its own correlated response
+		// (transport.Write is mutex-serialized, so concurrent responses are
+		// safe). Control RESPONSES / cancels / keep-alives are fast, non-blocking
+		// channel deliveries with no user callback, so they stay inline to
+		// preserve their prompt, in-order handling.
 		if isControlMessage(msg) {
-			_ = c.protocol.HandleControlMessage(c.msgCtx, msg)
+			if isControlRequestMessage(msg) {
+				go func(m Message) {
+					_ = c.protocol.HandleControlMessage(c.msgCtx, m)
+				}(msg)
+			} else {
+				_ = c.protocol.HandleControlMessage(c.msgCtx, msg)
+			}
 			continue
 		}
 		// Send non-control messages to consumer channel.
@@ -559,6 +579,15 @@ func (c *Client) Close() error {
 	return nil
 }
 
+// Protocol exposes the session's protocol handler. CPN VENDOR PATCH M2 (design
+// §4.3, review finding M2): the never-drop FIFO needs a synchronous send whose
+// write error is observable at call time. Stream.Send enqueues to the cap-4
+// sendCh and handleSends swallows the write error, so a delivery to a dead CLI
+// returns nil and the loss is invisible. Protocol.SendMessage returns the
+// underlying transport.Write error directly; exposing the Protocol lets the
+// host use that path. Returns nil before Connect.
+func (c *Client) Protocol() *Protocol { return c.protocol }
+
 // ListSkills returns all loaded Skills (user + project).
 //
 // Skills are loaded during client creation based on SkillsConfig.
@@ -676,6 +705,29 @@ func (s *Stream) Send(ctx context.Context, prompt string) error {
 	case s.sendCh <- prompt:
 		return nil
 	}
+}
+
+// SendSync delivers a user message synchronously via Protocol.SendMessage and
+// returns the underlying transport write error. CPN VENDOR PATCH M2 (design
+// §4.3, review finding M2): unlike Send (async enqueue to the cap-4 sendCh,
+// whose real write error handleSends swallows), SendSync performs the protocol
+// write on the caller goroutine, so a write to a dead/closed CLI surfaces the
+// error at call time. This is the never-drop send path: the FIFO re-buffers at
+// head and raises AGENT_PROCESS_FAILED on this error. It builds the same
+// UserMessage shape handleSends uses.
+func (s *Stream) SendSync(ctx context.Context, prompt string) error {
+	userMsg := UserMessage{
+		Type:      "user",
+		SessionID: s.sessionID,
+		Message: APIUserMessage{
+			Role: "user",
+			Content: []UserContentBlock{
+				{Type: "text", Text: prompt},
+			},
+		},
+		ParentToolUseID: nil,
+	}
+	return s.client.protocol.SendMessage(ctx, userMsg)
 }
 
 // Messages returns an iterator over response messages.
@@ -1249,6 +1301,21 @@ func isControlMessage(msg Message) bool {
 	case ControlRequest, ControlResponse,
 		SDKControlRequest, SDKControlResponse, SDKControlCancelRequest,
 		KeepAliveMessage:
+		return true
+	default:
+		return false
+	}
+}
+
+// isControlRequestMessage reports whether msg is a control REQUEST from the CLI
+// whose handling (HandleControlMessage) may invoke a blocking user callback —
+// a permission (can_use_tool) or hook (hook_callback) request. CPN VENDOR PATCH
+// B1: these are the only control messages that must be dispatched OFF the
+// messagePump reader goroutine; responses/cancels/keep-alives are fast and stay
+// inline. See the patch note in messagePump above.
+func isControlRequestMessage(msg Message) bool {
+	switch msg.(type) {
+	case ControlRequest, SDKControlRequest:
 		return true
 	default:
 		return false
