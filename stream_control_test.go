@@ -184,6 +184,8 @@ func TestStreamInterruptSendsControlRequest(t *testing.T) {
 	assert.NotContains(t, body, "mode")
 	assert.NotContains(t, body, "model")
 	assert.NotContains(t, body, "max_thinking_tokens")
+	// A plain interrupt must not set cancel_queued.
+	assert.NotContains(t, body, "cancel_queued")
 }
 
 func TestStreamInterruptWithReceiptStillQueued(t *testing.T) {
@@ -211,6 +213,29 @@ func TestStreamInterruptWithReceiptOlderCLI(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, receipt)
 	assert.Empty(t, receipt.StillQueued)
+}
+
+func TestStreamInterruptCancelQueued(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(
+		successSDKControlResponseWithPayload(map[string]interface{}{
+			"still_queued": []string{},
+			"cancelled":    []string{"uuid-a", "uuid-b"},
+		}),
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	receipt, err := stream.InterruptCancelQueued(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, receipt)
+	assert.Empty(t, receipt.StillQueued)
+	assert.Equal(t, []string{"uuid-a", "uuid-b"}, receipt.Cancelled)
+
+	// cancel_queued:true must be on the wire.
+	_, generic := decodeWrittenSDKControlRequest(t, transport)
+	body := genericRequestBody(t, generic)
+	assert.Equal(t, "interrupt", body["subtype"])
+	assert.Equal(t, true, body["cancel_queued"])
 }
 
 func TestStreamSetPermissionModeSendsModeField(t *testing.T) {

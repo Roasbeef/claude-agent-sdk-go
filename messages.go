@@ -440,6 +440,7 @@ type SDKControlRequestBody struct {
 	ReloadSkills           *bool                               `json:"reload_skills,omitempty"`          // For register_repo_root
 	UserMessageID          string                              `json:"user_message_id,omitempty"`        // For rewind_files
 	DryRun                 *bool                               `json:"dry_run,omitempty"`                // For rewind_files
+	CancelQueued           *bool                               `json:"cancel_queued,omitempty"`          // For interrupt (interrupt_cancel_queued_v1)
 	Path                   string                              `json:"path,omitempty"`                   // For read_file/seed_read_state
 	MaxBytes               *int                                `json:"max_bytes,omitempty"`              // For read_file
 	Encoding               string                              `json:"encoding,omitempty"`               // For read_file ("utf-8"|"base64")
@@ -828,7 +829,10 @@ type SystemMessage struct {
 	// can feature-detect instead of version-sniffing. Open set — ignore unknown
 	// values and check each capability for exactly the behavior used.
 	// "interrupt_receipt_v1" means the interrupt control response carries
-	// still_queued. Absent on older CLIs.
+	// still_queued. "interrupt_cancel_queued_v1" means the interrupt honors
+	// cancel_queued:true — queued and pending-dispatch commands are cancelled
+	// alongside the abort and listed on the response's cancelled field (see
+	// Stream.InterruptCancelQueued). Absent on older CLIs.
 	Capabilities []string `json:"capabilities,omitempty"`
 }
 
