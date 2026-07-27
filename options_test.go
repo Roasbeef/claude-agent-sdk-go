@@ -699,6 +699,35 @@ func TestSettingsSandboxFieldsJSON(t *testing.T) {
 		assert.Equal(t, "/etc/claude/ca.key", out.Sandbox.Network.TLSTerminate.CAKeyPath)
 	})
 
+	t.Run("network strictAllowlist and filesystem disabled round-trip", func(t *testing.T) {
+		trueVal := true
+		in := Settings{
+			Sandbox: &SettingsSandbox{
+				Network:    &SettingsSandboxNetwork{StrictAllowlist: &trueVal},
+				Filesystem: &SettingsSandboxFilesystem{Disabled: &trueVal},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+		assert.Contains(t, string(data), `"strictAllowlist":true`)
+		assert.Contains(t, string(data), `"disabled":true`)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.Sandbox.Network.StrictAllowlist)
+		assert.True(t, *out.Sandbox.Network.StrictAllowlist)
+		require.NotNil(t, out.Sandbox.Filesystem.Disabled)
+		assert.True(t, *out.Sandbox.Filesystem.Disabled)
+
+		// Both omitempty when unset.
+		bare, err := json.Marshal(Settings{Sandbox: &SettingsSandbox{
+			Network: &SettingsSandboxNetwork{}, Filesystem: &SettingsSandboxFilesystem{},
+		}})
+		require.NoError(t, err)
+		assert.NotContains(t, string(bare), "strictAllowlist")
+		assert.NotContains(t, string(bare), "disabled")
+	})
+
 	t.Run("credentials round-trip files and envVars", func(t *testing.T) {
 		in := Settings{
 			Sandbox: &SettingsSandbox{

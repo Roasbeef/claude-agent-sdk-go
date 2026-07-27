@@ -844,6 +844,12 @@ type SettingsSandboxNetwork struct {
 	AllowMachLookup         []string `json:"allowMachLookup,omitempty"`
 	HTTPProxyPort           *int     `json:"httpProxyPort,omitempty"`
 	SocksProxyPort          *int     `json:"socksProxyPort,omitempty"`
+	// StrictAllowlist, when true, makes the sandbox runtime deterministically
+	// deny hosts not in AllowedDomains instead of prompting. Enforced for
+	// sandboxed commands only — in-process tools such as WebFetch are not gated.
+	// Honored only from user, managed/policy, or CLI (--settings) settings;
+	// project settings are ignored. Mirrors sdk.d.ts v0.3.220 L6154.
+	StrictAllowlist *bool `json:"strictAllowlist,omitempty"`
 	// TLSTerminate enables in-process TLS termination so the per-request
 	// filter can inspect HTTPS request bodies. Provide a CA cert+key, or
 	// leave both empty so sandbox-runtime generates an ephemeral pair for
@@ -857,6 +863,14 @@ type SettingsSandboxFilesystem struct {
 	DenyRead                  []string `json:"denyRead,omitempty"`
 	AllowRead                 []string `json:"allowRead,omitempty"`
 	AllowManagedReadPathsOnly *bool    `json:"allowManagedReadPathsOnly,omitempty"`
+	// Disabled (macOS and Linux/WSL only), when true, skips filesystem
+	// isolation entirely while keeping network and seccomp isolation — sandboxed
+	// commands get unrestricted host filesystem access; egress stays confined to
+	// network.allowedDomains. Ignored on native Windows. Intended for egress-
+	// control deployments. Honored only from user, managed/policy, or CLI
+	// (--settings) settings; project settings are ignored. Mirrors sdk.d.ts
+	// v0.3.220 L6205.
+	Disabled *bool `json:"disabled,omitempty"`
 }
 
 type SettingsSandboxRipgrep struct {
