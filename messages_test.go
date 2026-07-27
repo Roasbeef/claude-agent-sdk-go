@@ -1391,16 +1391,18 @@ func TestToolProgressMessageSubagentFieldsRoundTrip(t *testing.T) {
 func TestResultMessageFieldAdditionsRoundTrip(t *testing.T) {
 	stopReason := "stop_sequence"
 	msg := ResultMessage{
-		Type:             "result",
-		Status:           "success",
-		Subtype:          "success",
-		UUID:             "550e8400-e29b-41d4-a716-446655440040",
-		SessionID:        "sess_result_123",
-		Result:           "done",
-		StructuredOutput: map[string]interface{}{"ok": true},
-		StopReason:       &stopReason,
-		TerminalReason:   terminalReasonPtr(TerminalReasonHookStopped),
-		FastModeState:    fastModeStatePtr(FastModeStateCooldown),
+		Type:              "result",
+		Status:            "success",
+		Subtype:           "success",
+		UUID:              "550e8400-e29b-41d4-a716-446655440040",
+		SessionID:         "sess_result_123",
+		Result:            "done",
+		StructuredOutput:  map[string]interface{}{"ok": true},
+		StopReason:        &stopReason,
+		TerminalReason:    terminalReasonPtr(TerminalReasonHookStopped),
+		FastModeState:     fastModeStatePtr(FastModeStateCooldown),
+		UserMessageUUID:   "550e8400-e29b-41d4-a716-446655440099",
+		RequestSentWallMs: int64Ptr(1753632000000),
 	}
 
 	data, err := json.Marshal(msg)
@@ -1414,6 +1416,15 @@ func TestResultMessageFieldAdditionsRoundTrip(t *testing.T) {
 	assert.Equal(t, TerminalReasonHookStopped, *decoded.TerminalReason)
 	require.NotNil(t, decoded.FastModeState)
 	assert.Equal(t, FastModeStateCooldown, *decoded.FastModeState)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440099", decoded.UserMessageUUID)
+	require.NotNil(t, decoded.RequestSentWallMs)
+	assert.Equal(t, int64(1753632000000), *decoded.RequestSentWallMs)
+
+	// Both are omitempty; a result without them stays lean on the wire.
+	out, err := json.Marshal(ResultMessage{Type: "result", SessionID: "s"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(out), "user_message_uuid")
+	assert.NotContains(t, string(out), "request_sent_wall_ms")
 }
 
 func TestFastModeDisabledReasonRoundTrip(t *testing.T) {

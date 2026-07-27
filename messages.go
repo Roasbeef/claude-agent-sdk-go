@@ -204,6 +204,8 @@ type ResultMessage struct {
 	*/
 	TTFTStreamMs             *int64 `json:"ttft_stream_ms,omitempty"`                // Streaming time-to-first-token in milliseconds
 	TimeToRequestMs          *int64 `json:"time_to_request_ms,omitempty"`            // Time to request in milliseconds
+	UserMessageUUID          string `json:"user_message_uuid,omitempty"`             // UUID of the user message that drove this turn (success only; sdk.d.ts v0.3.220 L4300)
+	RequestSentWallMs        *int64 `json:"request_sent_wall_ms,omitempty"`          // Wall-clock time the request was sent, ms since epoch (success only; sdk.d.ts v0.3.220 L4301)
 	TimeToRequestFromSpawnMs *int64 `json:"time_to_request_from_spawn_ms,omitempty"` // Time to request from spawn in milliseconds
 	WarmSpareClaimed         *bool  `json:"warm_spare_claimed,omitempty"`            // Whether a warm spare was claimed
 	TimeOriginMs             *int64 `json:"time_origin_ms,omitempty"`                // Wall-clock origin for the above timings, in milliseconds (success only)
