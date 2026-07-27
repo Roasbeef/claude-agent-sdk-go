@@ -332,6 +332,37 @@ func TestSettingsManagedOrgFieldsJSON(t *testing.T) {
 		assert.Equal(t, "<Esc>", out.VimInsertModeRemaps["jj"])
 	})
 
+	t.Run("v0.3.220 fields round-trip and omit when zero", func(t *testing.T) {
+		empty, err := json.Marshal(Settings{})
+		require.NoError(t, err)
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(empty, &got))
+		assert.NotContains(t, got, "workflowSizeGuideline")
+		assert.NotContains(t, got, "emojiCompletionEnabled")
+		assert.NotContains(t, got, "precomputeCompactionEnabled")
+		assert.NotContains(t, got, "voiceEnabled")
+
+		enabled := true
+		in := Settings{
+			WorkflowSizeGuideline:       "large",
+			EmojiCompletionEnabled:      &enabled,
+			PrecomputeCompactionEnabled: &enabled,
+			VoiceEnabled:                &enabled,
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		assert.Equal(t, "large", out.WorkflowSizeGuideline)
+		require.NotNil(t, out.EmojiCompletionEnabled)
+		assert.True(t, *out.EmojiCompletionEnabled)
+		require.NotNil(t, out.PrecomputeCompactionEnabled)
+		assert.True(t, *out.PrecomputeCompactionEnabled)
+		require.NotNil(t, out.VoiceEnabled)
+		assert.True(t, *out.VoiceEnabled)
+	})
+
 	t.Run("all managed-org fields round-trip together", func(t *testing.T) {
 		v := true
 		timeout := 5000
