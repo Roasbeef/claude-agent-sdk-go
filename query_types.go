@@ -18,6 +18,14 @@ type ModelInfo struct {
 	// persisted explicit id against the alias row that covers it. Present
 	// only for alias rows (sdk.d.ts v0.3.201).
 	ResolvedModel string `json:"resolvedModel,omitempty"`
+	// CanonicalModel is the canonical model id used for the pricing lookup
+	// (e.g. "claude-opus-4-7"). May differ from the raw Value this row is
+	// keyed by (provider-specific ids, aliases). sdk.d.ts v0.3.220 L1274.
+	CanonicalModel string `json:"canonicalModel,omitempty"`
+	// Provider is the API provider that served this model: one of
+	// "firstParty", "bedrock", "vertex", "foundry", "anthropicAws",
+	// "anthropicGoogleCloud", "mantle", "gateway". sdk.d.ts v0.3.220 L1278.
+	Provider string `json:"provider,omitempty"`
 }
 
 // AgentInfo describes a subagent available to the Task tool.

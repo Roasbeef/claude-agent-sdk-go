@@ -109,6 +109,21 @@ func TestModelInfoResolvedModelRoundTrip(t *testing.T) {
 	assert.NotContains(t, string(out), "resolvedModel")
 }
 
+func TestModelInfoPricingFieldsRoundTrip(t *testing.T) {
+	raw := []byte(`{"value":"opus","displayName":"Opus","description":"deep","canonicalModel":"claude-opus-4-7","provider":"anthropicGoogleCloud"}`)
+
+	var info ModelInfo
+	require.NoError(t, json.Unmarshal(raw, &info))
+	assert.Equal(t, "claude-opus-4-7", info.CanonicalModel)
+	assert.Equal(t, "anthropicGoogleCloud", info.Provider)
+
+	// Both are omitempty: rows without pricing metadata drop them.
+	out, err := json.Marshal(ModelInfo{Value: "sonnet", DisplayName: "Sonnet", Description: "balanced"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(out), "canonicalModel")
+	assert.NotContains(t, string(out), "provider")
+}
+
 func TestStreamSupportedAgentsReadsCachedInit(t *testing.T) {
 	stream, _, protocol := newStreamControlTest(nil)
 	storeInitResponse(protocol, canonicalInitResponse())
