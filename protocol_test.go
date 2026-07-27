@@ -4033,6 +4033,57 @@ func TestHandleHookCallback_RetryWatchPathsEvents(t *testing.T) {
 		assert.Equal(t, "success", resp.Response.Subtype)
 	})
 
+	t.Run("DirectoryAdded via legacy path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(DirectoryAddedInput)
+			require.True(t, ok)
+			assert.Equal(t, "/repo/sub", ev.Directory)
+			assert.Equal(t, "slash_command", ev.Source)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+			RequestID: "r",
+			Payload: map[string]interface{}{
+				"callback_id": "h",
+				"input": map[string]interface{}{
+					"hook_event": "DirectoryAdded",
+					"directory":  "/repo/sub",
+					"source":     "slash_command",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
+	t.Run("DirectoryAdded via SDK path", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+		protocol.hookCallbacks["h"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+			ev, ok := input.(DirectoryAddedInput)
+			require.True(t, ok)
+			assert.Equal(t, "/repo/sub", ev.Directory)
+			assert.Equal(t, "register_repo_root", ev.Source)
+			return HookResult{Continue: true}, nil
+		}
+		resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+			RequestID: "r",
+			Request: SDKControlRequestBody{
+				Subtype:    "hook_callback",
+				CallbackID: "h",
+				Input: map[string]interface{}{
+					"hook_event_name": "DirectoryAdded",
+					"directory":       "/repo/sub",
+					"source":          "register_repo_root",
+				},
+			},
+		})
+		assert.Equal(t, "success", resp.Response.Subtype)
+	})
+
 	t.Run("PermissionDenied via legacy path", func(t *testing.T) {
 		runner := NewMockSubprocessRunner()
 		opts := NewOptions()

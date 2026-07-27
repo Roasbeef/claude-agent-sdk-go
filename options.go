@@ -1587,6 +1587,11 @@ const (
 	// HookTypeCwdChanged fires when the current working directory changes.
 	HookTypeCwdChanged HookType = "CwdChanged"
 
+	// HookTypeDirectoryAdded fires when a directory is added as a
+	// working-directory root (via /add-dir or the register_repo_root control
+	// request).
+	HookTypeDirectoryAdded HookType = "DirectoryAdded"
+
 	// HookTypeFileChanged fires when a watched file changes.
 	HookTypeFileChanged HookType = "FileChanged"
 
@@ -1984,6 +1989,24 @@ func (CwdChangedInput) HookType() HookType { return HookTypeCwdChanged }
 
 // Base implements HookInput.
 func (i CwdChangedInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// DirectoryAddedInput contains data for DirectoryAdded hooks. It fires when a
+// directory is registered as a working-directory root. Mirrors
+// DirectoryAddedHookInput in sdk.d.ts v0.3.220 L532.
+type DirectoryAddedInput struct {
+	BaseHookInput
+	// Directory is the absolute path of the directory that was added.
+	Directory string `json:"directory"`
+	// Source is how the directory was added: "slash_command" for /add-dir,
+	// "register_repo_root" for the SDK control_request.
+	Source string `json:"source"`
+}
+
+// HookType implements HookInput.
+func (DirectoryAddedInput) HookType() HookType { return HookTypeDirectoryAdded }
+
+// Base implements HookInput.
+func (i DirectoryAddedInput) Base() BaseHookInput { return i.BaseHookInput }
 
 // FileChangedInput contains data for FileChanged hooks.
 type FileChangedInput struct {
