@@ -685,7 +685,9 @@ func TestParseMessageResultMessageOriginPeer(t *testing.T) {
 			"kind": "peer",
 			"from": "agent-42",
 			"name": "reviewer",
-			"body": "please take a look"
+			"body": "please take a look",
+			"fromSession": "local_abc",
+			"verifiedPeerPid": 4242
 		}
 	}`)
 
@@ -699,6 +701,15 @@ func TestParseMessageResultMessageOriginPeer(t *testing.T) {
 	assert.Equal(t, "agent-42", resultMsg.Origin.From)
 	assert.Equal(t, "reviewer", resultMsg.Origin.Name)
 	assert.Equal(t, "please take a look", resultMsg.Origin.Body)
+	assert.Equal(t, "local_abc", resultMsg.Origin.FromSession)
+	require.NotNil(t, resultMsg.Origin.VerifiedPeerPid)
+	assert.Equal(t, 4242, *resultMsg.Origin.VerifiedPeerPid)
+
+	// Both are omitempty; a peer origin without them stays lean on the wire.
+	out, err := json.Marshal(MessageOrigin{Kind: MessageOriginKindPeer, From: "a"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(out), "fromSession")
+	assert.NotContains(t, string(out), "verifiedPeerPid")
 }
 
 func TestParseMessageResultMessageOriginHuman(t *testing.T) {

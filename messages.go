@@ -257,6 +257,20 @@ type MessageOrigin struct {
 	// SenderTaskID is the observer's task id; set only for the
 	// "observer" kind (sdk.d.ts v0.3.201).
 	SenderTaskID string `json:"senderTaskId,omitempty"`
+	// FromSession is the sender's host-openable session id (the envelope's
+	// from-session attribute), set by the sender's host so a receiving UI can
+	// link this message back to the sending session. Sender-asserted like
+	// From: a navigation target only, never authority. Set only for the
+	// "peer" kind; absent when the sender's host provides none and on messages
+	// from older senders (sdk.d.ts v0.3.220 L4039).
+	FromSession string `json:"fromSession,omitempty"`
+	// VerifiedPeerPid is the kernel-verified pid of the process that connected
+	// to this session's cross-session messaging socket (SO_PEERCRED /
+	// LOCAL_PEERPID) — never read from the payload. Key sender identity on
+	// this, never on From, which is sender-authored and forgeable. Absent when
+	// unverifiable (Windows, non-UDS ingress); pids are recyclable, so treat
+	// it as provenance, not an authentication token (sdk.d.ts v0.3.220 L4052).
+	VerifiedPeerPid *int `json:"verifiedPeerPid,omitempty"`
 	// Body is the decoded message body with the peer envelope stripped —
 	// byte-exact with what the model sees. Set only for the "peer" kind, and
 	// only when the turn is exactly one harness-formed envelope; render it
