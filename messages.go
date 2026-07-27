@@ -221,6 +221,9 @@ type ResultMessage struct {
 	TerminalReason    *TerminalReason    `json:"terminal_reason,omitempty"`    // Terminal completion reason
 	Origin            *MessageOrigin     `json:"origin,omitempty"`             // Originating actor for this result
 	FastModeState     *FastModeState     `json:"fast_mode_state,omitempty"`    // Fast mode state at completion
+	// FastModeDisabledReason explains why fast mode could not serve, when
+	// fast_mode_state is not "on". Absent when nothing blocks it.
+	FastModeDisabledReason *FastModeDisabledReason `json:"fast_mode_disabled_reason,omitempty"`
 }
 
 // MessageType implements Message.
@@ -643,6 +646,25 @@ const (
 	FastModeStateOn       FastModeState = "on"
 )
 
+// FastModeDisabledReason explains why fast mode cannot serve a request right
+// now. Absent when nothing blocks it (a request may still choose standard
+// speed). A paused-after-rate-limit run is not reported here; it rides
+// FastModeState as "cooldown". Mirrors sdk.d.ts v0.3.220 L633.
+type FastModeDisabledReason string
+
+const (
+	FastModeDisabledReasonFree               FastModeDisabledReason = "free"
+	FastModeDisabledReasonPreference         FastModeDisabledReason = "preference"
+	FastModeDisabledReasonExtraUsageDisabled FastModeDisabledReason = "extra_usage_disabled"
+	FastModeDisabledReasonNetworkError       FastModeDisabledReason = "network_error"
+	FastModeDisabledReasonUnknown            FastModeDisabledReason = "unknown"
+	FastModeDisabledReasonNotFirstParty      FastModeDisabledReason = "not_first_party"
+	FastModeDisabledReasonDisabledByEnv      FastModeDisabledReason = "disabled_by_env"
+	FastModeDisabledReasonModelNotAllowed    FastModeDisabledReason = "model_not_allowed"
+	FastModeDisabledReasonSDKOptInRequired   FastModeDisabledReason = "sdk_opt_in_required"
+	FastModeDisabledReasonPending            FastModeDisabledReason = "pending"
+)
+
 // RateLimitType identifies the quota window or overage bucket.
 type RateLimitType string
 
@@ -783,6 +805,9 @@ type SystemMessage struct {
 	Agents            []string        `json:"agents,omitempty"`          // Available agents
 	Betas             []string        `json:"betas,omitempty"`           // Enabled beta flags
 	FastModeState     *FastModeState  `json:"fast_mode_state,omitempty"` // Fast mode state
+	// FastModeDisabledReason explains why fast mode could not serve, when
+	// FastModeState is not "on". Absent when nothing blocks it.
+	FastModeDisabledReason *FastModeDisabledReason `json:"fast_mode_disabled_reason,omitempty"`
 	// Capabilities lists protocol capabilities this CLI supports, so consumers
 	// can feature-detect instead of version-sniffing. Open set — ignore unknown
 	// values and check each capability for exactly the behavior used.

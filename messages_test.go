@@ -1405,6 +1405,54 @@ func TestResultMessageFieldAdditionsRoundTrip(t *testing.T) {
 	assert.Equal(t, FastModeStateCooldown, *decoded.FastModeState)
 }
 
+func TestFastModeDisabledReasonRoundTrip(t *testing.T) {
+	t.Run("result", func(t *testing.T) {
+		var decoded ResultMessage
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"type": "result",
+			"subtype": "success",
+			"session_id": "sess_1",
+			"fast_mode_state": "off",
+			"fast_mode_disabled_reason": "model_not_allowed"
+		}`), &decoded))
+		require.NotNil(t, decoded.FastModeDisabledReason)
+		assert.Equal(t, FastModeDisabledReasonModelNotAllowed, *decoded.FastModeDisabledReason)
+	})
+
+	t.Run("system", func(t *testing.T) {
+		var decoded SystemMessage
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"type": "system",
+			"subtype": "init",
+			"session_id": "sess_1",
+			"fast_mode_state": "off",
+			"fast_mode_disabled_reason": "sdk_opt_in_required"
+		}`), &decoded))
+		require.NotNil(t, decoded.FastModeDisabledReason)
+		assert.Equal(t, FastModeDisabledReasonSDKOptInRequired, *decoded.FastModeDisabledReason)
+	})
+
+	t.Run("initialize", func(t *testing.T) {
+		var decoded SDKControlInitializeResponse
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"commands": [], "agents": [], "output_style": "", "available_output_styles": [],
+			"models": [], "account": {}, "fast_mode_state": "off",
+			"fast_mode_disabled_reason": "extra_usage_disabled"
+		}`), &decoded))
+		assert.Equal(t, FastModeDisabledReasonExtraUsageDisabled, decoded.FastModeDisabledReason)
+	})
+
+	t.Run("absent", func(t *testing.T) {
+		var decoded ResultMessage
+		require.NoError(t, json.Unmarshal([]byte(`{"type":"result","subtype":"success","session_id":"s"}`), &decoded))
+		assert.Nil(t, decoded.FastModeDisabledReason)
+
+		out, err := json.Marshal(ResultMessage{Type: "result", SessionID: "s"})
+		require.NoError(t, err)
+		assert.NotContains(t, string(out), "fast_mode_disabled_reason")
+	})
+}
+
 func TestResultMessageStopReasonNullRoundTrip(t *testing.T) {
 	msg := ResultMessage{
 		Type:       "result",

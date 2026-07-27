@@ -36,6 +36,9 @@ type SDKControlInitializeResponse struct {
 	Models                []ModelInfo    `json:"models"`
 	Account               AccountInfo    `json:"account"`
 	FastModeState         string         `json:"fast_mode_state,omitempty"`
+	// FastModeDisabledReason explains why fast mode could not serve, when
+	// FastModeState is not "on". Absent when nothing blocks it.
+	FastModeDisabledReason FastModeDisabledReason `json:"fast_mode_disabled_reason,omitempty"`
 }
 
 // McpServerStatus reports the connection status of an MCP server.
