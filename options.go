@@ -434,6 +434,10 @@ type Settings struct {
 	Verbose               *bool                  `json:"verbose,omitempty"`
 	PreferredNotifChannel string                 `json:"preferredNotifChannel,omitempty"`
 	AutoCompactEnabled    *bool                  `json:"autoCompactEnabled,omitempty"`
+	// PrecomputeCompactionEnabled precomputes the compaction summary in the
+	// background before it is needed. Only applies when auto-compact is on.
+	// Mirrors sdk.d.ts v0.3.220 L6545.
+	PrecomputeCompactionEnabled *bool `json:"precomputeCompactionEnabled,omitempty"`
 	// SwitchModelsOnFlag switches models automatically when safety measures flag a message. Mirrors sdk.d.ts v0.3.168 L5620.
 	SwitchModelsOnFlag         *bool `json:"switchModelsOnFlag,omitempty"`
 	AutoScrollEnabled          *bool `json:"autoScrollEnabled,omitempty"`
@@ -442,6 +446,18 @@ type Settings struct {
 	ShowMessageTimestamps      *bool `json:"showMessageTimestamps,omitempty"`
 	TerminalProgressBarEnabled *bool `json:"terminalProgressBarEnabled,omitempty"`
 	TodoFeatureEnabled         *bool `json:"todoFeatureEnabled,omitempty"`
+	// WorkflowSizeGuideline is the advisory size guideline for the dynamic
+	// workflows Claude writes: "small" (<5 agents), "medium" (<15, the
+	// default), "large" (<50), or "unrestricted" (no guideline). A value here
+	// takes precedence over the /config choice. Mirrors sdk.d.ts v0.3.220 L5396.
+	WorkflowSizeGuideline string `json:"workflowSizeGuideline,omitempty"`
+	// EmojiCompletionEnabled toggles the :emoji: shortcode typeahead (the
+	// suggestion popup and :name: inline replacement). Enabled when absent or
+	// true. Mirrors sdk.d.ts v0.3.220 L6342.
+	EmojiCompletionEnabled *bool `json:"emojiCompletionEnabled,omitempty"`
+	// VoiceEnabled enables voice mode (hold-to-talk dictation). Mirrors
+	// sdk.d.ts v0.3.220 L6612.
+	VoiceEnabled *bool `json:"voiceEnabled,omitempty"`
 	// TeammateMode controls how spawned teammates execute: "auto", "tmux",
 	// "iterm2", or "in-process" ("iterm2" added in sdk.d.ts v0.3.195 L6162).
 	TeammateMode            string `json:"teammateMode,omitempty"`
