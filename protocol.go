@@ -611,6 +611,12 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			OldCwd:        getString(inputData, "old_cwd"),
 			NewCwd:        getString(inputData, "new_cwd"),
 		}
+	case HookTypeDirectoryAdded:
+		input = DirectoryAddedInput{
+			BaseHookInput: base,
+			Directory:     getString(inputData, "directory"),
+			Source:        getString(inputData, "source"),
+		}
 	case HookTypeFileChanged:
 		input = FileChangedInput{
 			BaseHookInput: base,
@@ -1121,6 +1127,12 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			BaseHookInput: base,
 			OldCwd:        getString(hookInput, "old_cwd"),
 			NewCwd:        getString(hookInput, "new_cwd"),
+		}
+	case "DirectoryAdded":
+		input = DirectoryAddedInput{
+			BaseHookInput: base,
+			Directory:     getString(hookInput, "directory"),
+			Source:        getString(hookInput, "source"),
 		}
 	case "FileChanged":
 		input = FileChangedInput{
