@@ -95,6 +95,13 @@ type RewindFilesResult struct {
 	FilesChanged []string `json:"filesChanged,omitempty"`
 	Insertions   int      `json:"insertions,omitempty"`
 	Deletions    int      `json:"deletions,omitempty"`
+	// SkippedLinks counts tracked files NOT restored or deleted because a
+	// symlink, hard link, or other non-regular file was detected at the tracked
+	// path (or its parent no longer resolves where it pointed at checkpoint
+	// time, or its backup could not be safely read). Populated only by a real
+	// (non-dryRun) rewind; absent or 0 means no link-safety refusals occurred.
+	// sdk.d.ts v0.3.220 L2699.
+	SkippedLinks int `json:"skippedLinks,omitempty"`
 }
 
 // ReadFileOptions controls Stream.ReadFile.
