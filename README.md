@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.215 catchup work, using Go idioms where the API shape differs.
+v0.3.220 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -512,6 +512,62 @@ Deferred this cycle (Go models no matching surface):
 - Upstream doc-only text (docs.anthropic.com → platform.claude.com /
   code.claude.com link migrations, the `setMcpServers` plugin-exemption note,
   and the `mcp_call` on-demand server bring-up note).
+
+The v0.3.220 catchup added:
+
+- `FastModeDisabledReason` — the enum explaining why fast mode declined a turn
+  (`free`, `preference`, `extra_usage_disabled`, `network_error`, `unknown`,
+  `not_first_party`, `disabled_by_env`, `model_not_allowed`,
+  `sdk_opt_in_required`, `pending`), added everywhere `fast_mode_state` already
+  lives: `SDKControlInitializeResponse`, `ResultMessage`, `SystemMessage`.
+- `ModelInfo` pricing fields `CanonicalModel` (the canonical id used for the
+  pricing lookup, e.g. `claude-opus-4-7`) and `Provider` (the API provider that
+  served the model).
+- `MessageOrigin` peer fields `FromSession` (the sender's host-openable session
+  id, a UI navigation target) and `VerifiedPeerPid` (the kernel-verified pid of
+  the connecting process — the field to key sender identity on, not the
+  forgeable `From`).
+- `ResultMessage` success fields `UserMessageUUID` (uuid of the user message
+  that drove the turn) and `RequestSentWallMs` (wall-clock send time, ms).
+- `RewindFilesResult.SkippedLinks` — tracked files not restored/deleted because
+  a symlink, hard link, or other non-regular file was detected (real rewinds
+  only).
+- The `DirectoryAdded` hook event and `DirectoryAddedInput` (`Directory`,
+  `Source` = `slash_command`/`register_repo_root`), fired when a directory is
+  registered as a working-directory root.
+- `Stream.InterruptCancelQueued` plus `InterruptReceipt.Cancelled` and the
+  `interrupt_cancel_queued_v1` capability — an interrupt that also cancels
+  queued/pending-dispatch commands rather than leaving them to run.
+- Sandbox settings `SettingsSandboxNetwork.StrictAllowlist` (deterministically
+  deny hosts not in `allowedDomains`) and `SettingsSandboxFilesystem.Disabled`
+  (skip filesystem isolation while keeping network + seccomp isolation).
+- `Settings` fields `WorkflowSizeGuideline` (advisory dynamic-workflow size),
+  `EmojiCompletionEnabled` (`:emoji:` typeahead), `PrecomputeCompactionEnabled`
+  (precompute the compaction summary in the background), and `VoiceEnabled`
+  (hold-to-talk dictation).
+
+PRs in this cycle (squash-merged): #179 fast_mode_disabled_reason, #180
+ModelInfo pricing fields, #181 peer origin provenance, #182 result timing
+fields, #183 rewind skippedLinks, #184 DirectoryAdded hook, #185 interrupt
+cancel_queued, #186 sandbox strictAllowlist/disabled, #187 settings parity,
+plus this docs refresh.
+
+Deferred this cycle (Go models no matching surface):
+
+- `sdk-tools.d.ts` churn (e.g. `liveSubscription` on a tool output) — not in the
+  curated tool-input subset, the same standing deferral as prior cycles.
+- The `"bubble"` permission mode removed from one `sdk-tools` mode enum — the Go
+  SDK never modeled `bubble`, so no change.
+- `set_model`'s `model` becoming nullable (`null`/`'default'` resets to the
+  session default) — already representable: `SetModel` sends `"default"` (or
+  omits the field).
+- `bridge.d.ts` browser-bridge callbacks (`onRenameSession` /the `rename_session`
+  request, `onPermissionResponse` returning a boolean) — TS-internal browser
+  bridge, not the wire/control protocol the Go SDK models.
+- Upstream doc-only comment rewordings (supportedCommands push tracking, skills
+  canonical-name matching, add_directory strict-subdirectory + duplicate-denied,
+  mtime "integer milliseconds" phrasing, AgentToolCompletedOutput, force-
+  overwrite upsert).
 
 Some areas remain intentionally limited by the CLI or integration harness:
 desktop/IDE-only settings are not modeled exhaustively, several runtime control
