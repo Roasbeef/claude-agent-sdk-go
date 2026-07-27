@@ -29,6 +29,7 @@ func TestStreamRewindFilesNoOpts(t *testing.T) {
 				"canRewind":    true,
 				"filesChanged": []interface{}{"a", "b"},
 				"insertions":   float64(3),
+				"skippedLinks": float64(2),
 			}),
 		)
 
@@ -43,6 +44,7 @@ func TestStreamRewindFilesNoOpts(t *testing.T) {
 		assert.True(t, got.CanRewind)
 		assert.Equal(t, []string{"a", "b"}, got.FilesChanged)
 		assert.Equal(t, 3, got.Insertions)
+		assert.Equal(t, 2, got.SkippedLinks)
 
 		assert.JSONEq(t,
 			`{"type":"control_request","request_id":"req_1","request":{"subtype":"rewind_files","user_message_id":"user-msg-1"}}`,
