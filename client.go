@@ -771,7 +771,16 @@ type InterruptReceipt struct {
 	// interrupt: queued commands plus any batch already dequeued for the
 	// imminent turn but not yet reachable by the abort. They will run unless
 	// cancelled first. Empty on older CLIs, which do not report a receipt.
+	// Always empty when the interrupt requested cancel_queued (see
+	// InterruptCancelQueued) — the survivors move to Cancelled instead.
 	StillQueued []string `json:"still_queued"`
+	// Cancelled is populated only when the interrupt set cancel_queued:true
+	// (InterruptCancelQueued) on a CLI advertising "interrupt_cancel_queued_v1":
+	// the uuids of main-thread commands cancelled by this interrupt — every
+	// survivor that would otherwise have appeared in StillQueued. Each emitted a
+	// terminal "cancelled" lifecycle and none will run. Absent on a plain
+	// interrupt and on older CLIs.
+	Cancelled []string `json:"cancelled,omitempty"`
 }
 
 // InterruptWithReceipt sends an interrupt and returns its receipt. It blocks
@@ -782,9 +791,29 @@ type InterruptReceipt struct {
 // cancelled first. Older CLIs report no receipt, so the receipt is non-nil with
 // an empty StillQueued.
 func (s *Stream) InterruptWithReceipt(ctx context.Context) (*InterruptReceipt, error) {
-	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
-		Subtype: "interrupt",
-	})
+	return s.interrupt(ctx, false)
+}
+
+// InterruptCancelQueued sends an interrupt that also cancels every uuid-stamped
+// main-thread command still queued or pending dispatch for the imminent turn,
+// rather than leaving them to run after the abort. The cancelled uuids are
+// returned in the receipt's Cancelled field and StillQueued is always empty.
+//
+// This is the "Stop means stop everything" behavior a remote UI's Stop button
+// wants: one round-trip halts the running turn and drops the queue. It requires
+// a CLI advertising the "interrupt_cancel_queued_v1" capability (see
+// SystemMessage.Capabilities); older CLIs ignore the flag and behave like
+// InterruptWithReceipt, leaving queued commands to run.
+func (s *Stream) InterruptCancelQueued(ctx context.Context) (*InterruptReceipt, error) {
+	return s.interrupt(ctx, true)
+}
+
+func (s *Stream) interrupt(ctx context.Context, cancelQueued bool) (*InterruptReceipt, error) {
+	body := SDKControlRequestBody{Subtype: "interrupt"}
+	if cancelQueued {
+		body.CancelQueued = &cancelQueued
+	}
+	resp, err := s.sendSDKControlRequest(ctx, body)
 	if err != nil {
 		return nil, err
 	}
