@@ -802,6 +802,58 @@ type SettingsSandboxCredentials struct {
 	// from user, managed/policy, or CLI (--settings) settings — project
 	// settings are ignored (sdk.d.ts v0.3.201).
 	AllowPlaintextInject *bool `json:"allowPlaintextInject,omitempty"`
+	// AWSPairs groups masked env vars into AWS credential pairs for SigV4
+	// re-signing when the variable names are non-standard; the conventional
+	// AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN trio pairs
+	// automatically when masked. Only honored from user, managed/policy, or
+	// CLI (--settings) settings — project settings are ignored (sdk.d.ts
+	// v0.3.226 L6510).
+	AWSPairs []SettingsSandboxCredentialAWSPair `json:"awsPairs,omitempty"`
+	// SigV4 sets the policy for AWS SigV4 request shapes the proxy cannot
+	// re-sign when they reference a masked credential pair. Only honored from
+	// user, managed/policy, or CLI (--settings) settings — project settings are
+	// ignored (sdk.d.ts v0.3.226 L6527).
+	SigV4 *SettingsSandboxCredentialSigV4 `json:"sigv4,omitempty"`
+}
+
+// SettingsSandboxCredentialAWSPair names the masked env vars that make up one
+// AWS credential pair, so the proxy can re-sign SigV4 requests that were signed
+// inside the sandbox with sentinel values.
+//
+// A member is only usable when its variable is forwarded as a whole-value
+// "mask" entry: an entry carrying Extract or Decode does not qualify, since
+// re-signing needs the whole real value. A pair whose key id or secret member
+// is unusable never re-signs — it is dropped, unless it names a conventional
+// AWS variable, in which case it is forwarded as an inert suppressor so
+// implicit auto-pairing stays overridden. A pair whose only unusable member is
+// the session token still re-signs, without an x-amz-security-token.
+type SettingsSandboxCredentialAWSPair struct {
+	// AccessKeyIDVar is the masked env var holding the AWS access key id.
+	AccessKeyIDVar string `json:"accessKeyIdVar"`
+	// SecretAccessKeyVar is the masked env var holding the AWS secret access
+	// key.
+	SecretAccessKeyVar string `json:"secretAccessKeyVar"`
+	// SessionTokenVar is the masked env var holding the AWS session token, for
+	// temporary credentials. When set, the proxy sends the real token as
+	// x-amz-security-token on re-signed requests and adds it to the signed
+	// header set if the client did not.
+	SessionTokenVar string `json:"sessionTokenVar,omitempty"`
+}
+
+// SettingsSandboxCredentialSigV4 holds the per-shape policies for SigV4
+// requests the proxy cannot re-sign. Each is "deny" (the default, fail closed)
+// or "passthrough" (forward unre-signed, which the upstream will reject).
+type SettingsSandboxCredentialSigV4 struct {
+	// Streaming covers aws-chunked uploads (x-amz-content-sha256:
+	// STREAMING-*): per-chunk signatures chain off the seed signature, so
+	// re-signing would mean rewriting the body. "deny" fails closed with a 403.
+	Streaming string `json:"streaming,omitempty"`
+	// Presigned covers presigned URLs (X-Amz-Algorithm/X-Amz-Signature in the
+	// query, no Authorization header) — the signature lives in the URL itself.
+	Presigned string `json:"presigned,omitempty"`
+	// SigV4A covers SigV4A (AWS4-ECDSA-P256-SHA256) asymmetric signatures:
+	// there is no shared-key HMAC to recompute.
+	SigV4A string `json:"sigv4a,omitempty"`
 }
 
 // SettingsSandboxCredentialFile protects a single credential file or directory.
