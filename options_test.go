@@ -855,6 +855,129 @@ func TestSettingsSandboxFieldsJSON(t *testing.T) {
 		assert.NotContains(t, env, "injectHosts")
 	})
 
+	t.Run("credential file mask with extract round-trips", func(t *testing.T) {
+		maskDuplicates := true
+		in := Settings{
+			Sandbox: &SettingsSandbox{
+				Credentials: &SettingsSandboxCredentials{
+					Files: []SettingsSandboxCredentialFile{
+						{
+							Path:             "~/.netrc",
+							Mode:             "mask",
+							Extract:          `password\s+(\S+)`,
+							OnExtractNoMatch: "deny",
+							MaskDuplicates:   &maskDuplicates,
+							InjectHosts:      []string{"api.example.com"},
+						},
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		creds := got["sandbox"].(map[string]interface{})["credentials"].(map[string]interface{})
+		file := creds["files"].([]interface{})[0].(map[string]interface{})
+		assert.Equal(t, "mask", file["mode"])
+		assert.Equal(t, `password\s+(\S+)`, file["extract"])
+		assert.Equal(t, "deny", file["onExtractNoMatch"])
+		assert.Equal(t, true, file["maskDuplicates"])
+		assert.Equal(t, []interface{}{"api.example.com"}, file["injectHosts"])
+		assert.NotContains(t, file, "decode")
+		assert.NotContains(t, file, "maskClaims")
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.Len(t, out.Sandbox.Credentials.Files, 1)
+		gotFile := out.Sandbox.Credentials.Files[0]
+		assert.Equal(t, "mask", gotFile.Mode)
+		assert.Equal(t, `password\s+(\S+)`, gotFile.Extract)
+		assert.Equal(t, "deny", gotFile.OnExtractNoMatch)
+		require.NotNil(t, gotFile.MaskDuplicates)
+		assert.True(t, *gotFile.MaskDuplicates)
+		assert.Equal(t, []string{"api.example.com"}, gotFile.InjectHosts)
+	})
+
+	t.Run("credential jwt decode round-trips on files and envVars", func(t *testing.T) {
+		in := Settings{
+			Sandbox: &SettingsSandbox{
+				Credentials: &SettingsSandboxCredentials{
+					Files: []SettingsSandboxCredentialFile{
+						{
+							Path:       "~/.config/token.json",
+							Mode:       "mask",
+							Decode:     "jwt",
+							MaskClaims: []string{"sub", "email"},
+						},
+					},
+					EnvVars: []SettingsSandboxCredentialEnvVar{
+						{
+							Name:             "SERVICE_JWT",
+							Mode:             "mask",
+							Decode:           "jwt",
+							MaskClaims:       []string{"sub"},
+							OnExtractNoMatch: "warn",
+						},
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		creds := got["sandbox"].(map[string]interface{})["credentials"].(map[string]interface{})
+		file := creds["files"].([]interface{})[0].(map[string]interface{})
+		assert.Equal(t, "jwt", file["decode"])
+		assert.Equal(t, []interface{}{"sub", "email"}, file["maskClaims"])
+		env := creds["envVars"].([]interface{})[0].(map[string]interface{})
+		assert.Equal(t, "jwt", env["decode"])
+		assert.Equal(t, []interface{}{"sub"}, env["maskClaims"])
+		assert.Equal(t, "warn", env["onExtractNoMatch"])
+		assert.NotContains(t, env, "extract")
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		assert.Equal(t, []string{"sub", "email"}, out.Sandbox.Credentials.Files[0].MaskClaims)
+		assert.Equal(t, "jwt", out.Sandbox.Credentials.EnvVars[0].Decode)
+		assert.Equal(t, []string{"sub"}, out.Sandbox.Credentials.EnvVars[0].MaskClaims)
+	})
+
+	t.Run("deny entries omit every masking knob", func(t *testing.T) {
+		in := Settings{
+			Sandbox: &SettingsSandbox{
+				Credentials: &SettingsSandboxCredentials{
+					Files: []SettingsSandboxCredentialFile{
+						{Path: "~/.ssh/id_ed25519", Mode: "deny"},
+					},
+					EnvVars: []SettingsSandboxCredentialEnvVar{
+						{Name: "AWS_SECRET_ACCESS_KEY", Mode: "deny"},
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		creds := got["sandbox"].(map[string]interface{})["credentials"].(map[string]interface{})
+		for _, entry := range []map[string]interface{}{
+			creds["files"].([]interface{})[0].(map[string]interface{}),
+			creds["envVars"].([]interface{})[0].(map[string]interface{}),
+		} {
+			for _, k := range []string{
+				"extract", "onExtractNoMatch", "decode", "maskClaims",
+				"maskDuplicates", "injectHosts",
+			} {
+				assert.NotContains(t, entry, k)
+			}
+		}
+	})
+
 	t.Run("nil credentials omits key", func(t *testing.T) {
 		data, err := json.Marshal(Settings{Sandbox: &SettingsSandbox{}})
 		require.NoError(t, err)
