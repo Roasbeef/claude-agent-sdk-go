@@ -248,6 +248,10 @@ const (
 	// MessageOriginKindObserverActivity marks an activity digest routed to
 	// the observer. It carries no additional fields.
 	MessageOriginKindObserverActivity MessageOriginKind = "observer-activity"
+	// MessageOriginKindUnclassified marks a delivery the harness could not
+	// attribute to any of the other kinds. It carries no additional fields
+	// (sdk.d.ts v0.3.226 L4227).
+	MessageOriginKindUnclassified MessageOriginKind = "unclassified"
 )
 
 // MessageOrigin describes the originating actor for a message.
@@ -278,13 +282,10 @@ type MessageOrigin struct {
 	// only when the turn is exactly one harness-formed envelope; render it
 	// instead of re-parsing the message text (sdk.d.ts v0.3.207).
 	Body string `json:"body,omitempty"`
-	// Subkind refines the "task-notification" kind. It is set to
-	// MessageOriginSubkindScheduledTrigger when the delivery is the fired
-	// stored prompt of a scheduled task/routine (stamped from server-asserted
-	// provenance; the schedule attests storage, not authorship). The harness
-	// then frames the message as the session's assigned task instead of the
-	// generic background-notification frame. Absent on webhook, PR-steward,
-	// plugin, and background-event deliveries (sdk.d.ts v0.3.215).
+	// Subkind refines the "task-notification" kind: a scheduled trigger or a
+	// coordinator co-member SendMessage delivery. Absent on webhook,
+	// PR-steward, plugin, and background-event deliveries (sdk.d.ts v0.3.226
+	// L4223).
 	Subkind MessageOriginSubkind `json:"subkind,omitempty"`
 }
 
@@ -293,8 +294,18 @@ type MessageOriginSubkind string
 
 const (
 	// MessageOriginSubkindScheduledTrigger marks a "task-notification" origin
-	// whose delivery is the fired stored prompt of a scheduled task/routine.
+	// whose delivery is the fired stored prompt of a scheduled task/routine
+	// (stamped from server-asserted provenance; the schedule attests storage,
+	// not authorship). The harness frames it as the session's assigned task
+	// instead of the generic background-notification frame.
 	MessageOriginSubkindScheduledTrigger MessageOriginSubkind = "scheduled-trigger"
+	// MessageOriginSubkindPeerSendMessage marks a "task-notification" origin
+	// whose delivery is a coordinator co-member SendMessage: model-authored
+	// text from another of the same user's sessions, verified by the
+	// server-stamped receiver co-membership. It carries task-notification
+	// prompt authority but stays distinguishable so the receive-side
+	// crossSessionInbound setting can apply to it (sdk.d.ts v0.3.226 L4223).
+	MessageOriginSubkindPeerSendMessage MessageOriginSubkind = "peer-send-message"
 )
 
 // StreamEvent represents a progressive delta update during streaming.

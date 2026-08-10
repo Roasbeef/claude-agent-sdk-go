@@ -1660,6 +1660,57 @@ func TestMessageOriginObserverActivityRoundTrip(t *testing.T) {
 	assert.Empty(t, decoded.Origin.SenderTaskID)
 }
 
+func TestMessageOriginPeerSendMessageRoundTrip(t *testing.T) {
+	msg := ResultMessage{
+		Type:    "result",
+		Subtype: "success",
+		Origin: &MessageOrigin{
+			Kind:    MessageOriginKindTaskNotification,
+			Subkind: MessageOriginSubkindPeerSendMessage,
+		},
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &raw))
+	origin, ok := raw["origin"].(map[string]interface{})
+	require.True(t, ok, "origin must marshal to an object")
+	assert.Equal(t, "task-notification", origin["kind"])
+	assert.Equal(t, "peer-send-message", origin["subkind"])
+
+	var decoded ResultMessage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NotNil(t, decoded.Origin)
+	assert.Equal(t, MessageOriginKindTaskNotification, decoded.Origin.Kind)
+	assert.Equal(t, MessageOriginSubkindPeerSendMessage, decoded.Origin.Subkind)
+}
+
+func TestMessageOriginUnclassifiedRoundTrip(t *testing.T) {
+	msg := ResultMessage{
+		Type:    "result",
+		Subtype: "success",
+		Origin:  &MessageOrigin{Kind: MessageOriginKindUnclassified},
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var raw map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &raw))
+	origin, ok := raw["origin"].(map[string]interface{})
+	require.True(t, ok, "origin must marshal to an object")
+	assert.Equal(t, "unclassified", origin["kind"])
+	assert.NotContains(t, origin, "from")
+	assert.NotContains(t, origin, "subkind")
+
+	var decoded ResultMessage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	require.NotNil(t, decoded.Origin)
+	assert.Equal(t, MessageOriginKindUnclassified, decoded.Origin.Kind)
+}
+
 func TestResultMessageFieldAdditionsBackwardCompat(t *testing.T) {
 	input := []byte(`{
 		"type": "result",
