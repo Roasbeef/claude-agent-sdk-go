@@ -357,8 +357,15 @@ type Settings struct {
 	SubagentStatusLine              *SettingsCommand               `json:"subagentStatusLine,omitempty"`
 	EnabledPlugins                  map[string]interface{}         `json:"enabledPlugins,omitempty"`
 	ExtraKnownMarketplaces          map[string]SettingsMarketplace `json:"extraKnownMarketplaces,omitempty"`
-	StrictKnownMarketplaces         []SettingsMarketplaceSource    `json:"strictKnownMarketplaces,omitempty"`
-	BlockedMarketplaces             []SettingsMarketplaceSource    `json:"blockedMarketplaces,omitempty"`
+	// StrictKnownMarketplaces and BlockedMarketplaces are the managed-settings
+	// policy lists, and are the only place a github entry may use the
+	// owner-wildcard form {"source":"github","repo":"owner/*"} to match every
+	// repository under that owner. Everywhere else — marketplace add,
+	// ExtraKnownMarketplaces, known_marketplaces.json — "repo" must name a
+	// single repository, and a wildcard is taken literally and fails to clone
+	// (sdk.d.ts v0.3.226 L5909, L6112).
+	StrictKnownMarketplaces []SettingsMarketplaceSource `json:"strictKnownMarketplaces,omitempty"`
+	BlockedMarketplaces     []SettingsMarketplaceSource `json:"blockedMarketplaces,omitempty"`
 	// DisableSideloadFlags, when true and set in managed settings, rejects the
 	// --plugin-dir, --plugin-url, --agents, and non-sdk --mcp-config CLI flags
 	// at startup, closing the CLI-flag bypass of strictKnownMarketplaces.
@@ -707,7 +714,18 @@ const (
 	SettingsMarketplaceSourceHostPattern SettingsMarketplaceSourceKind = "hostPattern"
 	// SettingsMarketplaceSourcePathPattern identifies a pathPattern marketplace source. Mirrors sdk.d.ts v0.3.150 L4555.
 	SettingsMarketplaceSourcePathPattern SettingsMarketplaceSourceKind = "pathPattern"
+	// SettingsMarketplaceSourceArchive identifies a zip-archive plugin source.
+	// Honors "url": string (HTTPS URL of the archive; the plugin root may sit at
+	// the top or one directory deep, as a single wrapping directory is stripped)
+	// and optional "sha256": string. When the digest is set every download is
+	// verified against it and a mismatch refuses the install; it also serves as
+	// the version identity when neither plugin.json nor the marketplace entry
+	// declares a version. Note the update signal is the version string, so
+	// changing only the digest while a version is declared does not trigger an
+	// update. Mirrors sdk.d.ts v0.3.226 L5869.
+	SettingsMarketplaceSourceArchive SettingsMarketplaceSourceKind = "archive"
 	// SettingsMarketplaceSourceUnsupported identifies a bare-tag unsupported marketplace source. Mirrors sdk.d.ts v0.3.150 L4619.
+	// Honors optional "error": string carrying why the source was rejected, per sdk.d.ts v0.3.226 L5871.
 	SettingsMarketplaceSourceUnsupported SettingsMarketplaceSourceKind = "unsupported"
 )
 
