@@ -363,6 +363,30 @@ func TestSettingsManagedOrgFieldsJSON(t *testing.T) {
 		assert.True(t, *out.VoiceEnabled)
 	})
 
+	t.Run("v0.3.226 fields round-trip and omit when zero", func(t *testing.T) {
+		empty, err := json.Marshal(Settings{})
+		require.NoError(t, err)
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(empty, &got))
+		assert.NotContains(t, got, "dialogExpiry")
+		assert.NotContains(t, got, "crossSessionInbound")
+
+		in := Settings{
+			DialogExpiry:        "never",
+			CrossSessionInbound: "hold",
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, "never", got["dialogExpiry"])
+		assert.Equal(t, "hold", got["crossSessionInbound"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		assert.Equal(t, "never", out.DialogExpiry)
+		assert.Equal(t, "hold", out.CrossSessionInbound)
+	})
+
 	t.Run("all managed-org fields round-trip together", func(t *testing.T) {
 		v := true
 		timeout := 5000

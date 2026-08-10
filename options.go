@@ -396,13 +396,24 @@ type Settings struct {
 	// auto-continue with any answers selected so far. Defaults to never —
 	// auto-continue only runs when explicitly set to "60s", "5m", or "10m".
 	// Mirrors sdk.d.ts v0.3.201.
-	AskUserQuestionTimeout string                          `json:"askUserQuestionTimeout,omitempty"`
-	Agent                  string                          `json:"agent,omitempty"`
-	CompanyAnnouncements   []string                        `json:"companyAnnouncements,omitempty"`
-	PluginConfigs          map[string]SettingsPluginConfig `json:"pluginConfigs,omitempty"`
-	Remote                 *SettingsRemote                 `json:"remote,omitempty"`
-	AutoUpdatesChannel     string                          `json:"autoUpdatesChannel,omitempty"`
-	MinimumVersion         string                          `json:"minimumVersion,omitempty"`
+	AskUserQuestionTimeout string `json:"askUserQuestionTimeout,omitempty"`
+	// DialogExpiry caps how long a permission or user dialog forwarded to a
+	// remote client stays parked awaiting an answer, and how long a HELD
+	// cross-session message awaits approval, before either resolves to its safe
+	// no-action default (cancelled / dropped-with-denial). "60s", "5m", "10m",
+	// or "never" to disable the deadline; defaults to 5m, matching the
+	// long-standing remote-dialog deadline. Local-only permission prompts are
+	// unaffected. CLAUDE_CODE_USER_DIALOG_TIMEOUT_MS overrides it. Read from
+	// trusted sources only, never a checked-in repo settings file (sdk.d.ts
+	// v0.3.226 L6654).
+	DialogExpiry string `json:"dialogExpiry,omitempty"`
+
+	Agent                string                          `json:"agent,omitempty"`
+	CompanyAnnouncements []string                        `json:"companyAnnouncements,omitempty"`
+	PluginConfigs        map[string]SettingsPluginConfig `json:"pluginConfigs,omitempty"`
+	Remote               *SettingsRemote                 `json:"remote,omitempty"`
+	AutoUpdatesChannel   string                          `json:"autoUpdatesChannel,omitempty"`
+	MinimumVersion       string                          `json:"minimumVersion,omitempty"`
 	// RequiredMinimumVersion prevents startup below the managed minimum version. Honored only from managed (policy) settings. Mirrors sdk.d.ts v0.3.168 L5488.
 	RequiredMinimumVersion string `json:"requiredMinimumVersion,omitempty"`
 	// RequiredMaximumVersion prevents startup above the managed maximum version. Honored only from managed (policy) settings. Mirrors sdk.d.ts v0.3.168 L5492.
@@ -484,6 +495,16 @@ type Settings struct {
 	IsolatePeerMachines *bool `json:"isolatePeerMachines,omitempty"`
 	// DaemonColdStart controls daemon behavior when no background service is running. Mirrors sdk.d.ts v0.3.150 L5411.
 	DaemonColdStart string `json:"daemonColdStart,omitempty"`
+	// CrossSessionInbound governs inbound cross-session peer messages
+	// (SendMessage from the user's other sessions): "accept" delivers them,
+	// "hold" parks them for review without letting Claude act, "refuse" opts
+	// this session out. An explicit value always wins. Unset means mode parity:
+	// a message auto-delivers only when the sending session's permission-mode
+	// class matches this one (bypass<->bypass or prompting<->prompting), a
+	// mismatched sender is held for approval, and a sender that asserts no
+	// class is held only while this session bypasses permission prompts
+	// (sdk.d.ts v0.3.226 L6899).
+	CrossSessionInbound string `json:"crossSessionInbound,omitempty"`
 	// DisableDeepLinkRegistration prevents claude-cli:// protocol handler registration when set to "disable". Mirrors sdk.d.ts v0.3.150 L5427.
 	DisableDeepLinkRegistration string `json:"disableDeepLinkRegistration,omitempty"`
 	// DefaultView controls the default transcript view. Mirrors sdk.d.ts v0.3.150 L5431.
