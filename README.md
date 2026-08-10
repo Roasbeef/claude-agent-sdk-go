@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.220 catchup work, using Go idioms where the API shape differs.
+v0.3.226 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -210,7 +210,7 @@ For detailed guides and examples, see [docs/examples/](docs/examples/):
 ## TypeScript SDK Parity
 
 The SDK tracks the upstream TypeScript Agent SDK release cadence. Coverage
-landed across four catchup cycles.
+landed across a series of catchup cycles, one per upstream release picked up.
 
 The v0.2.119 catchup added:
 
@@ -552,7 +552,7 @@ fields, #183 rewind skippedLinks, #184 DirectoryAdded hook, #185 interrupt
 cancel_queued, #186 sandbox strictAllowlist/disabled, #187 settings parity,
 plus this docs refresh.
 
-Deferred this cycle (Go models no matching surface):
+Deferred in that cycle (Go models no matching surface):
 
 - `sdk-tools.d.ts` churn (e.g. `liveSubscription` on a tool output) — not in the
   curated tool-input subset, the same standing deferral as prior cycles.
@@ -568,6 +568,73 @@ Deferred this cycle (Go models no matching surface):
   canonical-name matching, add_directory strict-subdirectory + duplicate-denied,
   mtime "integer milliseconds" phrasing, AgentToolCompletedOutput, force-
   overwrite upsert).
+
+The v0.3.226 catchup added:
+
+- `SessionOptions.ResumeDropsTurn` + `WithResumeDropsTurn` — the fork-point guard
+  for a truncating `ResumeSessionAt` resume. It names the prompt UUID of the turn
+  being discarded, and the CLI refuses the resume when anything else (a queued
+  user message, a task notification absorbed mid-turn) falls in the discarded
+  range. The refusal is a deterministic `error_during_execution` result prefixed
+  `Resume rejected by --resume-drops-turn:` — route it to rewind-recovery, not a
+  retry.
+- `MessageOriginKindUnclassified` and `MessageOriginSubkindPeerSendMessage` — the
+  latter marks a coordinator co-member `SendMessage` delivery, which carries
+  task-notification prompt authority but stays distinguishable so the new
+  `CrossSessionInbound` setting can apply to it.
+- `ModelRefusalFallbackMessage.Scope` (`session` / `local`) — whether the fallback
+  swapped the session model or only served one subagent, side-question, or
+  background-fork response. Absent from older CLIs; empty means `session`.
+- Structured sandbox credential masking: `mask` mode on `credentials.files` plus
+  `Extract`, `OnExtractNoMatch`, `Decode: "jwt"`, `MaskClaims` on files and env
+  vars, `MaskDuplicates` and `InjectHosts` on files.
+- Sandbox credential SigV4 re-signing: `AWSPairs` (explicit key-id/secret/session
+  groupings for non-standard variable names) and `SigV4` policies (`deny` by
+  default, or `passthrough`) for the streaming, presigned, and SigV4A shapes the
+  proxy cannot re-sign.
+- `Settings` fields `DialogExpiry` (how long a remote-forwarded dialog or a HELD
+  cross-session message stays parked before resolving to its safe default) and
+  `CrossSessionInbound` (`accept` / `hold` / `refuse` for inbound peer
+  `SendMessage`; unset means permission-mode-class parity, not accept).
+- `SettingsMarketplaceSourceArchive` — zip-archive plugin sources (`url`, optional
+  `sha256` that pins the download and doubles as version identity), plus the
+  `error` string on `unsupported` sources and the `owner/*` wildcard that github
+  entries may use in the managed-settings policy lists and nowhere else.
+
+PRs in this cycle (squash-merged): #190 resumeDropsTurn, #191 origin
+unclassified/peer-send-message, #192 refusal fallback scope, #193 credential
+masking, #194 credential SigV4, #195 settings parity, #196 archive marketplace
+source, plus this docs refresh.
+
+Deferred this cycle (Go models no matching surface, or needs a design call):
+
+- `OnElicitation` / `OnUserDialog` out-of-band responses — both callbacks now
+  receive the control envelope's `requestId` and may return `null` to suppress
+  the SDK's own `control_response` because the consumer already answered the
+  request out of band. Same transport-contract family as the `canUseTool` null
+  path deferred in v0.3.201, and `requestId` on its own is useless without the
+  suppression channel, so this needs an API design call (sentinel error vs. a
+  third return value) rather than a mechanical port.
+- `bridge.d.ts` failure classification (`CredentialsRejection` /
+  `isCredentialsRejection`, `CreateSessionFailure.reason`, the `request_rejected`
+  and `malformed_response` terminal reasons) — browser bridge, not the
+  wire/control protocol the Go SDK models.
+- `sdk-tools.d.ts` churn (`Feedback` gaining `failure_mode` / `task_category`,
+  `RemoteTrigger` gaining `create_webhook_trigger`) — neither tool is in the
+  curated `tool_inputs.go` subset, the standing deferral.
+- Zod-internal schema plumbing (`ZodPipe<ZodTransform<…>>` wrappers on the
+  sandbox credential arrays, widened `bwrapPath` / `socatPath` transform input) —
+  TS-side validation machinery with no wire change.
+- Upstream reformatting: `import * as z` and the single-quote rewrite of
+  `EXIT_REASONS`, `HOOK_EVENTS`, `ORG_POLICY_LIMIT_PREFIXES`, and the `USAGE_*`
+  prefix arrays. No value changed.
+
+One pre-existing divergence surfaced while diffing this release and is left as
+follow-up work: with no `OnUserDialog` registered, the Go SDK answers a
+`request_user_dialog` with `cancelled`, while the TS SDK has stayed silent since
+at least v0.3.220 so a renderer-bearing client or the worker's park deadline can
+settle it. v0.3.226 only reworded the doc comment to match the behavior it
+already had.
 
 Some areas remain intentionally limited by the CLI or integration harness:
 desktop/IDE-only settings are not modeled exhaustively, several runtime control

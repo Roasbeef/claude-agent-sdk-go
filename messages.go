@@ -212,10 +212,27 @@ type ResultMessage struct {
 	IsError                  bool   `json:"is_error,omitempty"`                      // Whether this is an error result
 	NumTurns                 int    `json:"num_turns,omitempty"`                     // Number of conversation turns
 
-	TotalCostUSD float64 `json:"total_cost_usd,omitempty"` // Total cost in USD
+	// TotalCostUSD is the cumulative estimated cost in USD for this query()
+	// call, covering the same calls as ModelUsage and sharing its lifecycle:
+	// cumulative across turns in streaming-input sessions, so read the latest
+	// result rather than summing across results. Crash and startup-error
+	// results may carry zeroed values, resumed sessions start fresh, and a
+	// mid-session /clear resets the running total. An estimate, not a billing
+	// statement.
+	TotalCostUSD float64 `json:"total_cost_usd,omitempty"`
 
-	Usage      *NonNullableUsage     `json:"usage,omitempty"`      // Token usage
-	ModelUsage map[string]ModelUsage `json:"modelUsage,omitempty"` // Per-model usage
+	// Usage covers the MAIN AGENT LOOP ONLY — it excludes Task subagent,
+	// sidechain, and auxiliary model calls, and is per-turn in streaming-input
+	// sessions. Prefer ModelUsage for token and cost accounting.
+	Usage *NonNullableUsage `json:"usage,omitempty"`
+	// ModelUsage holds per-model totals for every model call made through the
+	// query pipeline: main loop, Task subagents, sidechains, and internal calls
+	// such as compaction and Workflow agents. Cumulative across turns in
+	// streaming-input sessions, so read the latest result rather than summing.
+	// Internal helper calls outside the pipeline (the permission classifier,
+	// token-count probes) are excluded. This is the field to account on; treat
+	// it as an estimate, not a billing statement.
+	ModelUsage map[string]ModelUsage `json:"modelUsage,omitempty"`
 
 	PermissionDenials []PermissionDenial `json:"permission_denials,omitempty"` // Denied permissions
 	StructuredOutput  interface{}        `json:"structured_output,omitempty"`  // Structured output (if OutputFormat set)
