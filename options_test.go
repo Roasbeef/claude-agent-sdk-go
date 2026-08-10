@@ -978,6 +978,82 @@ func TestSettingsSandboxFieldsJSON(t *testing.T) {
 		}
 	})
 
+	t.Run("credentials awsPairs and sigv4 round-trip", func(t *testing.T) {
+		in := Settings{
+			Sandbox: &SettingsSandbox{
+				Credentials: &SettingsSandboxCredentials{
+					EnvVars: []SettingsSandboxCredentialEnvVar{
+						{Name: "CORP_AWS_KEY_ID", Mode: "mask"},
+						{Name: "CORP_AWS_SECRET", Mode: "mask"},
+					},
+					AWSPairs: []SettingsSandboxCredentialAWSPair{
+						{
+							AccessKeyIDVar:     "CORP_AWS_KEY_ID",
+							SecretAccessKeyVar: "CORP_AWS_SECRET",
+						},
+						{
+							AccessKeyIDVar:     "TMP_KEY_ID",
+							SecretAccessKeyVar: "TMP_SECRET",
+							SessionTokenVar:    "TMP_SESSION_TOKEN",
+						},
+					},
+					SigV4: &SettingsSandboxCredentialSigV4{
+						Streaming: "passthrough",
+						Presigned: "deny",
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		creds := got["sandbox"].(map[string]interface{})["credentials"].(map[string]interface{})
+		pairs := creds["awsPairs"].([]interface{})
+		require.Len(t, pairs, 2)
+		first := pairs[0].(map[string]interface{})
+		assert.Equal(t, "CORP_AWS_KEY_ID", first["accessKeyIdVar"])
+		assert.Equal(t, "CORP_AWS_SECRET", first["secretAccessKeyVar"])
+		assert.NotContains(t, first, "sessionTokenVar")
+		assert.Equal(t, "TMP_SESSION_TOKEN", pairs[1].(map[string]interface{})["sessionTokenVar"])
+		sigv4 := creds["sigv4"].(map[string]interface{})
+		assert.Equal(t, "passthrough", sigv4["streaming"])
+		assert.Equal(t, "deny", sigv4["presigned"])
+		assert.NotContains(t, sigv4, "sigv4a")
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.Len(t, out.Sandbox.Credentials.AWSPairs, 2)
+		assert.Equal(t, "CORP_AWS_KEY_ID", out.Sandbox.Credentials.AWSPairs[0].AccessKeyIDVar)
+		assert.Empty(t, out.Sandbox.Credentials.AWSPairs[0].SessionTokenVar)
+		assert.Equal(t, "TMP_SESSION_TOKEN", out.Sandbox.Credentials.AWSPairs[1].SessionTokenVar)
+		require.NotNil(t, out.Sandbox.Credentials.SigV4)
+		assert.Equal(t, "passthrough", out.Sandbox.Credentials.SigV4.Streaming)
+		assert.Equal(t, "deny", out.Sandbox.Credentials.SigV4.Presigned)
+		assert.Empty(t, out.Sandbox.Credentials.SigV4.SigV4A)
+	})
+
+	t.Run("credentials without awsPairs or sigv4 omit both keys", func(t *testing.T) {
+		in := Settings{
+			Sandbox: &SettingsSandbox{
+				Credentials: &SettingsSandboxCredentials{
+					EnvVars: []SettingsSandboxCredentialEnvVar{
+						{Name: "AWS_SECRET_ACCESS_KEY", Mode: "mask"},
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		creds := got["sandbox"].(map[string]interface{})["credentials"].(map[string]interface{})
+		assert.NotContains(t, creds, "awsPairs")
+		assert.NotContains(t, creds, "sigv4")
+	})
+
 	t.Run("nil credentials omits key", func(t *testing.T) {
 		data, err := json.Marshal(Settings{Sandbox: &SettingsSandbox{}})
 		require.NoError(t, err)
