@@ -2345,3 +2345,18 @@ func TestIntegrationModelRefusalNoFallback(t *testing.T) {
 	skipIfNoCLI(t)
 	t.Skip("not triggerable from CLI: model_refusal_no_fallback requires the model to end a turn with stop_reason \"refusal\" while no fallback model is configured - a server-side refusal condition that cannot be deterministically reproduced in an integration run; tracked in INTEGRATION-FOLLOWUPS.md")
 }
+
+func TestIntegrationResumeDropsTurn(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// TODO: Backfill once the installed CLI carries --resume-drops-turn. The
+	// flag is absent from the 2.1.222 binary this suite runs against (the
+	// neighboring --resume-session-at is present), so a live run would die on
+	// an unknown option rather than exercise the fork-point guard. The
+	// argv-shim pattern in TestIntegrationSettingsOptions is the shape to use:
+	// build a session, fork at its last chain entry, and assert the CLI
+	// refuses with "Resume rejected by --resume-drops-turn:" when an
+	// unattributable entry sits in the discarded range.
+	t.Skip("not triggerable from CLI: installed CLI 2.1.222 does not implement --resume-drops-turn; tracked in INTEGRATION-FOLLOWUPS.md")
+}

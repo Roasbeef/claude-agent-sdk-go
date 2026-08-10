@@ -1322,6 +1322,19 @@ func TestWithOnUserDialog(t *testing.T) {
 	})
 }
 
+func TestWithResumeDropsTurn(t *testing.T) {
+	t.Run("builder sets the fork-point guard", func(t *testing.T) {
+		opts := NewOptions()
+		require.Empty(t, opts.SessionOptions.ResumeDropsTurn)
+
+		WithResumeSessionAt("chain-uuid-1")(opts)
+		WithResumeDropsTurn("prompt-uuid-2")(opts)
+
+		assert.Equal(t, "chain-uuid-1", opts.SessionOptions.ResumeSessionAt)
+		assert.Equal(t, "prompt-uuid-2", opts.SessionOptions.ResumeDropsTurn)
+	})
+}
+
 func TestUserDialogRequest_ToolUseIDOmitempty(t *testing.T) {
 	t.Run("missing tool_use_id is absent on the wire", func(t *testing.T) {
 		req := UserDialogRequest{

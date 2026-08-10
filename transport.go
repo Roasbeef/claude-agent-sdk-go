@@ -159,6 +159,7 @@ func (t *SubprocessTransport) SetStderrLogger(w io.Writer) {
 // - --resume: Resume an existing session by ID (if SessionOptions.Resume is set)
 // - --fork-session: Fork to a new session ID when resuming (if SessionOptions.ForkSession is set)
 // - --resume-session-at: Resume from a specific message UUID (if SessionOptions.ResumeSessionAt is set)
+// - --resume-drops-turn: Arm the fork-point guard (if SessionOptions.ResumeDropsTurn is set)
 //
 // Environment variables are set for:
 // - ANTHROPIC_API_KEY: API authentication
@@ -346,6 +347,12 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	// Add resume-session-at flag if set (used with --resume to resume from a specific message).
 	if t.options.SessionOptions.ResumeSessionAt != "" {
 		args = append(args, "--resume-session-at", t.options.SessionOptions.ResumeSessionAt)
+	}
+
+	// Add resume-drops-turn flag if set (arms the fork-point guard for a
+	// truncating --resume-session-at resume).
+	if t.options.SessionOptions.ResumeDropsTurn != "" {
+		args = append(args, "--resume-drops-turn", t.options.SessionOptions.ResumeDropsTurn)
 	}
 
 	// Add additional directories for tool access (e.g., /tmp for
