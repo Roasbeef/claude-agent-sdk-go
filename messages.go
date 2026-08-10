@@ -1096,16 +1096,36 @@ type APIRetryMessage struct {
 // MessageType implements Message.
 func (m APIRetryMessage) MessageType() string { return "system" }
 
+// ModelRefusalFallbackScope says how far a refusal fallback reached.
+type ModelRefusalFallbackScope string
+
+const (
+	// ModelRefusalFallbackScopeSession means the main thread fell back and the
+	// session model is swapped for good.
+	ModelRefusalFallbackScopeSession ModelRefusalFallbackScope = "session"
+	// ModelRefusalFallbackScopeLocal means a subagent, side question (/btw), or
+	// background fork fell back: only that response came from the fallback
+	// model and the session model is unchanged.
+	ModelRefusalFallbackScopeLocal ModelRefusalFallbackScope = "local"
+)
+
 // ModelRefusalFallbackMessage is emitted when the primary model ends the stream
 // with stop_reason "refusal" and the turn is retried once on a fallback model
-// with the swap made persistent for the session (Direction "retry"). "revert"
+// (Direction "retry"). Scope says whether the swap outlives the turn. "revert"
 // and "sticky" are retained in the Direction enum for SDK-consumer compat and
 // are no longer emitted.
 type ModelRefusalFallbackMessage struct {
-	Type          string  `json:"type"`           // Always "system"
-	Subtype       string  `json:"subtype"`        // "model_refusal_fallback"
-	Trigger       string  `json:"trigger"`        // Always "refusal"
-	Direction     string  `json:"direction"`      // "retry" | "revert" | "sticky"
+	Type      string `json:"type"`      // Always "system"
+	Subtype   string `json:"subtype"`   // "model_refusal_fallback"
+	Trigger   string `json:"trigger"`   // Always "refusal"
+	Direction string `json:"direction"` // "retry" | "revert" | "sticky"
+
+	// Scope distinguishes a session-wide swap from a one-off local fallback.
+	// Absent from older CLIs, which only ever emitted the session-wide form —
+	// treat empty as ModelRefusalFallbackScopeSession (sdk.d.ts v0.3.226
+	// L4265).
+	Scope ModelRefusalFallbackScope `json:"scope,omitempty"`
+
 	OriginalModel string  `json:"original_model"` // Model that refused
 	FallbackModel string  `json:"fallback_model"` // Model the turn retried on
 	RequestID     *string `json:"request_id"`     // Upstream request id; nil for JSON null

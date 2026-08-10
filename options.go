@@ -789,7 +789,9 @@ type SettingsSandbox struct {
 // sandbox.
 type SettingsSandboxCredentials struct {
 	// Files are credential files or directories to protect. "deny" blocks
-	// reads inside the sandbox.
+	// reads inside the sandbox; "mask" substitutes a sentinel inside the
+	// sandbox (whole-file, or per-Extract capture) and injects the real value
+	// at the proxy. On macOS and Windows "mask" degrades to "deny".
 	Files []SettingsSandboxCredentialFile `json:"files,omitempty"`
 	// EnvVars are environment variables to protect. "deny" unsets the
 	// variable for sandboxed commands; "mask" substitutes a sentinel inside
@@ -862,8 +864,44 @@ type SettingsSandboxCredentialFile struct {
 	// sandbox.filesystem.* paths: absolute, ~ expanded, or relative to the
 	// settings file root.
 	Path string `json:"path"`
-	// Mode is the access mode for this path. Only "deny" is supported.
+	// Mode is the access mode for this path. "deny" blocks reads inside the
+	// sandbox; "mask" shows sandboxed commands a sentinel-substituted copy
+	// (whole-file, or only the spans captured by Extract) and the host proxy
+	// swaps sentinel->real on egress to InjectHosts. On macOS and Windows
+	// "mask" currently degrades to "deny" (sdk.d.ts v0.3.226 L6444).
 	Mode string `json:"mode"`
+	// Extract is an optional regex for structured masking. Applied globally to
+	// the file; capture group 1 of each match is a credential value and only
+	// those spans become sentinels, so a tool that parses the file (.netrc,
+	// JSON, YAML) still succeeds. Without it the whole file content becomes one
+	// sentinel. Accepted but ignored for "deny".
+	Extract string `json:"extract,omitempty"`
+	// OnExtractNoMatch governs the case where Extract matches nothing — or,
+	// with Decode, where no candidate verifies. "warn" (default) leaves the
+	// file readable as-is (fail-open, for credentials that may legitimately be
+	// absent); "deny" degrades the entry to mode "deny" (fail-closed), and is
+	// treated as "error" under sandbox.filesystem.disabled since read-denies
+	// are dropped there; "error" aborts at sandbox setup.
+	OnExtractNoMatch string `json:"onExtractNoMatch,omitempty"`
+	// Decode names an encoded-credential format for "mask" mode. "jwt" locates
+	// candidates with a built-in JWT regex (or Extract, if set), verifies they
+	// really are JWTs, and swaps in a structurally valid fake so client-side
+	// token parsing inside the sandbox keeps working.
+	Decode string `json:"decode,omitempty"`
+	// MaskClaims names top-level payload claims to mask inside each decoded
+	// value instead of replacing the whole token; the token is rebuilt around
+	// the modified payload so non-secret claims keep reading. Requires Decode.
+	MaskClaims []string `json:"maskClaims,omitempty"`
+	// MaskDuplicates also replaces verbatim occurrences of each captured value
+	// outside the matched spans — for a secret repeated where the regex does
+	// not reach. Matches raw substrings, so short or common values can corrupt
+	// unrelated content; meant for long, high-entropy secrets. Defaults false.
+	MaskDuplicates *bool `json:"maskDuplicates,omitempty"`
+	// InjectHosts optionally narrows where the proxy substitutes this
+	// credential. Only meaningful for "mask". If unset, defaults to
+	// network.allowedDomains — injected at every reachable host. Each entry
+	// must be reachable via network.allowedDomains.
+	InjectHosts []string `json:"injectHosts,omitempty"`
 }
 
 // SettingsSandboxCredentialEnvVar protects a single environment variable.
@@ -875,6 +913,32 @@ type SettingsSandboxCredentialEnvVar struct {
 	// value and the host proxy swaps sentinel->real on egress to
 	// InjectHosts (sdk.d.ts v0.3.201).
 	Mode string `json:"mode"`
+	// Extract is an optional regex for structured masking. Applied globally to
+	// the value; capture group 1 of each match is a credential value and only
+	// those spans become sentinels, so a composite value (a DATABASE_URL
+	// connection string, a KEY:SECRET pair) still parses inside the sandbox.
+	// Without it the whole value becomes one sentinel. Cannot be combined with
+	// Decode — the decode path never consults it.
+	Extract string `json:"extract,omitempty"`
+	// OnExtractNoMatch governs the case where Extract matches nothing. "warn"
+	// (default) lets the variable through unmasked (fail-open); "deny" unsets
+	// it inside the sandbox (fail-closed); "error" aborts at sandbox setup.
+	// Only meaningful when Mode is "mask" and Extract is set without Decode: a
+	// mask entry carrying Decode takes the decode path and never consults this
+	// field, so "deny" and "error" are rejected there and only "warn" is
+	// accepted.
+	OnExtractNoMatch string `json:"onExtractNoMatch,omitempty"`
+	// Decode names an encoded-credential format for "mask" mode. "jwt"
+	// verifies the whole value really is a JWT and swaps in a structurally
+	// valid fake so client-side token parsing inside the sandbox keeps
+	// working; a value that does not verify is left unmasked with a stderr
+	// warning. Cannot be combined with Extract.
+	Decode string `json:"decode,omitempty"`
+	// MaskClaims names top-level payload claims to mask inside the decoded
+	// value instead of replacing the whole token; the token is rebuilt around
+	// the modified payload so claim-reading clients keep working. Requires
+	// Decode.
+	MaskClaims []string `json:"maskClaims,omitempty"`
 	// InjectHosts optionally narrows where the proxy substitutes this
 	// credential. Only meaningful when Mode is "mask"; accepted but ignored
 	// for "deny". If unset, defaults to network.allowedDomains — the

@@ -3002,6 +3002,7 @@ func TestParseMessageModelRefusalFallback(t *testing.T) {
 			"subtype": "model_refusal_fallback",
 			"trigger": "refusal",
 			"direction": "retry",
+			"scope": "session",
 			"original_model": "claude-opus-4-8",
 			"fallback_model": "claude-sonnet-4-6",
 			"request_id": "req_01HXYZ",
@@ -3023,6 +3024,7 @@ func TestParseMessageModelRefusalFallback(t *testing.T) {
 		assert.Equal(t, "model_refusal_fallback", fb.Subtype)
 		assert.Equal(t, "refusal", fb.Trigger)
 		assert.Equal(t, "retry", fb.Direction)
+		assert.Equal(t, ModelRefusalFallbackScopeSession, fb.Scope)
 		assert.Equal(t, "claude-opus-4-8", fb.OriginalModel)
 		assert.Equal(t, "claude-sonnet-4-6", fb.FallbackModel)
 		require.NotNil(t, fb.RequestID)
@@ -3060,6 +3062,30 @@ func TestParseMessageModelRefusalFallback(t *testing.T) {
 		assert.Nil(t, fb.APIRefusalExplanation)
 		assert.Nil(t, fb.RetractedMessageUUIDs)
 		assert.Nil(t, fb.RefusedUserMessageUUID)
+		assert.Empty(t, fb.Scope, "absent scope must stay empty so callers can apply the session default")
+	})
+
+	t.Run("local scope: subagent fallback leaves the session model alone", func(t *testing.T) {
+		input := `{
+			"type": "system",
+			"subtype": "model_refusal_fallback",
+			"trigger": "refusal",
+			"direction": "retry",
+			"scope": "local",
+			"original_model": "claude-opus-4-8",
+			"fallback_model": "claude-sonnet-4-6",
+			"request_id": "req_01HXYZ2",
+			"content": "Retried on a fallback model.",
+			"uuid": "550e8400-e29b-41d4-a716-446655440303",
+			"session_id": "sess_refusal_003"
+		}`
+
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+
+		fb, ok := msg.(ModelRefusalFallbackMessage)
+		require.True(t, ok, "expected ModelRefusalFallbackMessage")
+		assert.Equal(t, ModelRefusalFallbackScopeLocal, fb.Scope)
 	})
 }
 
