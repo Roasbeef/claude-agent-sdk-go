@@ -1364,6 +1364,91 @@ func TestSettingsMarketplaceSourceVariants(t *testing.T) {
 		assert.Len(t, got, 1)
 	})
 
+	t.Run("archive source round-trips with url and sha256", func(t *testing.T) {
+		in := Settings{
+			ExtraKnownMarketplaces: map[string]SettingsMarketplace{
+				"vendor-bundle": {
+					Source: SettingsMarketplaceSource{
+						"source": string(SettingsMarketplaceSourceArchive),
+						"url":    "https://example.com/plugins/bundle.zip",
+						"sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		got := out.ExtraKnownMarketplaces["vendor-bundle"].Source
+		assert.Equal(t, "archive", got["source"])
+		assert.Equal(t, "https://example.com/plugins/bundle.zip", got["url"])
+		assert.Equal(t, "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08", got["sha256"])
+	})
+
+	t.Run("archive source round-trips without sha256", func(t *testing.T) {
+		in := Settings{
+			ExtraKnownMarketplaces: map[string]SettingsMarketplace{
+				"vendor-bundle": {
+					Source: SettingsMarketplaceSource{
+						"source": string(SettingsMarketplaceSourceArchive),
+						"url":    "https://example.com/plugins/bundle.zip",
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		got := out.ExtraKnownMarketplaces["vendor-bundle"].Source
+		assert.Len(t, got, 2)
+		assert.NotContains(t, got, "sha256")
+	})
+
+	t.Run("unsupported source carries an error string", func(t *testing.T) {
+		in := Settings{
+			ExtraKnownMarketplaces: map[string]SettingsMarketplace{
+				"legacy": {
+					Source: SettingsMarketplaceSource{
+						"source": string(SettingsMarketplaceSourceUnsupported),
+						"error":  "archive digest mismatch",
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		got := out.ExtraKnownMarketplaces["legacy"].Source
+		assert.Equal(t, "unsupported", got["source"])
+		assert.Equal(t, "archive digest mismatch", got["error"])
+	})
+
+	t.Run("github owner wildcard round-trips in policy lists", func(t *testing.T) {
+		in := Settings{
+			StrictKnownMarketplaces: []SettingsMarketplaceSource{
+				{"source": string(SettingsMarketplaceSourceGithub), "repo": "anthropics/*"},
+			},
+			BlockedMarketplaces: []SettingsMarketplaceSource{
+				{"source": string(SettingsMarketplaceSourceGithub), "repo": "untrusted/*"},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.Len(t, out.StrictKnownMarketplaces, 1)
+		assert.Equal(t, "anthropics/*", out.StrictKnownMarketplaces[0]["repo"])
+		require.Len(t, out.BlockedMarketplaces, 1)
+		assert.Equal(t, "untrusted/*", out.BlockedMarketplaces[0]["repo"])
+	})
+
 	t.Run("github variant still round-trips alongside", func(t *testing.T) {
 		in := Settings{
 			ExtraKnownMarketplaces: map[string]SettingsMarketplace{
