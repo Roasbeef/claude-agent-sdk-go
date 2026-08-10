@@ -1695,6 +1695,57 @@ func TestSubprocessTransportSessionOptions(t *testing.T) {
 	assert.Contains(t, runner.StartArgs, "msg-uuid-456")
 }
 
+// TestSubprocessTransportResumeDropsTurn verifies the fork-point guard flag is
+// emitted with its UUID only when SessionOptions.ResumeDropsTurn is set.
+func TestSubprocessTransportResumeDropsTurn(t *testing.T) {
+	flagValue := func(t *testing.T, args []string, flag string) (string, bool) {
+		t.Helper()
+		for i, arg := range args {
+			if arg != flag {
+				continue
+			}
+			require.Less(t, i+1, len(args), "expected value after %s in %v", flag, args)
+			return args[i+1], true
+		}
+		return "", false
+	}
+
+	t.Run("set", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := &Options{
+			SessionOptions: SessionOptions{
+				Resume:          "session-123",
+				ResumeSessionAt: "msg-uuid-456",
+				ResumeDropsTurn: "prompt-uuid-789",
+			},
+		}
+
+		transport := NewSubprocessTransportWithRunner(runner, opts)
+		require.NoError(t, transport.Connect(context.Background()))
+		defer transport.Close()
+
+		value, ok := flagValue(t, runner.StartArgs, "--resume-drops-turn")
+		require.True(t, ok, "expected --resume-drops-turn in %v", runner.StartArgs)
+		assert.Equal(t, "prompt-uuid-789", value)
+	})
+
+	t.Run("unset", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := &Options{
+			SessionOptions: SessionOptions{
+				Resume:          "session-123",
+				ResumeSessionAt: "msg-uuid-456",
+			},
+		}
+
+		transport := NewSubprocessTransportWithRunner(runner, opts)
+		require.NoError(t, transport.Connect(context.Background()))
+		defer transport.Close()
+
+		assert.NotContains(t, runner.StartArgs, "--resume-drops-turn")
+	})
+}
+
 // TestSubprocessTransportForkFrom verifies that WithForkSession emits
 // --resume <parentID> --fork-session so the CLI branches a new session.
 func TestSubprocessTransportForkFrom(t *testing.T) {

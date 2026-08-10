@@ -1302,6 +1302,16 @@ func WithResumeSessionAt(messageUUID string) Option {
 	}
 }
 
+// WithResumeDropsTurn arms the fork-point guard for a truncating
+// WithResumeSessionAt resume: messageUUID is the prompt UUID of the turn being
+// discarded, and the CLI refuses the resume if anything else falls in the
+// discarded range. See SessionOptions.ResumeDropsTurn for the refusal contract.
+func WithResumeDropsTurn(messageUUID string) Option {
+	return func(o *Options) {
+		o.SessionOptions.ResumeDropsTurn = messageUUID
+	}
+}
+
 // WithMCPServers configures MCP servers for custom tool integration.
 func WithMCPServers(servers map[string]MCPServerConfig) Option {
 	return func(o *Options) {
@@ -2586,6 +2596,24 @@ type SessionOptions struct {
 	ForkFrom        string // Session ID to fork from
 	ForkSession     bool   // Fork to a new session ID when resuming
 	ResumeSessionAt string // Resume session at a specific message UUID
+
+	// ResumeDropsTurn declares, for a truncating ResumeSessionAt resume, the
+	// prompt UUID of the turn the resume intends to discard. The CLI checks
+	// at fork time that every entry past the fork point is attributable to
+	// that turn and refuses the resume when the discarded range holds
+	// anything else — a queued user message or task notification the session
+	// absorbed mid-turn that the caller had not observed. The refusal
+	// arrives as an error_during_execution result whose message starts with
+	// "Resume rejected by --resume-drops-turn:"; it is deterministic, so
+	// consumers must route it to their rewind-recovery path rather than
+	// retry the same fork request.
+	//
+	// Fork at the kept turn's LAST chain entry, whatever it is —
+	// ResumeSessionAt accepts any chain UUID, not just an assistant one.
+	// Consumed only by the headless boot path the Go SDK drives; interactive
+	// `claude --resume` ignores both fields. Empty leaves the unvalidated
+	// truncation behavior in place.
+	ResumeDropsTurn string
 }
 
 // MCPServerConfig configures an MCP server.
