@@ -140,6 +140,140 @@ type AssistantMessage struct {
 	// Empty for a successful turn. See AssistantMessageError for known
 	// variants.
 	Error AssistantMessageError `json:"error,omitempty"`
+
+	// ContextUsage is the structured twin of the /context report, carried on
+	// the synthetic assistant message that delivers the markdown table. Set
+	// only on /context results from CLIs new enough to attach it; the markdown
+	// in Message.Content stays the canonical fallback. A wrapper-level sibling
+	// — never inside message.content — so it is not replayed to the model
+	// (sdk.d.ts v0.3.233 L3058).
+	ContextUsage *AssistantContextUsage `json:"context_usage,omitempty"`
+}
+
+// AssistantContextUsage is the structured twin of the /context report: the data
+// a client needs to render the context-usage card without parsing the markdown
+// table.
+//
+// This is a deliberately smaller and more stable shape than
+// SDKControlGetContextUsageResponse, which mirrors the camelCase /context
+// *control response*. They are separate wire shapes — this one is snake_case and
+// rides on the assistant message. It evolves additively (new optional fields); a
+// breaking reshape would ship as a sibling field, so consumers can trust the
+// fields they know (sdk.d.ts v0.3.233 L3152).
+type AssistantContextUsage struct {
+	// Model is the main-loop model the usage was computed for.
+	Model string `json:"model"`
+
+	// TotalTokens is the estimated tokens in use, unclamped — it may exceed
+	// RawMaxTokens when over limit.
+	TotalTokens int `json:"total_tokens"`
+
+	// RawMaxTokens is the window usage is measured against: the resolved
+	// autocompact window — the model's believed limit, or a smaller
+	// compaction-policy window (a configured value, or e.g. the 200K boundary
+	// on 1M-window models).
+	RawMaxTokens int `json:"raw_max_tokens"`
+
+	// Percentage is the rounded TotalTokens / RawMaxTokens, 0-100+.
+	Percentage float64 `json:"percentage"`
+
+	// OverLimit is set when TotalTokens exceeds RawMaxTokens.
+	OverLimit *ContextUsageOverLimit `json:"over_limit,omitempty"`
+
+	Categories  []AssistantContextUsageCategory `json:"categories"`
+	McpTools    []ContextUsageReportMcpTool     `json:"mcp_tools"`
+	MemoryFiles []ContextUsageReportMemoryFile  `json:"memory_files"`
+	Agents      []ContextUsageReportAgent       `json:"agents"`
+
+	// Skills is omitted when no skills contribute tokens.
+	Skills []ContextUsageReportSkill `json:"skills,omitempty"`
+}
+
+// ContextUsageOverLimit describes by how much a context window was overrun.
+type ContextUsageOverLimit struct {
+	TokensOver int `json:"tokens_over"`
+
+	// Kind says how the window was resolved, not whether the API will accept
+	// the next request: ContextWindowHardLimit means the window is the model's
+	// believed limit, so the API will refuse past it; ContextWindowCompaction
+	// means a compaction-policy window, which may or may not coincide with the
+	// model's hard limit.
+	Kind ContextWindowKind `json:"kind"`
+}
+
+// ContextWindowKind identifies how a context window limit was resolved.
+type ContextWindowKind string
+
+const (
+	// ContextWindowHardLimit is the model's believed limit — the API refuses
+	// requests past it.
+	ContextWindowHardLimit ContextWindowKind = "hard_limit"
+	// ContextWindowCompaction is a compaction-policy window, which may or may
+	// not coincide with the model's hard limit.
+	ContextWindowCompaction ContextWindowKind = "compaction_window"
+)
+
+// AssistantContextUsageCategory is one row of the /context usage-by-category
+// breakdown. Rows may carry zero tokens; renderers typically hide those.
+type AssistantContextUsageCategory struct {
+	// Name is the display name of the row as the CLI renders it, e.g.
+	// "Messages" or "MCP tools (deferred)". Classify rows on Kind, not on this.
+	Name   string `json:"name"`
+	Tokens int    `json:"tokens"`
+
+	Kind ContextUsageCategoryKind `json:"kind"`
+}
+
+// ContextUsageCategoryKind classifies a context-usage category row.
+type ContextUsageCategoryKind string
+
+const (
+	// ContextUsageUsed marks content that occupies the window.
+	ContextUsageUsed ContextUsageCategoryKind = "used"
+	// ContextUsageFree marks the remaining window.
+	ContextUsageFree ContextUsageCategoryKind = "free"
+	// ContextUsageBuffer marks the compaction reserve (autocompact or manual).
+	ContextUsageBuffer ContextUsageCategoryKind = "buffer"
+	// ContextUsageDeferred marks out-of-window tool schemas — listed for
+	// awareness, excluded from usage math.
+	ContextUsageDeferred ContextUsageCategoryKind = "deferred"
+)
+
+// ContextUsageReportMcpTool is one MCP tool's contribution to the context.
+type ContextUsageReportMcpTool struct {
+	// Name is the wire name, e.g. "mcp__linear__create_issue".
+	Name       string `json:"name"`
+	ServerName string `json:"server_name"`
+	Tokens     int    `json:"tokens"`
+}
+
+// ContextUsageReportMemoryFile is one memory file's contribution to the context.
+type ContextUsageReportMemoryFile struct {
+	Path string `json:"path"`
+	// Type is the display label of the memory-file source, e.g. "Project" or
+	// "User".
+	Type   string `json:"type"`
+	Tokens int    `json:"tokens"`
+}
+
+// ContextUsageReportAgent is one agent definition's contribution to the context.
+type ContextUsageReportAgent struct {
+	AgentType string `json:"agent_type"`
+	// Source is the raw source identifier, e.g. "projectSettings",
+	// "userSettings", "plugin". Built-in agents are excluded by the producer;
+	// display labels are the renderer's concern.
+	Source string `json:"source"`
+	Tokens int    `json:"tokens"`
+}
+
+// ContextUsageReportSkill is one skill's contribution to the context.
+type ContextUsageReportSkill struct {
+	Name string `json:"name"`
+	// Source is the raw source identifier, e.g. "userSettings", "plugin",
+	// "syncedSkills".
+	Source     string `json:"source"`
+	PluginName string `json:"plugin_name,omitempty"`
+	Tokens     int    `json:"tokens"`
 }
 
 // MessageType implements Message.

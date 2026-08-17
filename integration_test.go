@@ -2361,6 +2361,83 @@ func TestIntegrationResumeDropsTurn(t *testing.T) {
 	t.Skip("not triggerable from CLI: installed CLI 2.1.222 does not implement --resume-drops-turn; tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+// TestIntegrationAssistantContextUsage drives /context against the live CLI and
+// checks the structured sibling on the assistant message that carries the
+// markdown table. CLIs older than 2.1.233 answer /context with the table alone,
+// so the assertions are conditional on the field being attached at all.
+func TestIntegrationAssistantContextUsage(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	client, err := NewClient(isolatedClientOptions(t)...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	var usage *AssistantContextUsage
+	for msg := range client.Query(ctx, "/context") {
+		assistant, ok := msg.(AssistantMessage)
+		if !ok || assistant.ContextUsage == nil {
+			continue
+		}
+		usage = assistant.ContextUsage
+		break
+	}
+
+	if usage == nil {
+		t.Skip("CLI did not attach context_usage to the /context result; " +
+			"needs a CLI at 2.1.233 or newer")
+	}
+
+	assert.NotEmpty(t, usage.Model)
+	assert.Positive(t, usage.TotalTokens)
+	assert.Positive(t, usage.RawMaxTokens)
+	require.NotEmpty(t, usage.Categories)
+
+	// Every row must classify, and the rows that count toward the window have
+	// to add up to the reported total. Deferred rows are out-of-window tool
+	// schemas, so they are excluded from that sum.
+	var inWindow int
+	for _, cat := range usage.Categories {
+		assert.Contains(t, []ContextUsageCategoryKind{
+			ContextUsageUsed,
+			ContextUsageFree,
+			ContextUsageBuffer,
+			ContextUsageDeferred,
+		}, cat.Kind, "unclassified category row %q", cat.Name)
+
+		if cat.Kind == ContextUsageUsed {
+			inWindow += cat.Tokens
+		}
+	}
+	assert.Equal(t, usage.TotalTokens, inWindow,
+		"used rows should sum to total_tokens")
+
+	if usage.OverLimit != nil {
+		assert.Positive(t, usage.OverLimit.TokensOver)
+		assert.Contains(t, []ContextWindowKind{
+			ContextWindowHardLimit,
+			ContextWindowCompaction,
+		}, usage.OverLimit.Kind)
+		assert.Greater(t, usage.TotalTokens, usage.RawMaxTokens,
+			"over_limit set while within the window")
+	}
+
+	for _, tool := range usage.McpTools {
+		assert.NotEmpty(t, tool.Name)
+		assert.NotEmpty(t, tool.ServerName)
+	}
+	for _, file := range usage.MemoryFiles {
+		assert.NotEmpty(t, file.Path)
+	}
+	for _, agent := range usage.Agents {
+		assert.NotEmpty(t, agent.AgentType)
+		assert.NotEmpty(t, agent.Source)
+	}
+}
+
 // TestIntegrationInitTerminalSlashCommands checks the terminal-bound subset of
 // the init message's advertised slash commands. CLIs older than 2.1.233 tag
 // nothing, in which case the field is absent and a remote UI showing every
