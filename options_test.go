@@ -1863,6 +1863,100 @@ func TestSettingsDisableCommandPluginSourcesJSON(t *testing.T) {
 	})
 }
 
+// The alias keys have to serialize under their own spelling and stay
+// independent of the canonical keys, since the CLI warns and drops the alias
+// when both appear in one file.
+func TestSettingsMarketplaceAliasesJSON(t *testing.T) {
+	t.Run("aliases serialize under their own keys", func(t *testing.T) {
+		data, err := json.Marshal(Settings{
+			AdditionalMarketplaces: map[string]SettingsMarketplace{
+				"vendor": {
+					Source: SettingsMarketplaceSource{
+						"source":  string(SettingsMarketplaceSourceNPM),
+						"package": "@vendor/plugins",
+					},
+				},
+			},
+			AllowedMarketplaces: []SettingsMarketplaceSource{
+				{
+					"source":      string(SettingsMarketplaceSourceHostPattern),
+					"hostPattern": "^github\\.corp\\.example$",
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Contains(t, got, "additionalMarketplaces")
+		assert.Contains(t, got, "allowedMarketplaces")
+		assert.NotContains(t, got, "extraKnownMarketplaces")
+		assert.NotContains(t, got, "strictKnownMarketplaces")
+	})
+
+	t.Run("aliases round-trip", func(t *testing.T) {
+		in := Settings{
+			AdditionalMarketplaces: map[string]SettingsMarketplace{
+				"vendor": {
+					Source: SettingsMarketplaceSource{
+						"source": string(SettingsMarketplaceSourceGithub),
+						"repo":   "vendor/plugins",
+						"ref":    "v1.0.0",
+					},
+					InstallLocation: "/opt/marketplaces/vendor",
+				},
+			},
+			AllowedMarketplaces: []SettingsMarketplaceSource{
+				{"source": string(SettingsMarketplaceSourceGithub), "repo": "vendor/*"},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+
+		vendor := out.AdditionalMarketplaces["vendor"]
+		assert.Equal(t, "github", vendor.Source["source"])
+		assert.Equal(t, "vendor/plugins", vendor.Source["repo"])
+		assert.Equal(t, "/opt/marketplaces/vendor", vendor.InstallLocation)
+
+		require.Len(t, out.AllowedMarketplaces, 1)
+		assert.Equal(t, "vendor/*", out.AllowedMarketplaces[0]["repo"])
+	})
+
+	// Both spellings decode side by side. The CLI is what resolves the
+	// conflict, so the SDK must not silently fold one into the other.
+	t.Run("canonical and alias decode independently", func(t *testing.T) {
+		var out Settings
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"extraKnownMarketplaces": {
+				"canonical": {"source": {"source": "npm", "package": "@a/x"}}
+			},
+			"additionalMarketplaces": {
+				"aliased": {"source": {"source": "npm", "package": "@b/y"}}
+			},
+			"strictKnownMarketplaces": [{"source": "skills-dir"}],
+			"allowedMarketplaces": [{"source": "pathPattern", "pathPattern": "^/opt/"}]
+		}`), &out))
+
+		assert.Contains(t, out.ExtraKnownMarketplaces, "canonical")
+		assert.Contains(t, out.AdditionalMarketplaces, "aliased")
+		assert.Len(t, out.StrictKnownMarketplaces, 1)
+		assert.Len(t, out.AllowedMarketplaces, 1)
+	})
+
+	t.Run("nil omits both keys", func(t *testing.T) {
+		data, err := json.Marshal(Settings{})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "additionalMarketplaces")
+		assert.NotContains(t, got, "allowedMarketplaces")
+	})
+}
+
 func TestSettingsForceLoginGatewayURLJSON(t *testing.T) {
 	t.Run("round-trips alongside forceLoginMethod", func(t *testing.T) {
 		in := Settings{

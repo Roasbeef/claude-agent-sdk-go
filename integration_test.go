@@ -2110,6 +2110,42 @@ exec "$real_cli" "$@"
 		assert.True(t, *got.DisableCommandPluginSources)
 	})
 
+	// Whether the CLI resolves these to their canonical spellings is its
+	// business, and 2.1.222 predates them so it won't. What's ours is that they
+	// serialize under their own keys, don't get folded into the canonical ones,
+	// and don't trip managed-tier schema validation on the way through.
+	t.Run("marketplace_aliases", func(t *testing.T) {
+		want := Settings{
+			AdditionalMarketplaces: map[string]SettingsMarketplace{
+				"vendor": {
+					Source: SettingsMarketplaceSource{
+						"source":  string(SettingsMarketplaceSourceNPM),
+						"package": "@vendor/plugins",
+					},
+				},
+			},
+			AllowedMarketplaces: []SettingsMarketplaceSource{
+				{
+					"source":      string(SettingsMarketplaceSourcePathPattern),
+					"pathPattern": "^/opt/approved/",
+				},
+			},
+		}
+
+		argv := runWithArgvCapture(t, WithManagedSettings(want))
+		var got Settings
+		require.NoError(t, json.Unmarshal([]byte(argValue(t, argv, "--managed-settings")), &got))
+
+		assert.Contains(t, got.AdditionalMarketplaces, "vendor")
+		assert.Empty(t, got.ExtraKnownMarketplaces,
+			"alias must not be folded into the canonical key")
+
+		require.Len(t, got.AllowedMarketplaces, 1)
+		assert.Equal(t, "^/opt/approved/", got.AllowedMarketplaces[0]["pathPattern"])
+		assert.Empty(t, got.StrictKnownMarketplaces,
+			"alias must not be folded into the canonical key")
+	})
+
 	// The login flow itself can't be driven here (the session is already
 	// authenticated), so this covers the reachable half: the pair survives the
 	// managed tier and the CLI starts on it.
