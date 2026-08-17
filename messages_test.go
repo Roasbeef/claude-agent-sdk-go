@@ -511,6 +511,141 @@ func TestAssistantMessageFieldsOmitEmpty(t *testing.T) {
 	assert.NotContains(t, got, "subagent_type")
 	assert.NotContains(t, got, "task_description")
 	assert.NotContains(t, got, "timestamp")
+	assert.NotContains(t, got, "context_usage")
+}
+
+func TestParseMessageAssistantContextUsage(t *testing.T) {
+	input := `{
+		"type": "assistant",
+		"message": {
+			"role": "assistant",
+			"content": [{"type": "text", "text": "| Category | Tokens |"}]
+		},
+		"context_usage": {
+			"model": "claude-opus-4-8",
+			"total_tokens": 214000,
+			"raw_max_tokens": 200000,
+			"percentage": 107,
+			"over_limit": {
+				"tokens_over": 14000,
+				"kind": "compaction_window"
+			},
+			"categories": [
+				{"name": "Messages", "tokens": 180000, "kind": "used"},
+				{"name": "Free space", "tokens": 0, "kind": "free"},
+				{"name": "Autocompact buffer", "tokens": 20000, "kind": "buffer"},
+				{"name": "MCP tools (deferred)", "tokens": 9000, "kind": "deferred"}
+			],
+			"mcp_tools": [
+				{"name": "mcp__linear__create_issue", "server_name": "linear", "tokens": 900}
+			],
+			"memory_files": [
+				{"path": "/repo/CLAUDE.md", "type": "Project", "tokens": 1200}
+			],
+			"agents": [
+				{"agent_type": "code-reviewer", "source": "projectSettings", "tokens": 800}
+			],
+			"skills": [
+				{"name": "roasbeef-prose", "source": "plugin", "plugin_name": "openclaw-skills", "tokens": 400}
+			]
+		}
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	assistantMsg, ok := msg.(AssistantMessage)
+	require.True(t, ok, "expected AssistantMessage")
+
+	usage := assistantMsg.ContextUsage
+	require.NotNil(t, usage)
+	assert.Equal(t, "claude-opus-4-8", usage.Model)
+	assert.Equal(t, 214000, usage.TotalTokens)
+	assert.Equal(t, 200000, usage.RawMaxTokens)
+	assert.Equal(t, float64(107), usage.Percentage)
+
+	require.NotNil(t, usage.OverLimit)
+	assert.Equal(t, 14000, usage.OverLimit.TokensOver)
+	assert.Equal(t, ContextWindowCompaction, usage.OverLimit.Kind)
+
+	require.Len(t, usage.Categories, 4)
+	assert.Equal(t, "Messages", usage.Categories[0].Name)
+	assert.Equal(t, 180000, usage.Categories[0].Tokens)
+	assert.Equal(t, ContextUsageUsed, usage.Categories[0].Kind)
+	assert.Equal(t, ContextUsageFree, usage.Categories[1].Kind)
+	assert.Equal(t, ContextUsageBuffer, usage.Categories[2].Kind)
+	assert.Equal(t, ContextUsageDeferred, usage.Categories[3].Kind)
+
+	require.Len(t, usage.McpTools, 1)
+	assert.Equal(t, "mcp__linear__create_issue", usage.McpTools[0].Name)
+	assert.Equal(t, "linear", usage.McpTools[0].ServerName)
+	assert.Equal(t, 900, usage.McpTools[0].Tokens)
+
+	require.Len(t, usage.MemoryFiles, 1)
+	assert.Equal(t, "/repo/CLAUDE.md", usage.MemoryFiles[0].Path)
+	assert.Equal(t, "Project", usage.MemoryFiles[0].Type)
+
+	require.Len(t, usage.Agents, 1)
+	assert.Equal(t, "code-reviewer", usage.Agents[0].AgentType)
+	assert.Equal(t, "projectSettings", usage.Agents[0].Source)
+
+	require.Len(t, usage.Skills, 1)
+	assert.Equal(t, "roasbeef-prose", usage.Skills[0].Name)
+	assert.Equal(t, "openclaw-skills", usage.Skills[0].PluginName)
+	assert.Equal(t, 400, usage.Skills[0].Tokens)
+}
+
+// Older CLIs attach no context_usage at all, and a within-limit report carries
+// neither over_limit nor skills.
+func TestParseMessageAssistantContextUsageOptionalFields(t *testing.T) {
+	t.Run("absent", func(t *testing.T) {
+		msg, err := ParseMessage([]byte(`{
+			"type": "assistant",
+			"message": {"role": "assistant", "content": []}
+		}`))
+		require.NoError(t, err)
+
+		assistantMsg, ok := msg.(AssistantMessage)
+		require.True(t, ok)
+		assert.Nil(t, assistantMsg.ContextUsage)
+	})
+
+	t.Run("within limit", func(t *testing.T) {
+		msg, err := ParseMessage([]byte(`{
+			"type": "assistant",
+			"message": {"role": "assistant", "content": []},
+			"context_usage": {
+				"model": "claude-sonnet-4-6",
+				"total_tokens": 42000,
+				"raw_max_tokens": 200000,
+				"percentage": 21,
+				"categories": [{"name": "Messages", "tokens": 42000, "kind": "used"}],
+				"mcp_tools": [],
+				"memory_files": [],
+				"agents": []
+			}
+		}`))
+		require.NoError(t, err)
+
+		assistantMsg, ok := msg.(AssistantMessage)
+		require.True(t, ok)
+		require.NotNil(t, assistantMsg.ContextUsage)
+		assert.Nil(t, assistantMsg.ContextUsage.OverLimit)
+		assert.Empty(t, assistantMsg.ContextUsage.Skills)
+	})
+}
+
+func TestAssistantContextUsageOmitEmpty(t *testing.T) {
+	usage := AssistantContextUsage{Model: "claude-opus-4-8"}
+
+	data, err := json.Marshal(usage)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.NotContains(t, got, "over_limit")
+	assert.NotContains(t, got, "skills")
 }
 
 func TestAssistantMessageErrorOmitEmpty(t *testing.T) {
