@@ -1,3 +1,6 @@
 package/*
 .sessions/
 .tasks/
+
+# Vendored TS SDK trees pulled for parity diffing during catchup cycles.
+scratch/

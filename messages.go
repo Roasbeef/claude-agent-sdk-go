@@ -1002,7 +1002,9 @@ type SystemMessage struct {
 	// still_queued. "interrupt_cancel_queued_v1" means the interrupt honors
 	// cancel_queued:true — queued and pending-dispatch commands are cancelled
 	// alongside the abort and listed on the response's cancelled field (see
-	// Stream.InterruptCancelQueued). Absent on older CLIs.
+	// Stream.InterruptCancelQueued). "queued_notifications" means the CLI
+	// accepts inbound queued_notification stream messages and drains them via
+	// the ReadNotifications tool. Absent on older CLIs.
 	Capabilities []string `json:"capabilities,omitempty"`
 }
 
