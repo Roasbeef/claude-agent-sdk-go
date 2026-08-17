@@ -966,24 +966,32 @@ type Usage struct {
 // This message is sent at the start of a session and contains information
 // about available tools, MCP servers, models, and permissions.
 type SystemMessage struct {
-	Type              string          `json:"type"`                      // Always "system"
-	Subtype           string          `json:"subtype"`                   // "init" or "compact_boundary"
-	UUID              string          `json:"uuid"`                      // Unique message ID
-	SessionID         string          `json:"session_id"`                // Session identifier
-	APIKeySource      string          `json:"apiKeySource"`              // Where the API key comes from
-	Cwd               string          `json:"cwd"`                       // Current working directory
-	Tools             []string        `json:"tools"`                     // Available tools
-	MCPServers        []MCPServerInfo `json:"mcp_servers"`               // MCP server status
-	Model             string          `json:"model"`                     // Active model
-	PermissionMode    PermissionMode  `json:"permissionMode"`            // Current permission mode
-	SlashCommands     []string        `json:"slash_commands"`            // Available slash commands
-	OutputStyle       string          `json:"output_style"`              // Output formatting style
-	ClaudeCodeVersion string          `json:"claude_code_version"`       // Claude Code version
-	Skills            []string        `json:"skills"`                    // Available skills
-	Plugins           []SystemPlugin  `json:"plugins"`                   // Available plugins
-	Agents            []string        `json:"agents,omitempty"`          // Available agents
-	Betas             []string        `json:"betas,omitempty"`           // Enabled beta flags
-	FastModeState     *FastModeState  `json:"fast_mode_state,omitempty"` // Fast mode state
+	Type           string          `json:"type"`           // Always "system"
+	Subtype        string          `json:"subtype"`        // "init" or "compact_boundary"
+	UUID           string          `json:"uuid"`           // Unique message ID
+	SessionID      string          `json:"session_id"`     // Session identifier
+	APIKeySource   string          `json:"apiKeySource"`   // Where the API key comes from
+	Cwd            string          `json:"cwd"`            // Current working directory
+	Tools          []string        `json:"tools"`          // Available tools
+	MCPServers     []MCPServerInfo `json:"mcp_servers"`    // MCP server status
+	Model          string          `json:"model"`          // Active model
+	PermissionMode PermissionMode  `json:"permissionMode"` // Current permission mode
+	SlashCommands  []string        `json:"slash_commands"` // Available slash commands
+	// TerminalSlashCommands is the subset of SlashCommands whose UX is bound
+	// to the local terminal, e.g. exit and statusline. Phone and other remote
+	// UIs should hide these from command menus; desktop surfaces may keep
+	// them. Set only when non-empty, so an empty slice means either an older
+	// CLI or a session where no advertised command carries the tag — in both
+	// cases, showing everything is the safe fallback (sdk.d.ts v0.3.233
+	// L4712).
+	TerminalSlashCommands []string       `json:"terminal_slash_commands,omitempty"`
+	OutputStyle           string         `json:"output_style"`              // Output formatting style
+	ClaudeCodeVersion     string         `json:"claude_code_version"`       // Claude Code version
+	Skills                []string       `json:"skills"`                    // Available skills
+	Plugins               []SystemPlugin `json:"plugins"`                   // Available plugins
+	Agents                []string       `json:"agents,omitempty"`          // Available agents
+	Betas                 []string       `json:"betas,omitempty"`           // Enabled beta flags
+	FastModeState         *FastModeState `json:"fast_mode_state,omitempty"` // Fast mode state
 	// FastModeDisabledReason explains why fast mode could not serve, when
 	// FastModeState is not "on". Absent when nothing blocks it.
 	FastModeDisabledReason *FastModeDisabledReason `json:"fast_mode_disabled_reason,omitempty"`

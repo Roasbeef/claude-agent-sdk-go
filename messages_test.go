@@ -2191,6 +2191,47 @@ func TestParseMessageSystemInit(t *testing.T) {
 	assert.Equal(t, []string{"/help"}, systemMsg.SlashCommands)
 	assert.Equal(t, "default", systemMsg.OutputStyle)
 	assert.Empty(t, systemMsg.Capabilities, "capabilities absent on older CLIs")
+	assert.Empty(t, systemMsg.TerminalSlashCommands,
+		"terminal_slash_commands absent on older CLIs")
+}
+
+func TestParseMessageSystemInitTerminalSlashCommands(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "init",
+		"uuid": "550e8400-e29b-41d4-a716-446655440800",
+		"session_id": "sess_term_001",
+		"apiKeySource": "env",
+		"cwd": "/workspace/project",
+		"tools": ["Read"],
+		"mcp_servers": [],
+		"model": "claude-opus-4-5-20250929",
+		"permissionMode": "default",
+		"slash_commands": ["/help", "/exit", "/statusline"],
+		"terminal_slash_commands": ["/exit", "/statusline"],
+		"output_style": "default"
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	systemMsg, ok := msg.(SystemMessage)
+	require.True(t, ok, "expected SystemMessage")
+
+	assert.Equal(t, []string{"/exit", "/statusline"},
+		systemMsg.TerminalSlashCommands)
+	assert.Subset(t, systemMsg.SlashCommands, systemMsg.TerminalSlashCommands,
+		"terminal commands must also be advertised in slash_commands")
+}
+
+func TestSystemMessageTerminalSlashCommandsOmitEmpty(t *testing.T) {
+	data, err := json.Marshal(SystemMessage{Type: "system", Subtype: "init"})
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.NotContains(t, got, "terminal_slash_commands")
 }
 
 func TestParseMessageSystemInitCapabilities(t *testing.T) {
