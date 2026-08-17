@@ -366,6 +366,23 @@ type Settings struct {
 	// (sdk.d.ts v0.3.226 L5909, L6112).
 	StrictKnownMarketplaces []SettingsMarketplaceSource `json:"strictKnownMarketplaces,omitempty"`
 	BlockedMarketplaces     []SettingsMarketplaceSource `json:"blockedMarketplaces,omitempty"`
+	// AdditionalMarketplaces is read exactly as if it were spelled
+	// ExtraKnownMarketplaces. Setting both in one file makes this one lose: it
+	// is ignored with a warning. Claude Code may also rewrite the key back to
+	// extraKnownMarketplaces when it updates the file.
+	//
+	// Prefer ExtraKnownMarketplaces while older clients still share the same
+	// settings: a client predating the alias ignores it outright, and its
+	// settings sync then uploads a file that declares no marketplaces at all.
+	// Mirrors sdk.d.ts v0.3.233 L6023.
+	AdditionalMarketplaces map[string]SettingsMarketplace `json:"additionalMarketplaces,omitempty"`
+	// AllowedMarketplaces is read exactly as if it were spelled
+	// StrictKnownMarketplaces, and like it is honored only from managed
+	// settings. Setting both in one file makes this one lose: it is ignored
+	// with a warning. Keep using StrictKnownMarketplaces when the allowlist
+	// must also bind clients that predate the alias, since they ignore this
+	// spelling and would run unrestricted. Mirrors sdk.d.ts v0.3.233 L6468.
+	AllowedMarketplaces []SettingsMarketplaceSource `json:"allowedMarketplaces,omitempty"`
 	// DisableSideloadFlags, when true and set in managed settings, rejects the
 	// --plugin-dir, --plugin-url, --agents, and non-sdk --mcp-config CLI flags
 	// at startup, closing the CLI-flag bypass of strictKnownMarketplaces.
