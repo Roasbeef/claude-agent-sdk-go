@@ -384,7 +384,15 @@ type Settings struct {
 	// PluginSuggestionMarketplaces names managed marketplaces whose plugins may surface as contextual install suggestions. Honored only from managed settings. Mirrors sdk.d.ts v0.3.168 L5242.
 	PluginSuggestionMarketplaces []string `json:"pluginSuggestionMarketplaces,omitempty"`
 	// ForceLoginMethod pins the login flow: "claudeai" for Claude Pro/Max, "console" for Console billing, "gateway" for the Cloud gateway OIDC device flow (the "gateway" variant was added in v0.3.168). Mirrors sdk.d.ts v0.3.168 L5246.
-	ForceLoginMethod           string                       `json:"forceLoginMethod,omitempty"`
+	ForceLoginMethod string `json:"forceLoginMethod,omitempty"`
+	// ForceLoginGatewayURL is the Cloud gateway URL to pre-fill and
+	// auto-connect to during login, and only means anything alongside
+	// ForceLoginMethod "gateway". Honored only from admin-controlled managed
+	// settings (MDM, managed-settings.json, policy helper) and ignored in
+	// user, project, and remote-delivered settings, since pointing a login
+	// flow at an attacker-chosen gateway is exactly what that tier exists to
+	// prevent. Mirrors sdk.d.ts v0.3.233 L6914.
+	ForceLoginGatewayURL       string                       `json:"forceLoginGatewayUrl,omitempty"`
 	ForceLoginOrgUUID          interface{}                  `json:"forceLoginOrgUUID,omitempty"`
 	ForceRemoteSettingsRefresh *bool                        `json:"forceRemoteSettingsRefresh,omitempty"`
 	OtelHeadersHelper          string                       `json:"otelHeadersHelper,omitempty"`

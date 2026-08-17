@@ -2109,6 +2109,23 @@ exec "$real_cli" "$@"
 		require.NotNil(t, got.DisableCommandPluginSources)
 		assert.True(t, *got.DisableCommandPluginSources)
 	})
+
+	// The login flow itself can't be driven here (the session is already
+	// authenticated), so this covers the reachable half: the pair survives the
+	// managed tier and the CLI starts on it.
+	t.Run("force_login_gateway_url", func(t *testing.T) {
+		want := Settings{
+			ForceLoginMethod:     "gateway",
+			ForceLoginGatewayURL: "https://gateway.corp.example",
+		}
+
+		argv := runWithArgvCapture(t, WithManagedSettings(want))
+		var got Settings
+		require.NoError(t, json.Unmarshal([]byte(argValue(t, argv, "--managed-settings")), &got))
+
+		assert.Equal(t, "gateway", got.ForceLoginMethod)
+		assert.Equal(t, want.ForceLoginGatewayURL, got.ForceLoginGatewayURL)
+	})
 }
 
 func TestIntegrationSettingsManagedOrgFields(t *testing.T) {

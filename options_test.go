@@ -1862,3 +1862,32 @@ func TestSettingsDisableCommandPluginSourcesJSON(t *testing.T) {
 		assert.True(t, *out.DisableCommandPluginSources)
 	})
 }
+
+func TestSettingsForceLoginGatewayURLJSON(t *testing.T) {
+	t.Run("round-trips alongside forceLoginMethod", func(t *testing.T) {
+		in := Settings{
+			ForceLoginMethod:     "gateway",
+			ForceLoginGatewayURL: "https://gateway.corp.example",
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.Equal(t, "https://gateway.corp.example", got["forceLoginGatewayUrl"])
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		assert.Equal(t, in.ForceLoginMethod, out.ForceLoginMethod)
+		assert.Equal(t, in.ForceLoginGatewayURL, out.ForceLoginGatewayURL)
+	})
+
+	t.Run("empty omits the key", func(t *testing.T) {
+		data, err := json.Marshal(Settings{ForceLoginMethod: "gateway"})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "forceLoginGatewayUrl")
+	})
+}
