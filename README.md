@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.226 catchup work, using Go idioms where the API shape differs.
+v0.3.233 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -635,6 +635,62 @@ follow-up work: with no `OnUserDialog` registered, the Go SDK answers a
 at least v0.3.220 so a renderer-bearing client or the worker's park deadline can
 settle it. v0.3.226 only reworded the doc comment to match the behavior it
 already had.
+
+The v0.3.233 catchup added:
+
+- `AssistantMessage.ContextUsage` — the structured twin of the `/context` report,
+  riding as a wrapper-level sibling on the synthetic assistant message that
+  delivers the markdown table, so it is never replayed to the model. This is a
+  separate wire shape from `SDKControlGetContextUsageResponse`, which mirrors the
+  camelCase `/context` control response: the new one is snake_case, deliberately
+  smaller, and upstream commits to evolving it additively. Category rows and the
+  over-limit reason get named kinds (`ContextUsageUsed` / `Free` / `Buffer` /
+  `Deferred`, `ContextWindowHardLimit` / `Compaction`); classify rows on the kind,
+  never on the display name.
+- `SystemMessage.TerminalSlashCommands` — the subset of `SlashCommands` whose UX
+  is bound to the local terminal (`exit`, `statusline`). Remote UIs should hide
+  these; empty means either an older CLI or an untagged session, and showing
+  everything is the right fallback for both.
+- `SettingsMarketplaceSourceCommand` — plugin sources whose directory is produced
+  by running a marketplace-declared command that prints one absolute path
+  (`command`, optional `timeout`, `mode: "copy"` / `"link"`). Under `link` the
+  cache points at that directory in place, so it must stay valid for the life of
+  the process and a changed path is the only signal of new content. Gated by the
+  managed-settings-only `DisableCommandPluginSources`, which follows
+  `AllowManagedHooksOnly` when unset.
+- `Settings.AdditionalMarketplaces` / `AllowedMarketplaces` — aliases read exactly
+  as `ExtraKnownMarketplaces` / `StrictKnownMarketplaces`. Prefer the canonical
+  spellings while older clients share the same settings file: they ignore the
+  alias outright, and an allowlist that silently isn't there means unrestricted.
+  The SDK does not fold aliases into the canonical fields, since resolving that
+  conflict is the CLI's job.
+- `Settings.ForceLoginGatewayURL` — the Cloud gateway URL to pre-fill and
+  auto-connect to alongside `ForceLoginMethod: "gateway"`. Admin-controlled
+  managed settings only.
+- `queued_notifications` on `SystemMessage.Capabilities` — the CLI accepts inbound
+  `queued_notification` stream messages and drains them via `ReadNotifications`.
+  Doc-only here: `Capabilities` is already an open `[]string`, and the drain tool
+  sits outside the curated `tool_inputs.go` subset.
+
+PRs in this cycle (squash-merged): #200 assistant `context_usage`, #201
+`terminal_slash_commands`, #202 command plugin source, #203 marketplace settings
+aliases, #204 `forceLoginGatewayUrl`, plus this docs refresh.
+
+Deferred this cycle:
+
+- `sdk-tools.d.ts` churn (`ReadNotifications` and `ProposeGoal` tools,
+  `RemoteTrigger` gaining `list_runs` / `get_run_log`, `Bash` gaining
+  `backgroundEndsWithFinalResponse`, the commit `branch` field,
+  `output_tokens_details.thinking_tokens`) — outside the curated
+  `tool_inputs.go` subset, the standing deferral.
+- `bridge.d.ts` close codes 4093 (presence heartbeats failing while SSE stays
+  healthy) and 4094 (worker credential expired on the request path), plus the
+  `isCreateSessionFailure` narrowing — browser bridge, no Go surface.
+- The `attribution` index signature — Go already ignores unknown keys on decode,
+  so an extras map would only add round-trip ambiguity to the public API.
+- A `ripgrep` settings doc reword: it is honored only from user, managed/policy,
+  or CLI (`--settings`) settings, and ignored from project settings. Behavior
+  the Go SDK does not model either way.
 
 Some areas remain intentionally limited by the CLI or integration harness:
 desktop/IDE-only settings are not modeled exhaustively, several runtime control
