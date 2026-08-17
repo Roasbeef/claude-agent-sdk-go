@@ -2091,6 +2091,24 @@ exec "$real_cli" "$@"
 		require.NoError(t, json.Unmarshal([]byte(argValue(t, argv, "--managed-settings")), &got))
 		assert.Equal(t, want.Env, got.Env)
 	})
+
+	// Only the gate is asserted live. Feeding a command-sourced marketplace to
+	// a CLI that predates the variant makes it fail schema validation on the
+	// managed tier and stall the handshake, so that half stays in
+	// TestIntegrationSettingsMiscFields with the other source variants until
+	// the installed binary is new enough to accept it.
+	t.Run("disable_command_plugin_sources", func(t *testing.T) {
+		disable := true
+
+		argv := runWithArgvCapture(t, WithManagedSettings(Settings{
+			DisableCommandPluginSources: &disable,
+		}))
+
+		var got Settings
+		require.NoError(t, json.Unmarshal([]byte(argValue(t, argv, "--managed-settings")), &got))
+		require.NotNil(t, got.DisableCommandPluginSources)
+		assert.True(t, *got.DisableCommandPluginSources)
+	})
 }
 
 func TestIntegrationSettingsManagedOrgFields(t *testing.T) {
@@ -2147,11 +2165,14 @@ func TestIntegrationSettingsMiscFields(t *testing.T) {
 
 	// TODO: Backfill when the CLI test fixture can deterministically inject
 	// statusLine.hideVimModeIndicator and the marketplace skills-dir /
-	// unsupported source variants via managed-settings.json so the SDK can
-	// observe them round-tripping through the resolved-settings transport. Both
-	// fields are consumed by CLI renderer / registration code paths the Go SDK
-	// does not invoke directly.
-	t.Skip("not directly assertable from CLI: statusLine.hideVimModeIndicator and marketplace skills-dir/unsupported source variants are consumed by CLI code paths the Go SDK does not invoke")
+	// unsupported / command source variants via managed-settings.json so the
+	// SDK can observe them round-tripping through the resolved-settings
+	// transport. Both fields are consumed by CLI renderer / registration code
+	// paths the Go SDK does not invoke directly. The command variant has a
+	// second blocker on top of that: the installed 2.1.222 binary predates it,
+	// so it fails schema validation on the managed tier and stalls the
+	// handshake rather than round-tripping.
+	t.Skip("not directly assertable from CLI: statusLine.hideVimModeIndicator and marketplace skills-dir/unsupported/command source variants are consumed by CLI code paths the Go SDK does not invoke")
 }
 
 func TestIntegrationToolAliases(t *testing.T) {

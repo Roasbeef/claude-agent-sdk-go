@@ -1408,6 +1408,53 @@ func TestSettingsMarketplaceSourceVariants(t *testing.T) {
 		assert.NotContains(t, got, "sha256")
 	})
 
+	t.Run("command source round-trips with timeout and mode", func(t *testing.T) {
+		in := Settings{
+			ExtraKnownMarketplaces: map[string]SettingsMarketplace{
+				"internal-export": {
+					Source: SettingsMarketplaceSource{
+						"source":  string(SettingsMarketplaceSourceCommand),
+						"command": "/opt/corp/bin/export-plugin --print-path",
+						"timeout": 120,
+						"mode":    "link",
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		got := out.ExtraKnownMarketplaces["internal-export"].Source
+		assert.Equal(t, "command", got["source"])
+		assert.Equal(t, "/opt/corp/bin/export-plugin --print-path", got["command"])
+		assert.Equal(t, float64(120), got["timeout"])
+		assert.Equal(t, "link", got["mode"])
+	})
+
+	t.Run("command source round-trips bare", func(t *testing.T) {
+		in := Settings{
+			ExtraKnownMarketplaces: map[string]SettingsMarketplace{
+				"internal-export": {
+					Source: SettingsMarketplaceSource{
+						"source":  string(SettingsMarketplaceSourceCommand),
+						"command": "echo /srv/plugins/corp",
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		got := out.ExtraKnownMarketplaces["internal-export"].Source
+		assert.Len(t, got, 2)
+		assert.NotContains(t, got, "timeout")
+		assert.NotContains(t, got, "mode")
+	})
+
 	t.Run("unsupported source carries an error string", func(t *testing.T) {
 		in := Settings{
 			ExtraKnownMarketplaces: map[string]SettingsMarketplace{
@@ -1776,5 +1823,42 @@ func TestSettingsParityV0201FieldsJSON(t *testing.T) {
 		require.NoError(t, json.Unmarshal(data, &got))
 		assert.NotContains(t, got, "enableArtifact")
 		assert.NotContains(t, got, "askUserQuestionTimeout")
+	})
+}
+
+func TestSettingsDisableCommandPluginSourcesJSON(t *testing.T) {
+	t.Run("explicit values are emitted", func(t *testing.T) {
+		for _, v := range []bool{true, false} {
+			data, err := json.Marshal(Settings{
+				DisableCommandPluginSources: &v,
+			})
+			require.NoError(t, err)
+
+			var got map[string]interface{}
+			require.NoError(t, json.Unmarshal(data, &got))
+			assert.Equal(t, v, got["disableCommandPluginSources"])
+		}
+	})
+
+	// Unset is not the same as false: it defers to allowManagedHooksOnly, so
+	// the key has to stay off the wire rather than serialize as false.
+	t.Run("nil omits the key", func(t *testing.T) {
+		data, err := json.Marshal(Settings{})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "disableCommandPluginSources")
+	})
+
+	t.Run("round-trips", func(t *testing.T) {
+		tr := true
+		data, err := json.Marshal(Settings{DisableCommandPluginSources: &tr})
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		require.NotNil(t, out.DisableCommandPluginSources)
+		assert.True(t, *out.DisableCommandPluginSources)
 	})
 }
