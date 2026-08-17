@@ -371,6 +371,16 @@ type Settings struct {
 	// at startup, closing the CLI-flag bypass of strictKnownMarketplaces.
 	// Honored only from managed settings. Mirrors sdk.d.ts v0.3.195 L5712.
 	DisableSideloadFlags *bool `json:"disableSideloadFlags,omitempty"`
+	// DisableCommandPluginSources gates the "command" plugin source, whose
+	// plugin directory is produced by running a marketplace-declared command on
+	// this machine (see SettingsMarketplaceSourceCommand). True means
+	// command-sourced plugins are never installed, updated, or re-resolved, so
+	// the command never runs; false allows them explicitly. Left nil it follows
+	// AllowManagedHooksOnly, on the reasoning that an org restricting hook
+	// execution to managed settings wants arbitrary plugin-resolution commands
+	// off too. Honored only from managed settings. Mirrors sdk.d.ts v0.3.233
+	// L6898.
+	DisableCommandPluginSources *bool `json:"disableCommandPluginSources,omitempty"`
 	// PluginSuggestionMarketplaces names managed marketplaces whose plugins may surface as contextual install suggestions. Honored only from managed settings. Mirrors sdk.d.ts v0.3.168 L5242.
 	PluginSuggestionMarketplaces []string `json:"pluginSuggestionMarketplaces,omitempty"`
 	// ForceLoginMethod pins the login flow: "claudeai" for Claude Pro/Max, "console" for Console billing, "gateway" for the Cloud gateway OIDC device flow (the "gateway" variant was added in v0.3.168). Mirrors sdk.d.ts v0.3.168 L5246.
@@ -745,6 +755,24 @@ const (
 	// changing only the digest while a version is declared does not trigger an
 	// update. Mirrors sdk.d.ts v0.3.226 L5869.
 	SettingsMarketplaceSourceArchive SettingsMarketplaceSourceKind = "archive"
+	// SettingsMarketplaceSourceCommand identifies a plugin source whose
+	// directory is produced by running a command on this machine. Honors
+	// "command": string (a shell command that prints the absolute path of the
+	// plugin directory on stdout, exactly one line, and exits 0, having left a
+	// complete plugin there), optional "timeout": number (seconds to wait,
+	// default 60) and optional "mode": "copy" | "link".
+	//
+	// The command runs through the platform shell from the user's home
+	// directory, and is re-resolved on every install and update plus once per
+	// session in the background, so the printed path may differ between runs.
+	// Under the default "copy" mode the directory is copied into the plugin
+	// cache and content-hashed, so it may be deleted afterwards. Under "link"
+	// the cache entry points at the printed directory in place (no copy, no
+	// size limit, macOS/Linux only), which means the directory has to stay
+	// valid for as long as Claude Code runs, and a changed printed path is the
+	// only signal of new content. See Settings.DisableCommandPluginSources for
+	// the managed-settings gate. Mirrors sdk.d.ts v0.3.233 L5974.
+	SettingsMarketplaceSourceCommand SettingsMarketplaceSourceKind = "command"
 	// SettingsMarketplaceSourceUnsupported identifies a bare-tag unsupported marketplace source. Mirrors sdk.d.ts v0.3.150 L4619.
 	// Honors optional "error": string carrying why the source was rejected, per sdk.d.ts v0.3.226 L5871.
 	SettingsMarketplaceSourceUnsupported SettingsMarketplaceSourceKind = "unsupported"
