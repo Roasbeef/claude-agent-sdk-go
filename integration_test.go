@@ -2360,3 +2360,39 @@ func TestIntegrationResumeDropsTurn(t *testing.T) {
 	// unattributable entry sits in the discarded range.
 	t.Skip("not triggerable from CLI: installed CLI 2.1.222 does not implement --resume-drops-turn; tracked in INTEGRATION-FOLLOWUPS.md")
 }
+
+// TestIntegrationInitTerminalSlashCommands checks the terminal-bound subset of
+// the init message's advertised slash commands. CLIs older than 2.1.233 tag
+// nothing, in which case the field is absent and a remote UI showing every
+// command is the correct fallback.
+func TestIntegrationInitTerminalSlashCommands(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	client, err := NewClient(isolatedClientOptions(t)...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	var init *SystemMessage
+	for msg := range client.Query(ctx, "Say hi") {
+		system, ok := msg.(SystemMessage)
+		if !ok || system.Subtype != "init" {
+			continue
+		}
+		init = &system
+		break
+	}
+	require.NotNil(t, init, "expected an init system message")
+	require.NotEmpty(t, init.SlashCommands)
+
+	if len(init.TerminalSlashCommands) == 0 {
+		t.Skip("CLI advertised no terminal-bound slash commands; " +
+			"needs a CLI at 2.1.233 or newer")
+	}
+
+	assert.Subset(t, init.SlashCommands, init.TerminalSlashCommands,
+		"every terminal command must also appear in slash_commands")
+}
