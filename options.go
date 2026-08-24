@@ -2320,14 +2320,44 @@ type AssistantMessageError string
 const (
 	AssistantMessageErrorAuthenticationFailed AssistantMessageError = "authentication_failed"
 	AssistantMessageErrorOAuthOrgNotAllowed   AssistantMessageError = "oauth_org_not_allowed"
-	AssistantMessageErrorBillingError         AssistantMessageError = "billing_error"
-	AssistantMessageErrorRateLimit            AssistantMessageError = "rate_limit"
-	AssistantMessageErrorOverloaded           AssistantMessageError = "overloaded"
-	AssistantMessageErrorInvalidRequest       AssistantMessageError = "invalid_request"
-	AssistantMessageErrorModelNotFound        AssistantMessageError = "model_not_found"
-	AssistantMessageErrorServerError          AssistantMessageError = "server_error"
-	AssistantMessageErrorUnknown              AssistantMessageError = "unknown"
-	AssistantMessageErrorMaxOutputTokens      AssistantMessageError = "max_output_tokens"
+	// AssistantMessageErrorAccountOnHold marks a turn refused because the
+	// account is on hold (sdk.d.ts v0.3.241 L159).
+	AssistantMessageErrorAccountOnHold   AssistantMessageError = "account_on_hold"
+	AssistantMessageErrorBillingError    AssistantMessageError = "billing_error"
+	AssistantMessageErrorRateLimit       AssistantMessageError = "rate_limit"
+	AssistantMessageErrorOverloaded      AssistantMessageError = "overloaded"
+	AssistantMessageErrorInvalidRequest  AssistantMessageError = "invalid_request"
+	AssistantMessageErrorModelNotFound   AssistantMessageError = "model_not_found"
+	AssistantMessageErrorServerError     AssistantMessageError = "server_error"
+	AssistantMessageErrorUnknown         AssistantMessageError = "unknown"
+	AssistantMessageErrorMaxOutputTokens AssistantMessageError = "max_output_tokens"
+)
+
+// Known values for the apiKeySource field on SystemMessage and AccountInfo,
+// naming where the credential used for API requests came from.
+//
+// The field stays a plain string: it is an open set on the wire, and the CLI
+// is free to add sources. Compare against these instead of literals, but do
+// not assume the set is exhaustive.
+//
+// TS also retains five legacy members — "user", "project", "org", "temporary"
+// and "oauth" — solely so the type stays backward compatible. Current CLIs
+// never emit them, so there is nothing to branch on and they get no constants
+// here (sdk.d.ts v0.3.241 L124).
+const (
+	// APIKeySourceAnthropicAPIKey means the ANTHROPIC_API_KEY environment
+	// variable supplied the credential.
+	APIKeySourceAnthropicAPIKey = "ANTHROPIC_API_KEY"
+	// APIKeySourceAPIKeyHelper means the configured apiKeyHelper command
+	// supplied the credential.
+	APIKeySourceAPIKeyHelper = "apiKeyHelper"
+	// APIKeySourceLoginManagedKey means the credential is an API key created
+	// and stored by /login with an Anthropic Console account.
+	APIKeySourceLoginManagedKey = "/login managed key"
+	// APIKeySourceNone means no API key is in use — a claude.ai OAuth login,
+	// a bearer token, or a third-party cloud provider. This is what a
+	// subscription-authenticated session reports, so it is not an error state.
+	APIKeySourceNone = "none"
 )
 
 // StopFailureInput contains data for StopFailure hooks.

@@ -1985,3 +1985,44 @@ func TestSettingsForceLoginGatewayURLJSON(t *testing.T) {
 		assert.NotContains(t, got, "forceLoginGatewayUrl")
 	})
 }
+
+func TestAPIKeySourceConstants(t *testing.T) {
+	// The wire values are not derivable from the constant names — two carry
+	// characters Go identifiers cannot ("/login managed key") or a casing
+	// that differs from the identifier ("apiKeyHelper") — so pin them.
+	assert.Equal(t, "ANTHROPIC_API_KEY", APIKeySourceAnthropicAPIKey)
+	assert.Equal(t, "apiKeyHelper", APIKeySourceAPIKeyHelper)
+	assert.Equal(t, "/login managed key", APIKeySourceLoginManagedKey)
+	assert.Equal(t, "none", APIKeySourceNone)
+}
+
+func TestSystemMessageAPIKeySourceNone(t *testing.T) {
+	// A subscription-authenticated session reports "none": no API key is in
+	// use, which is not an error state. This is what CLI 2.1.222 emits under
+	// a claude.ai OAuth login.
+	msg, err := ParseMessage([]byte(`{
+		"type": "system",
+		"subtype": "init",
+		"uuid": "550e8400-e29b-41d4-a716-446655440a00",
+		"session_id": "sess_aks_001",
+		"apiKeySource": "none",
+		"cwd": "/workspace",
+		"tools": [],
+		"mcp_servers": [],
+		"model": "claude-opus-4-5-20250929",
+		"permissionMode": "default",
+		"slash_commands": [],
+		"output_style": "default"
+	}`))
+	require.NoError(t, err)
+
+	systemMsg, ok := msg.(SystemMessage)
+	require.True(t, ok)
+	assert.Equal(t, APIKeySourceNone, systemMsg.APIKeySource)
+}
+
+func TestAssistantMessageErrorAccountOnHold(t *testing.T) {
+	assert.Equal(t,
+		AssistantMessageError("account_on_hold"),
+		AssistantMessageErrorAccountOnHold)
+}
