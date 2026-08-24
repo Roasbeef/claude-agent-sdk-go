@@ -794,6 +794,17 @@ func TestIntegrationPostToolUseUpdatedToolOutput(t *testing.T) {
 	t.Skip("not triggerable from CLI without a deterministic tool call whose output a PostToolUse hook rewrites; tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+func TestIntegrationPostToolUseClassifierContext(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// The observable effect is a permission-classifier decision in auto mode,
+	// which the SDK transport does not surface — the same reason
+	// TestIntegrationPostToolUseUpdatedToolOutput above is skipped. Asserting
+	// only that the SDK put the key on the wire would restate the unit test.
+	t.Skip("not directly assertable from CLI: classifierContext only affects auto-mode permission classifier decisions, which are not surfaced on the SDK transport")
+}
+
 func TestIntegrationStopHookBackgroundTasks(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
