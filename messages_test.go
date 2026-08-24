@@ -2671,6 +2671,57 @@ func TestParseMessageTaskStarted(t *testing.T) {
 				assert.Empty(t, taskMsg.WorkflowName)
 				assert.Empty(t, taskMsg.Prompt)
 				assert.Nil(t, taskMsg.SkipTranscript)
+				assert.Nil(t, taskMsg.IsBackgrounded)
+				assert.Nil(t, taskMsg.SpawnDepth)
+			},
+		},
+		{
+			name: "foreground subagent spawn",
+			input: `{
+				"type": "system",
+				"subtype": "task_started",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0T9",
+				"description": "Search the repo",
+				"task_type": "local_agent",
+				"subagent_type": "Explore",
+				"is_backgrounded": false,
+				"spawn_depth": 1,
+				"uuid": "550e8400-e29b-41d4-a716-446655440013",
+				"session_id": "sess_task_123"
+			}`,
+			check: func(t *testing.T, taskMsg TaskStartedMessage) {
+				t.Helper()
+				assert.Equal(t, "local_agent", taskMsg.TaskType)
+				assert.Equal(t, "Explore", taskMsg.SubagentType)
+				// false is a meaningful value here, not an absent
+				// field: the spawning tool call is blocking on it.
+				require.NotNil(t, taskMsg.IsBackgrounded)
+				assert.False(t, *taskMsg.IsBackgrounded)
+				require.NotNil(t, taskMsg.SpawnDepth)
+				assert.Equal(t, 1, *taskMsg.SpawnDepth)
+			},
+		},
+		{
+			name: "nested background subagent spawn",
+			input: `{
+				"type": "system",
+				"subtype": "task_started",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0TA",
+				"description": "Verify a finding",
+				"task_type": "local_agent",
+				"subagent_type": "general-purpose",
+				"is_backgrounded": true,
+				"spawn_depth": 2,
+				"uuid": "550e8400-e29b-41d4-a716-446655440014",
+				"session_id": "sess_task_123"
+			}`,
+			check: func(t *testing.T, taskMsg TaskStartedMessage) {
+				t.Helper()
+				require.NotNil(t, taskMsg.IsBackgrounded)
+				assert.True(t, *taskMsg.IsBackgrounded)
+				require.NotNil(t, taskMsg.SpawnDepth)
+				assert.Equal(t, 2, *taskMsg.SpawnDepth,
+					"a spawn from inside a depth-1 agent is depth 2")
 			},
 		},
 	}
