@@ -2026,3 +2026,87 @@ func TestAssistantMessageErrorAccountOnHold(t *testing.T) {
 		AssistantMessageError("account_on_hold"),
 		AssistantMessageErrorAccountOnHold)
 }
+
+func TestSettingsParityV0_3_241(t *testing.T) {
+	enabled := true
+	syncOff := false
+	autoContinue := true
+
+	settings := Settings{
+		SyncClaudeAiSkills:       &syncOff,
+		KeybindingFlavor:         KeybindingFlavorReadline,
+		AutoContinueAtUsageLimit: &autoContinue,
+		Worktree: &SettingsWorktree{
+			BgIsolation: "worktree",
+			Location:    "~/src/worktrees",
+		},
+		ModelSettings: map[string]SettingsModel{
+			"claude-opus-4-7": {EffortLevel: EffortXHigh},
+			"claude-sonnet-5": {EffortLevel: EffortLow},
+		},
+		Spellcheck: &SettingsSpellcheck{
+			Enabled:  &enabled,
+			Checker:  "hunspell",
+			Language: "en_GB",
+			Color:    "ansi256(203)",
+		},
+	}
+
+	data, err := json.Marshal(settings)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.Equal(t, false, got["syncClaudeAiSkills"])
+	assert.Equal(t, "readline", got["keybindingFlavor"])
+	assert.Equal(t, true, got["autoContinueAtUsageLimit"])
+
+	worktree, ok := got["worktree"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "~/src/worktrees", worktree["location"])
+
+	modelSettings, ok := got["modelSettings"].(map[string]interface{})
+	require.True(t, ok)
+	opus, ok := modelSettings["claude-opus-4-7"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "xhigh", opus["effortLevel"])
+
+	spellcheck, ok := got["spellcheck"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, true, spellcheck["enabled"])
+	assert.Equal(t, "hunspell", spellcheck["checker"])
+	assert.Equal(t, "en_GB", spellcheck["language"])
+	assert.Equal(t, "ansi256(203)", spellcheck["color"])
+
+	var back Settings
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, settings, back)
+}
+
+func TestSettingsParityV0_3_241OmitEmpty(t *testing.T) {
+	data, err := json.Marshal(Settings{})
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	for _, key := range []string{
+		"syncClaudeAiSkills",
+		"keybindingFlavor",
+		"autoContinueAtUsageLimit",
+		"modelSettings",
+		"spellcheck",
+	} {
+		assert.NotContains(t, got, key)
+	}
+}
+
+func TestSettingsSyncClaudeAiSkillsFalseSurvives(t *testing.T) {
+	// Only false is honored upstream, so it is the one value that must not be
+	// swallowed by omitempty. A *bool is what makes that work.
+	off := false
+	data, err := json.Marshal(Settings{SyncClaudeAiSkills: &off})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"syncClaudeAiSkills": false}`, string(data))
+}
