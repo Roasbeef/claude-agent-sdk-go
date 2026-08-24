@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.233 catchup work, using Go idioms where the API shape differs.
+v0.3.241 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -672,11 +672,11 @@ The v0.3.233 catchup added:
   Doc-only here: `Capabilities` is already an open `[]string`, and the drain tool
   sits outside the curated `tool_inputs.go` subset.
 
-PRs in this cycle (squash-merged): #200 assistant `context_usage`, #201
+PRs in that cycle (squash-merged): #200 assistant `context_usage`, #201
 `terminal_slash_commands`, #202 command plugin source, #203 marketplace settings
-aliases, #204 `forceLoginGatewayUrl`, plus this docs refresh.
+aliases, #204 `forceLoginGatewayUrl`, plus its docs refresh.
 
-Deferred this cycle:
+Deferred in v0.3.233:
 
 - `sdk-tools.d.ts` churn (`ReadNotifications` and `ProposeGoal` tools,
   `RemoteTrigger` gaining `list_runs` / `get_run_log`, `Bash` gaining
@@ -691,6 +691,82 @@ Deferred this cycle:
 - A `ripgrep` settings doc reword: it is honored only from user, managed/policy,
   or CLI (`--settings`) settings, and ignored from project settings. Behavior
   the Go SDK does not model either way.
+
+The v0.3.241 catchup added:
+
+- `SystemMessage.Effort` — the effort level the session will send on its next
+  request, after env overrides, session state, org caps and model-support
+  downgrades. A genuine tri-state, so it is a `NullableEffortLevel` value tagged
+  `omitzero` rather than a pointer: an explicit `null` means no effort parameter
+  will be sent at all, while an absent key means the host does not publish the
+  field. A pointer cannot carry that distinction, because `encoding/json`
+  resolves a `null` into a nil pointer without ever calling `UnmarshalJSON`.
+- `TaskStartedMessage.IsBackgrounded` / `SpawnDepth` — whether a task was
+  registered in the background or in the foreground with the spawning tool call
+  blocking on it, and the nesting depth of a spawned subagent. `task_started`
+  reports registration state only; a later move to the background arrives as
+  `TaskUpdatePatch.IsBackgrounded`.
+- `MessageOrigin.FromMode` — the *sending* session's permission class on a peer
+  origin (`PeerFromModeBypass` / `Prompting`). An absent value means hold, not a
+  default class: a recipient that runs without asking delivers same-class
+  messages immediately and holds cross-class or undeclared senders.
+- `MessageOriginSubkindProjectsRelay` — a Claude Code Projects delivery composed
+  server-side for a project coordinator and addressed to one of its thread
+  sessions. Framed as a coordinator message only when it carries the server's
+  relay stamps; one without them keeps the generic background-notification frame.
+- `AssistantMessageErrorAccountOnHold`, plus constants naming the four live
+  `apiKeySource` values (`ANTHROPIC_API_KEY`, `apiKeyHelper`, `/login managed
+  key`, `none`). The field stays a plain `string` — it is an open set. Upstream's
+  five legacy members get no constants: current CLIs never emit them.
+- `HookJSONOutput.ClassifierContext` — host-asserted context shown to the
+  auto-mode permission classifier alongside a PostToolUse result. Capped at 2000
+  UTF-16 code units shared across all hooks on one call, honored on synchronous
+  responses only, and unused on calls the classifier transcript omits. Pair an
+  assertion with the rewrite it describes in the same hook result, but never
+  return an identity rewrite to achieve that pairing — hooks run in parallel on
+  the original output and it would compete last-write-wins with a real redaction.
+- `SuppressOriginalPrompt` on `UserPromptExpansion` — the field is declared on
+  the expansion hook's output too, with identical semantics. The response builder
+  now names the hook that produced the envelope instead of hardcoding
+  `UserPromptSubmit`.
+- `poll_event` on `UserPromptSubmitInput.Source` — doc-only; both hook-input
+  builders already map `source`. It is the one source where a blocking verdict
+  rejects something not yet delivered: the hook fires at enqueue time, before the
+  event's delivery ack exists.
+- `SDKControlInitializeResponse.HooksApplied` — whether a repeated initialize's
+  hooks replaced the registered set, or were ignored because another client
+  configured the session. Nil is not false: a CLI predating the field ignored
+  hooks on every repeated initialize without saying so.
+- `Settings.SyncClaudeAiSkills`, `Worktree.Location`, `KeybindingFlavor`,
+  `AutoContinueAtUsageLimit`, `ModelSettings`, `Spellcheck`. Only `false` is
+  honored for `SyncClaudeAiSkills`, so it is a `*bool`. `Worktree.Location` is
+  desktop-only — the CLI does not read it for `--worktree`, `EnterWorktree`, or
+  agent isolation. A per-model persisted effort tops out at `xhigh`, where the
+  init message's applied effort also admits `max`.
+- `SettingsMarketplaceSourceURL`, plus `headersHelper` documented on url sources
+  and `headers`/`headersHelper` on inline catalog entries. Both already ride the
+  open source map. The two helpers differ in lifetime: a url source's is re-run
+  on every marketplace refresh and runs from the Claude config home (so relative
+  paths do not resolve where a caller expects), while a catalog entry's runs only
+  on explicit install or update.
+
+PRs in this cycle (squash-merged): #207 init `effort`, #208 `task_started`
+backgrounding, #209 peer `fromMode` and `projects-relay`, #210 `account_on_hold`
+and `apiKeySource` constants, #211 `classifierContext`, #212 prompt-hook parity,
+#213 `hooks_applied`, #214 Settings parity, #215 marketplace `headersHelper`,
+plus this docs refresh.
+
+Deferred in v0.3.241:
+
+- `sdk-tools.d.ts` churn (the Artifact/read/watch tool input unions) — outside
+  the curated `tool_inputs.go` subset, the standing deferral.
+- `bridge.d.ts`: the `onStopTask` callback, and the terminal-reason split where
+  `request_rejected` gains `status` and an origin `source`, and
+  `malformed_response` becomes its own variant. No Go bridge transport exists.
+- `ExitReason` / `EXIT_REASONS` lost `bypass_permissions_disabled`, and
+  `SDKControlGetPlanRequest` / `SDKControlGetWorkspaceDiffRequest` were deleted
+  outright (gone from `sdk.mjs` too). The Go SDK never modeled either surface, so
+  both removals are no-ops here.
 
 Some areas remain intentionally limited by the CLI or integration harness:
 desktop/IDE-only settings are not modeled exhaustively, several runtime control
