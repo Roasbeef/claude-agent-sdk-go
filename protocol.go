@@ -1752,11 +1752,22 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 		resp["hookSpecificOutput"] = hookSpecificOutput
 	}
 
-	if result.SuppressOriginalPrompt != nil && hookType == string(HookTypeUserPromptSubmit) {
+	if result.ClassifierContext != "" && hookType == string(HookTypePostToolUse) {
 		hookSpecificOutput, _ := resp["hookSpecificOutput"].(map[string]interface{})
 		if hookSpecificOutput == nil {
 			hookSpecificOutput = map[string]interface{}{
-				"hookEventName": string(HookTypeUserPromptSubmit),
+				"hookEventName": string(HookTypePostToolUse),
+			}
+		}
+		hookSpecificOutput["classifierContext"] = result.ClassifierContext
+		resp["hookSpecificOutput"] = hookSpecificOutput
+	}
+
+	if result.SuppressOriginalPrompt != nil && isSuppressOriginalPromptHook(hookType) {
+		hookSpecificOutput, _ := resp["hookSpecificOutput"].(map[string]interface{})
+		if hookSpecificOutput == nil {
+			hookSpecificOutput = map[string]interface{}{
+				"hookEventName": hookType,
 			}
 		}
 		hookSpecificOutput["suppressOriginalPrompt"] = *result.SuppressOriginalPrompt
@@ -1786,6 +1797,18 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 	}
 
 	return resp
+}
+
+// isSuppressOriginalPromptHook returns true for hook events whose
+// hookSpecificOutput accepts suppressOriginalPrompt per sdk.d.ts v0.3.241.
+func isSuppressOriginalPromptHook(hookType string) bool {
+	switch hookType {
+	case string(HookTypeUserPromptSubmit),
+		string(HookTypeUserPromptExpansion):
+		return true
+	default:
+		return false
+	}
 }
 
 // isAdditionalContextHook returns true for hook events whose

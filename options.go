@@ -315,10 +315,27 @@ type Settings struct {
 	AWSAuthRefresh      string `json:"awsAuthRefresh,omitempty"`
 	GCPAuthRefresh      string `json:"gcpAuthRefresh,omitempty"`
 	// PolicyHelper configures the admin-controlled policy executable invoked at startup to compute managed settings. Honored only from policy sources. Mirrors sdk.d.ts v0.3.150 L3993.
-	PolicyHelper               *SettingsPolicyHelper            `json:"policyHelper,omitempty"`
-	FileSuggestion             *SettingsFileSuggestion          `json:"fileSuggestion,omitempty"`
-	RespectGitignore           *bool                            `json:"respectGitignore,omitempty"`
-	CleanupPeriodDays          *int                             `json:"cleanupPeriodDays,omitempty"`
+	PolicyHelper      *SettingsPolicyHelper   `json:"policyHelper,omitempty"`
+	FileSuggestion    *SettingsFileSuggestion `json:"fileSuggestion,omitempty"`
+	RespectGitignore  *bool                   `json:"respectGitignore,omitempty"`
+	CleanupPeriodDays *int                    `json:"cleanupPeriodDays,omitempty"`
+	// SyncClaudeAiSkills turns off syncing of the skills enabled on
+	// claude.ai. Only false is honored: the feature is enabled server-side per
+	// account, so setting true does not turn it on early. Not read from
+	// project settings (.claude/settings.json), and only applies when signed
+	// in with a Claude account.
+	//
+	// The effect of a false depends on which file carries it. In user or
+	// managed settings it is destructive-ish: nothing more is downloaded,
+	// previously synced skills under ~/.claude/skills/synced stop running and
+	// are hidden from sessions started afterwards, and at the next launch they
+	// move to ~/.claude/skills/.trash — deleted after CleanupPeriodDays, and
+	// re-downloaded rather than restored if the setting is reverted. In
+	// .claude/settings.local.json or --settings it is scoped and reversible:
+	// downloads stop and synced skills are blocked and hidden for that
+	// workspace or invocation only, with nothing moved (sdk.d.ts v0.3.241
+	// L5392).
+	SyncClaudeAiSkills         *bool                            `json:"syncClaudeAiSkills,omitempty"`
 	SkillListingMaxDescChars   *int                             `json:"skillListingMaxDescChars,omitempty"`
 	SkillListingBudgetFraction *float64                         `json:"skillListingBudgetFraction,omitempty"`
 	WSLInheritsWindowsSettings *bool                            `json:"wslInheritsWindowsSettings,omitempty"`
@@ -426,6 +443,17 @@ type Settings struct {
 	TerminalTitleFromRename    *bool                        `json:"terminalTitleFromRename,omitempty"`
 	AlwaysThinkingEnabled      *bool                        `json:"alwaysThinkingEnabled,omitempty"`
 	EffortLevel                EffortLevel                  `json:"effortLevel,omitempty"`
+	// ModelSettings holds per-model settings keyed by canonical model name —
+	// the per-model twin of EffortLevel above. Note the ceiling differs: a
+	// persisted per-model effort tops out at "xhigh", where the init message's
+	// applied effort also admits "max" (sdk.d.ts v0.3.241 L7415).
+	ModelSettings map[string]SettingsModel `json:"modelSettings,omitempty"`
+	// Spellcheck underlines misspelled words in the prompt input as you type,
+	// using an installed aspell, hunspell or ispell. Read from user, flag and
+	// managed settings only — the whole block from the highest-precedence of
+	// those applies, and it is ignored in .claude/settings.json and
+	// .claude/settings.local.json (sdk.d.ts v0.3.241 L7381).
+	Spellcheck *SettingsSpellcheck `json:"spellcheck,omitempty"`
 	// Ultracode enables session-scoped workflow orchestration, typically via --settings or apply_flag_settings. Mirrors sdk.d.ts v0.3.168 L5413.
 	Ultracode                    *bool  `json:"ultracode,omitempty"`
 	AutoCompactWindow            *int   `json:"autoCompactWindow,omitempty"`
@@ -479,6 +507,10 @@ type Settings struct {
 	PluginTrustMessage string   `json:"pluginTrustMessage,omitempty"`
 	Theme              string   `json:"theme,omitempty"`
 	EditorMode         string   `json:"editorMode,omitempty"`
+	// KeybindingFlavor selects which conventions the prompt's word-editing
+	// keys follow. Empty string leaves the CLI default (KeybindingFlavorClassic)
+	// in place (sdk.d.ts v0.3.241 L7640).
+	KeybindingFlavor KeybindingFlavor `json:"keybindingFlavor,omitempty"`
 	// VimInsertModeRemaps holds vim INSERT-mode key-sequence remaps, e.g.
 	// {"jj": "<Esc>"}. Each key is exactly two printable characters typed in
 	// sequence; "<Esc>" (return to NORMAL mode) is the only supported target.
@@ -492,7 +524,12 @@ type Settings struct {
 	// Mirrors sdk.d.ts v0.3.220 L6545.
 	PrecomputeCompactionEnabled *bool `json:"precomputeCompactionEnabled,omitempty"`
 	// SwitchModelsOnFlag switches models automatically when safety measures flag a message. Mirrors sdk.d.ts v0.3.168 L5620.
-	SwitchModelsOnFlag         *bool `json:"switchModelsOnFlag,omitempty"`
+	SwitchModelsOnFlag *bool `json:"switchModelsOnFlag,omitempty"`
+	// AutoContinueAtUsageLimit waits for a claude.ai usage limit to reset and
+	// continues the task automatically when one stops the session. When off,
+	// the limit dialog offers the wait as a choice instead (sdk.d.ts v0.3.241
+	// L7670).
+	AutoContinueAtUsageLimit   *bool `json:"autoContinueAtUsageLimit,omitempty"`
 	AutoScrollEnabled          *bool `json:"autoScrollEnabled,omitempty"`
 	FileCheckpointingEnabled   *bool `json:"fileCheckpointingEnabled,omitempty"`
 	ShowTurnDuration           *bool `json:"showTurnDuration,omitempty"`
@@ -725,6 +762,67 @@ type SettingsWorktree struct {
 	BaseRef string `json:"baseRef,omitempty"`
 	// BgIsolation selects the isolation mode for background sessions. Mirrors sdk.d.ts v0.3.150 L4368.
 	BgIsolation string `json:"bgIsolation,omitempty"`
+	// Location is the directory under which Claude Code Desktop creates the
+	// worktrees of SSH sessions running on this machine, instead of
+	// <project>/.claude/worktrees. An absolute path, or one starting with ~/.
+	// Read by the desktop app from the SSH host user settings; a location
+	// chosen in the desktop app's SSH connection settings takes precedence.
+	//
+	// The CLI does not read it — not for --worktree, not for EnterWorktree,
+	// not for agent isolation — so setting it has no effect on an SDK-driven
+	// session (sdk.d.ts v0.3.241 L5766).
+	Location string `json:"location,omitempty"`
+}
+
+// KeybindingFlavor selects which conventions the prompt's word-editing keys
+// follow.
+type KeybindingFlavor string
+
+const (
+	// KeybindingFlavorClassic is the CLI default: Ctrl+W deletes the previous
+	// word, and the word keys use Unicode word segmentation, so "foo_bar" and
+	// "3.14" each count as one word.
+	KeybindingFlavorClassic KeybindingFlavor = "classic"
+	// KeybindingFlavorReadline matches Bash and other readline programs:
+	// Ctrl+W deletes back to the previous whitespace; Alt+F and Alt+D stop at
+	// the end of the current word and Ctrl+Y pastes back what Alt+D deleted.
+	// For Alt+B, Alt+F, Alt+D, Ctrl/Option+Arrow and Option/Ctrl+Backspace a
+	// word is a run of letters and digits, so punctuation separates words.
+	KeybindingFlavorReadline KeybindingFlavor = "readline"
+)
+
+// SettingsModel holds the persisted settings for one model, keyed in
+// Settings.ModelSettings by canonical model name.
+//
+// TS declares an open index signature on this entry, so the CLI may add keys
+// here that this struct drops on a round trip.
+type SettingsModel struct {
+	// EffortLevel is the persisted effort level for this model. Unlike the
+	// init message's applied effort, "max" is not a member here.
+	EffortLevel EffortLevel `json:"effortLevel,omitempty"`
+}
+
+// SettingsSpellcheck configures prompt-input spell checking. It does nothing
+// unless Enabled is true and one of aspell, hunspell or ispell is installed.
+//
+// TS declares an open index signature on this block, so the CLI may add keys
+// here that this struct drops on a round trip.
+type SettingsSpellcheck struct {
+	// Enabled turns on spell checking of the prompt input. Default false.
+	Enabled *bool `json:"enabled,omitempty"`
+	// Checker selects which spell checker to run: "aspell", "hunspell",
+	// "ispell", or "auto" (the default) for the first of those found on PATH.
+	Checker string `json:"checker,omitempty"`
+	// Language is the dictionary, passed to the checker as-is (aspell --lang,
+	// hunspell -d, ispell -d), e.g. "en_GB". Names are checker-specific and
+	// accept only letters, digits and _ - . , characters. Empty string leaves
+	// the checker's own default.
+	Language string `json:"language,omitempty"`
+	// Color is the color of misspelled words, which are also underlined: a
+	// terminal color name such as "red" or "magenta", "#rrggbb",
+	// "rgb(r,g,b)", "ansi256(n)" or "ansi:<name>". Empty string leaves the
+	// theme's error color.
+	Color string `json:"color,omitempty"`
 }
 
 type SettingsCommand struct {
@@ -2005,10 +2103,17 @@ type UserPromptSubmitInput struct {
 	// Source names who authored or injected the prompt: "user" (interactive
 	// composer), "sdk" (non-interactive entrypoint, -p / Agent SDK),
 	// "loop_wakeup" (dynamic /loop wakeup), "schedule_wakeup" (scheduled-task
-	// fire), or "system" (other machine-injected turns: peer/channel messages,
-	// task notifications, auto-continuation). Empty when absent — as of
-	// v0.3.215 it is only set for Anthropic-internal sessions while the field
-	// is trialed; external payloads omit it (sdk.d.ts v0.3.215).
+	// fire), "system" (other machine-injected turns: peer/channel messages,
+	// task notifications, auto-continuation), or "poll_event" (the poll-event
+	// channel enqueue-time pass, added in sdk.d.ts v0.3.241 L8228).
+	//
+	// A "poll_event" pass is the one source where a blocking verdict rejects
+	// something that has not been delivered yet: the hook fires when the host
+	// submits the event, before its delivery ack exists.
+	//
+	// Empty when absent — as of v0.3.215 it is only set for
+	// Anthropic-internal sessions while the field is trialed; external
+	// payloads omit it (sdk.d.ts v0.3.215).
 	Source string `json:"source,omitempty"`
 	// SessionTitle is the optional user-facing session label from TS L6094.
 	// Nil means the field was absent on the wire.
@@ -2320,14 +2425,45 @@ type AssistantMessageError string
 const (
 	AssistantMessageErrorAuthenticationFailed AssistantMessageError = "authentication_failed"
 	AssistantMessageErrorOAuthOrgNotAllowed   AssistantMessageError = "oauth_org_not_allowed"
-	AssistantMessageErrorBillingError         AssistantMessageError = "billing_error"
-	AssistantMessageErrorRateLimit            AssistantMessageError = "rate_limit"
-	AssistantMessageErrorOverloaded           AssistantMessageError = "overloaded"
-	AssistantMessageErrorInvalidRequest       AssistantMessageError = "invalid_request"
-	AssistantMessageErrorModelNotFound        AssistantMessageError = "model_not_found"
-	AssistantMessageErrorServerError          AssistantMessageError = "server_error"
-	AssistantMessageErrorUnknown              AssistantMessageError = "unknown"
-	AssistantMessageErrorMaxOutputTokens      AssistantMessageError = "max_output_tokens"
+	// AssistantMessageErrorAccountOnHold marks a turn refused because the
+	// account is on hold (sdk.d.ts v0.3.241 L159).
+	AssistantMessageErrorAccountOnHold   AssistantMessageError = "account_on_hold"
+	AssistantMessageErrorBillingError    AssistantMessageError = "billing_error"
+	AssistantMessageErrorRateLimit       AssistantMessageError = "rate_limit"
+	AssistantMessageErrorOverloaded      AssistantMessageError = "overloaded"
+	AssistantMessageErrorInvalidRequest  AssistantMessageError = "invalid_request"
+	AssistantMessageErrorModelNotFound   AssistantMessageError = "model_not_found"
+	AssistantMessageErrorServerError     AssistantMessageError = "server_error"
+	AssistantMessageErrorUnknown         AssistantMessageError = "unknown"
+	AssistantMessageErrorMaxOutputTokens AssistantMessageError = "max_output_tokens"
+)
+
+// Known values for the apiKeySource field on SystemMessage and AccountInfo,
+// naming where the credential used for API requests came from.
+//
+// The field stays a plain string: it is an open set on the wire, and the CLI
+// is free to add sources. Compare against these instead of literals, but do
+// not assume the set is exhaustive.
+//
+// TS also retains five legacy members — "user", "project", "org", "temporary"
+// and "oauth" — solely so the type stays backward compatible. Current CLIs
+// never emit them, so there is nothing to branch on and they get no constants
+// here (sdk.d.ts v0.3.241 L124).
+const (
+	// APIKeySourceAnthropicAPIKey means the ANTHROPIC_API_KEY environment
+	// variable supplied the credential.
+	// These name where a credential came from; they are not credentials.
+	APIKeySourceAnthropicAPIKey = "ANTHROPIC_API_KEY" // #nosec G101 // #nosec G101
+	// APIKeySourceAPIKeyHelper means the configured apiKeyHelper command
+	// supplied the credential.
+	APIKeySourceAPIKeyHelper = "apiKeyHelper" // #nosec G101
+	// APIKeySourceLoginManagedKey means the credential is an API key created
+	// and stored by /login with an Anthropic Console account.
+	APIKeySourceLoginManagedKey = "/login managed key" // #nosec G101
+	// APIKeySourceNone means no API key is in use — a claude.ai OAuth login,
+	// a bearer token, or a third-party cloud provider. This is what a
+	// subscription-authenticated session reports, so it is not an error state.
+	APIKeySourceNone = "none"
 )
 
 // StopFailureInput contains data for StopFailure hooks.
@@ -2556,13 +2692,14 @@ type HookResult struct {
 	// Honored on any hook return, sync or async.
 	TerminalSequence string
 
-	// SuppressOriginalPrompt, when set on a UserPromptSubmit hook return,
-	// asks the CLI to omit the original user prompt from the block message
-	// it returns when the hook blocks. Honored only on UserPromptSubmit
-	// hooks; nil (the default) leaves the wire field unset; a pointer to
-	// false explicitly opts out. Translates into hookSpecificOutput.
-	// suppressOriginalPrompt per sdk.d.ts v0.3.150 L5808. Useful when the
-	// prompt itself was the reason for the block (PII, credentials, etc.).
+	// SuppressOriginalPrompt asks the CLI to omit the original user prompt
+	// from the block message it returns when the hook blocks. Honored on
+	// UserPromptSubmit (sdk.d.ts v0.3.150 L5808) and UserPromptExpansion
+	// (sdk.d.ts v0.3.241 L8219) hooks, with identical semantics on both;
+	// silently dropped for other hook types. Nil (the default) leaves the
+	// wire field unset; a pointer to false explicitly opts out. Translates
+	// into hookSpecificOutput.suppressOriginalPrompt. Useful when the prompt
+	// itself was the reason for the block (PII, credentials, etc.).
 	SuppressOriginalPrompt *bool
 
 	// ReloadSkills, when set on a SessionStart hook return, asks the CLI to
@@ -2601,6 +2738,49 @@ type HookResult struct {
 	// directly for finer control or to address the deprecated MCP-only
 	// updatedMCPToolOutput field.
 	UpdatedToolOutput interface{}
+
+	// ClassifierContext is host-asserted context shown to the auto-mode
+	// permission classifier alongside this tool call's result. Translates
+	// into hookSpecificOutput.classifierContext on PostToolUse hooks only;
+	// silently dropped elsewhere. Empty string omits the field
+	// (sdk.d.ts v0.3.241 L2339).
+	//
+	// In a live session the classifier may weigh a user statement relayed
+	// here as user intent — it can satisfy a consent bar a user turn would
+	// satisfy, though never a hard boundary. Values restored from saved
+	// session state are treated as unverified context only. Relay discipline
+	// is the host's obligation: put ONLY genuine user statements in
+	// intent-bearing positions, never tool output or model text dressed as
+	// one. Content placed here reaches the classifier with host-application
+	// framing, so copying untrusted tool output or third-party text into it
+	// hands that text the host's authority.
+	//
+	// Constraints that silently drop the value rather than erroring:
+	//
+	//   - Capped at 2000 UTF-16 code units, a budget shared across every hook
+	//     contributing to one call. Astral characters (emoji and the like)
+	//     count as two.
+	//   - Honored on synchronous hook responses only. An async hook's late
+	//     response arrives after the result message is frozen, and the field
+	//     in it is ignored.
+	//   - Applies only to calls the classifier transcript shows. Read-only
+	//     lookups the transcript omits (file reads, searches), inner REPL
+	//     calls and remote-engine shells produce no per-result line, so
+	//     context attached to them is unused.
+	//
+	// It is bound to a single call id and sized for a short assertion — not a
+	// delivery channel for relaying messages or events.
+	//
+	// Rewrite integrity: if the assertion describes output being rewritten,
+	// return it in the SAME hook result as the rewrite, so it is dropped
+	// automatically if that rewrite is rejected or superseded. An assertion
+	// returned without a rewrite is never invalidated by another hook's
+	// rewrite, so a non-rewriting hook should assert only what holds
+	// regardless. Do NOT return an identity rewrite just to pair an
+	// assertion: hooks run in parallel on the ORIGINAL output, so an identity
+	// rewrite competes last-write-wins with sibling rewrites and can clobber
+	// a real redaction.
+	ClassifierContext string
 
 	// HookSpecificOutput provides raw hookSpecificOutput for the CLI
 	// response. When set, this takes precedence over auto-translation
