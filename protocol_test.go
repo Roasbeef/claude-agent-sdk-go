@@ -4236,3 +4236,123 @@ func TestHandleHookCallback_RetryWatchPathsEvents(t *testing.T) {
 		assert.Equal(t, "success", resp.Response.Subtype)
 	})
 }
+
+func TestBuildHookResponse_ClassifierContext(t *testing.T) {
+	t.Run("emitted on PostToolUse", func(t *testing.T) {
+		resp := buildHookResponse("PostToolUse", HookResult{
+			Continue:          true,
+			ClassifierContext: "the user asked for this deletion",
+		})
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "PostToolUse", hso["hookEventName"])
+		assert.Equal(t, "the user asked for this deletion",
+			hso["classifierContext"])
+	})
+
+	t.Run("empty omits the field", func(t *testing.T) {
+		resp := buildHookResponse("PostToolUse", HookResult{
+			Continue:          true,
+			ClassifierContext: "",
+		})
+
+		_, has := resp["hookSpecificOutput"]
+		assert.False(t, has)
+	})
+
+	t.Run("dropped on non-PostToolUse hooks", func(t *testing.T) {
+		// The classifier reads this with host-application framing, so
+		// leaking it onto an envelope that never declared it is worse
+		// than dropping it.
+		for _, hookType := range []string{
+			"PreToolUse", "PostToolUseFailure", "UserPromptSubmit", "Stop",
+		} {
+			resp := buildHookResponse(hookType, HookResult{
+				Continue:          true,
+				ClassifierContext: "context",
+			})
+
+			_, has := resp["hookSpecificOutput"]
+			assert.False(t, has,
+				"classifierContext must not leak onto %s", hookType)
+		}
+	})
+
+	t.Run("rides alongside a rewrite in the same result", func(t *testing.T) {
+		// The upstream contract: pairing an assertion with the rewrite it
+		// describes requires both in one hook result, so the assertion is
+		// dropped if the rewrite is rejected or superseded.
+		resp := buildHookResponse("PostToolUse", HookResult{
+			Continue:          true,
+			UpdatedToolOutput: "redacted output",
+			ClassifierContext: "secrets stripped at the source",
+		})
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "PostToolUse", hso["hookEventName"])
+		assert.Equal(t, "redacted output", hso["updatedToolOutput"])
+		assert.Equal(t, "secrets stripped at the source",
+			hso["classifierContext"])
+	})
+
+	t.Run("composes with explicit HookSpecificOutput", func(t *testing.T) {
+		resp := buildHookResponse("PostToolUse", HookResult{
+			Continue:          true,
+			ClassifierContext: "typed wins",
+			HookSpecificOutput: map[string]interface{}{
+				"hookEventName":     "PostToolUse",
+				"classifierContext": "raw loses",
+				"additionalContext": "preserved",
+			},
+		})
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "typed wins", hso["classifierContext"])
+		assert.Equal(t, "preserved", hso["additionalContext"])
+	})
+}
+
+func TestBuildHookResponse_SuppressOriginalPrompt_UserPromptExpansion(t *testing.T) {
+	t.Run("emitted with the expansion event name", func(t *testing.T) {
+		v := true
+		resp := buildHookResponse("UserPromptExpansion", HookResult{
+			Continue:               true,
+			SuppressOriginalPrompt: &v,
+		})
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		// The envelope must name the hook that produced it, not the
+		// UserPromptSubmit literal the gate used to hardcode.
+		assert.Equal(t, "UserPromptExpansion", hso["hookEventName"])
+		assert.Equal(t, true, hso["suppressOriginalPrompt"])
+	})
+
+	t.Run("explicit false still reaches the wire", func(t *testing.T) {
+		v := false
+		resp := buildHookResponse("UserPromptExpansion", HookResult{
+			Continue:               true,
+			SuppressOriginalPrompt: &v,
+		})
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, false, hso["suppressOriginalPrompt"])
+	})
+
+	t.Run("UserPromptSubmit still names itself", func(t *testing.T) {
+		v := true
+		resp := buildHookResponse("UserPromptSubmit", HookResult{
+			Continue:               true,
+			SuppressOriginalPrompt: &v,
+		})
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "UserPromptSubmit", hso["hookEventName"])
+		assert.Equal(t, true, hso["suppressOriginalPrompt"])
+	})
+}

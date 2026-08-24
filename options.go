@@ -2103,10 +2103,17 @@ type UserPromptSubmitInput struct {
 	// Source names who authored or injected the prompt: "user" (interactive
 	// composer), "sdk" (non-interactive entrypoint, -p / Agent SDK),
 	// "loop_wakeup" (dynamic /loop wakeup), "schedule_wakeup" (scheduled-task
-	// fire), or "system" (other machine-injected turns: peer/channel messages,
-	// task notifications, auto-continuation). Empty when absent — as of
-	// v0.3.215 it is only set for Anthropic-internal sessions while the field
-	// is trialed; external payloads omit it (sdk.d.ts v0.3.215).
+	// fire), "system" (other machine-injected turns: peer/channel messages,
+	// task notifications, auto-continuation), or "poll_event" (the poll-event
+	// channel enqueue-time pass, added in sdk.d.ts v0.3.241 L8228).
+	//
+	// A "poll_event" pass is the one source where a blocking verdict rejects
+	// something that has not been delivered yet: the hook fires when the host
+	// submits the event, before its delivery ack exists.
+	//
+	// Empty when absent — as of v0.3.215 it is only set for
+	// Anthropic-internal sessions while the field is trialed; external
+	// payloads omit it (sdk.d.ts v0.3.215).
 	Source string `json:"source,omitempty"`
 	// SessionTitle is the optional user-facing session label from TS L6094.
 	// Nil means the field was absent on the wire.
@@ -2418,14 +2425,45 @@ type AssistantMessageError string
 const (
 	AssistantMessageErrorAuthenticationFailed AssistantMessageError = "authentication_failed"
 	AssistantMessageErrorOAuthOrgNotAllowed   AssistantMessageError = "oauth_org_not_allowed"
-	AssistantMessageErrorBillingError         AssistantMessageError = "billing_error"
-	AssistantMessageErrorRateLimit            AssistantMessageError = "rate_limit"
-	AssistantMessageErrorOverloaded           AssistantMessageError = "overloaded"
-	AssistantMessageErrorInvalidRequest       AssistantMessageError = "invalid_request"
-	AssistantMessageErrorModelNotFound        AssistantMessageError = "model_not_found"
-	AssistantMessageErrorServerError          AssistantMessageError = "server_error"
-	AssistantMessageErrorUnknown              AssistantMessageError = "unknown"
-	AssistantMessageErrorMaxOutputTokens      AssistantMessageError = "max_output_tokens"
+	// AssistantMessageErrorAccountOnHold marks a turn refused because the
+	// account is on hold (sdk.d.ts v0.3.241 L159).
+	AssistantMessageErrorAccountOnHold   AssistantMessageError = "account_on_hold"
+	AssistantMessageErrorBillingError    AssistantMessageError = "billing_error"
+	AssistantMessageErrorRateLimit       AssistantMessageError = "rate_limit"
+	AssistantMessageErrorOverloaded      AssistantMessageError = "overloaded"
+	AssistantMessageErrorInvalidRequest  AssistantMessageError = "invalid_request"
+	AssistantMessageErrorModelNotFound   AssistantMessageError = "model_not_found"
+	AssistantMessageErrorServerError     AssistantMessageError = "server_error"
+	AssistantMessageErrorUnknown         AssistantMessageError = "unknown"
+	AssistantMessageErrorMaxOutputTokens AssistantMessageError = "max_output_tokens"
+)
+
+// Known values for the apiKeySource field on SystemMessage and AccountInfo,
+// naming where the credential used for API requests came from.
+//
+// The field stays a plain string: it is an open set on the wire, and the CLI
+// is free to add sources. Compare against these instead of literals, but do
+// not assume the set is exhaustive.
+//
+// TS also retains five legacy members — "user", "project", "org", "temporary"
+// and "oauth" — solely so the type stays backward compatible. Current CLIs
+// never emit them, so there is nothing to branch on and they get no constants
+// here (sdk.d.ts v0.3.241 L124).
+const (
+	// APIKeySourceAnthropicAPIKey means the ANTHROPIC_API_KEY environment
+	// variable supplied the credential.
+	// These name where a credential came from; they are not credentials.
+	APIKeySourceAnthropicAPIKey = "ANTHROPIC_API_KEY" // #nosec G101 // #nosec G101
+	// APIKeySourceAPIKeyHelper means the configured apiKeyHelper command
+	// supplied the credential.
+	APIKeySourceAPIKeyHelper = "apiKeyHelper" // #nosec G101
+	// APIKeySourceLoginManagedKey means the credential is an API key created
+	// and stored by /login with an Anthropic Console account.
+	APIKeySourceLoginManagedKey = "/login managed key" // #nosec G101
+	// APIKeySourceNone means no API key is in use — a claude.ai OAuth login,
+	// a bearer token, or a third-party cloud provider. This is what a
+	// subscription-authenticated session reports, so it is not an error state.
+	APIKeySourceNone = "none"
 )
 
 // StopFailureInput contains data for StopFailure hooks.
@@ -2654,13 +2692,14 @@ type HookResult struct {
 	// Honored on any hook return, sync or async.
 	TerminalSequence string
 
-	// SuppressOriginalPrompt, when set on a UserPromptSubmit hook return,
-	// asks the CLI to omit the original user prompt from the block message
-	// it returns when the hook blocks. Honored only on UserPromptSubmit
-	// hooks; nil (the default) leaves the wire field unset; a pointer to
-	// false explicitly opts out. Translates into hookSpecificOutput.
-	// suppressOriginalPrompt per sdk.d.ts v0.3.150 L5808. Useful when the
-	// prompt itself was the reason for the block (PII, credentials, etc.).
+	// SuppressOriginalPrompt asks the CLI to omit the original user prompt
+	// from the block message it returns when the hook blocks. Honored on
+	// UserPromptSubmit (sdk.d.ts v0.3.150 L5808) and UserPromptExpansion
+	// (sdk.d.ts v0.3.241 L8219) hooks, with identical semantics on both;
+	// silently dropped for other hook types. Nil (the default) leaves the
+	// wire field unset; a pointer to false explicitly opts out. Translates
+	// into hookSpecificOutput.suppressOriginalPrompt. Useful when the prompt
+	// itself was the reason for the block (PII, credentials, etc.).
 	SuppressOriginalPrompt *bool
 
 	// ReloadSkills, when set on a SessionStart hook return, asks the CLI to
@@ -2699,6 +2738,49 @@ type HookResult struct {
 	// directly for finer control or to address the deprecated MCP-only
 	// updatedMCPToolOutput field.
 	UpdatedToolOutput interface{}
+
+	// ClassifierContext is host-asserted context shown to the auto-mode
+	// permission classifier alongside this tool call's result. Translates
+	// into hookSpecificOutput.classifierContext on PostToolUse hooks only;
+	// silently dropped elsewhere. Empty string omits the field
+	// (sdk.d.ts v0.3.241 L2339).
+	//
+	// In a live session the classifier may weigh a user statement relayed
+	// here as user intent — it can satisfy a consent bar a user turn would
+	// satisfy, though never a hard boundary. Values restored from saved
+	// session state are treated as unverified context only. Relay discipline
+	// is the host's obligation: put ONLY genuine user statements in
+	// intent-bearing positions, never tool output or model text dressed as
+	// one. Content placed here reaches the classifier with host-application
+	// framing, so copying untrusted tool output or third-party text into it
+	// hands that text the host's authority.
+	//
+	// Constraints that silently drop the value rather than erroring:
+	//
+	//   - Capped at 2000 UTF-16 code units, a budget shared across every hook
+	//     contributing to one call. Astral characters (emoji and the like)
+	//     count as two.
+	//   - Honored on synchronous hook responses only. An async hook's late
+	//     response arrives after the result message is frozen, and the field
+	//     in it is ignored.
+	//   - Applies only to calls the classifier transcript shows. Read-only
+	//     lookups the transcript omits (file reads, searches), inner REPL
+	//     calls and remote-engine shells produce no per-result line, so
+	//     context attached to them is unused.
+	//
+	// It is bound to a single call id and sized for a short assertion — not a
+	// delivery channel for relaying messages or events.
+	//
+	// Rewrite integrity: if the assertion describes output being rewritten,
+	// return it in the SAME hook result as the rewrite, so it is dropped
+	// automatically if that rewrite is rejected or superseded. An assertion
+	// returned without a rewrite is never invalidated by another hook's
+	// rewrite, so a non-rewriting hook should assert only what holds
+	// regardless. Do NOT return an identity rewrite just to pair an
+	// assertion: hooks run in parallel on the ORIGINAL output, so an identity
+	// rewrite competes last-write-wins with sibling rewrites and can clobber
+	// a real redaction.
+	ClassifierContext string
 
 	// HookSpecificOutput provides raw hookSpecificOutput for the CLI
 	// response. When set, this takes precedence over auto-translation

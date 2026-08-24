@@ -47,6 +47,23 @@ type SDKControlInitializeResponse struct {
 	// FastModeDisabledReason explains why fast mode could not serve, when
 	// FastModeState is not "on". Absent when nothing blocks it.
 	FastModeDisabledReason FastModeDisabledReason `json:"fast_mode_disabled_reason,omitempty"`
+	// HooksApplied reports whether the hooks this initialize carried were
+	// registered: true on a session's first initialize, and on a repeated
+	// initialize from the process that owns the CLI's stdin — its set replaces
+	// the one registered earlier. False when a repeated initialize's hooks were
+	// ignored, which happens to a client joining a remote session another
+	// client configured.
+	//
+	// Nil means either the request carried no hooks, or the CLI predates the
+	// field — and those are not equivalent, because a CLI that predates it
+	// ignored hooks on every repeated initialize. So a nil here after a
+	// Reinitialize that did carry hooks is not evidence they took effect.
+	//
+	// Reinitialize is where a false is actionable: a caller reattaching to a
+	// session it did not configure keeps whatever hooks the owning client
+	// registered, and its own callbacks will never fire (sdk.d.ts v0.3.241
+	// L3752).
+	HooksApplied *bool `json:"hooks_applied,omitempty"`
 }
 
 // McpServerStatus reports the connection status of an MCP server.

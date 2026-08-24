@@ -740,6 +740,18 @@ func TestIntegrationHookSuppressOriginalPrompt(t *testing.T) {
 	t.Skip("not directly assertable from CLI: suppressOriginalPrompt is a CLI block-message rendering behavior, not surfaced on the SDK transport")
 }
 
+func TestIntegrationTaskStartedBackgrounding(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// Probed against CLI 2.1.222 with a prompt that spawns one Explore
+	// subagent: the task_started frame carries task_id, tool_use_id,
+	// description, subagent_type and task_type "local_agent", but neither
+	// is_backgrounded nor spawn_depth. The runner CLI predates both fields,
+	// so a live assertion could only re-assert the absent state.
+	t.Skip("not triggerable from CLI: runner CLI 2.1.222 omits is_backgrounded and spawn_depth from task_started")
+}
+
 func TestIntegrationInitEffort(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
@@ -780,6 +792,17 @@ func TestIntegrationPostToolUseUpdatedToolOutput(t *testing.T) {
 
 	// TODO: Backfill when a deterministic PostToolUse rewrite fixture is available.
 	t.Skip("not triggerable from CLI without a deterministic tool call whose output a PostToolUse hook rewrites; tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
+func TestIntegrationPostToolUseClassifierContext(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// The observable effect is a permission-classifier decision in auto mode,
+	// which the SDK transport does not surface — the same reason
+	// TestIntegrationPostToolUseUpdatedToolOutput above is skipped. Asserting
+	// only that the SDK put the key on the wire would restate the unit test.
+	t.Skip("not directly assertable from CLI: classifierContext only affects auto-mode permission classifier decisions, which are not surfaced on the SDK transport")
 }
 
 func TestIntegrationStopHookBackgroundTasks(t *testing.T) {
@@ -2469,6 +2492,53 @@ func TestIntegrationReinitialize(t *testing.T) {
 		t.Skipf("CLI does not support reinitialize: %v", err)
 	}
 	require.NotNil(t, resp, "expected a fresh initialize response")
+}
+
+// TestIntegrationReinitializeHooksApplied checks hooks_applied on a repeated
+// initialize. This SDK owns the CLI's stdin, so if the CLI reports the field at
+// all it must report true — the repeated initialize's hook set replaces the one
+// registered earlier. CLIs predating the field omit it, so the assertion is
+// conditional on presence.
+func TestIntegrationReinitializeHooksApplied(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+		WithHooks(map[HookType][]HookConfig{
+			HookTypePreToolUse: {
+				{Matcher: "*", Callback: func(
+					ctx context.Context, input HookInput,
+				) (HookResult, error) {
+					return HookResult{Continue: true}, nil
+				}},
+			},
+		}),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	resp, err := stream.Reinitialize(ctx)
+	if err != nil {
+		t.Skipf("CLI does not support reinitialize: %v", err)
+	}
+	require.NotNil(t, resp)
+
+	if resp.HooksApplied == nil {
+		t.Skip("CLI does not report hooks_applied on the initialize response")
+	}
+	assert.True(t, *resp.HooksApplied,
+		"a repeated initialize from the process owning stdin must replace "+
+			"the registered hook set")
 }
 
 func TestIntegrationModelRefusalNoFallback(t *testing.T) {
