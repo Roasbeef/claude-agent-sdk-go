@@ -2110,3 +2110,82 @@ func TestSettingsSyncClaudeAiSkillsFalseSurvives(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"syncClaudeAiSkills": false}`, string(data))
 }
+
+func TestSettingsMarketplaceSourceURLHeadersHelper(t *testing.T) {
+	// The source descriptor is an open map, so the point of this test is that
+	// the documented v0.3.241 keys survive a round trip intact rather than
+	// that a new field exists.
+	settings := Settings{
+		ExtraKnownMarketplaces: map[string]SettingsMarketplace{
+			"internal": {
+				Source: SettingsMarketplaceSource{
+					"source": string(SettingsMarketplaceSourceURL),
+					"url":    "https://example.internal/marketplace.json",
+					"headers": map[string]interface{}{
+						"X-Env": "prod",
+					},
+					"headersHelper": "/usr/local/bin/mp-headers",
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(settings)
+	require.NoError(t, err)
+
+	var back Settings
+	require.NoError(t, json.Unmarshal(data, &back))
+
+	src := back.ExtraKnownMarketplaces["internal"].Source
+	assert.Equal(t, "url", src["source"])
+	assert.Equal(t, "https://example.internal/marketplace.json", src["url"])
+	assert.Equal(t, "/usr/local/bin/mp-headers", src["headersHelper"])
+	assert.Equal(t,
+		map[string]interface{}{"X-Env": "prod"},
+		src["headers"])
+}
+
+func TestSettingsMarketplaceSourceCatalogHeaders(t *testing.T) {
+	// Inline catalog entries carry their own headers/headersHelper, scoped to
+	// that entry's archive download.
+	src := SettingsMarketplaceSource{
+		"source": string(SettingsMarketplaceSourceGithub),
+		"repo":   "example/plugins",
+		"catalog": []interface{}{
+			map[string]interface{}{
+				"name": "inner",
+				"source": map[string]interface{}{
+					"source": string(SettingsMarketplaceSourceArchive),
+					"url":    "https://example.internal/inner.zip",
+				},
+				"headers": map[string]interface{}{
+					"Authorization": "Bearer placeholder",
+				},
+				"headersHelper": "/usr/local/bin/entry-headers",
+			},
+		},
+	}
+
+	data, err := json.Marshal(src)
+	require.NoError(t, err)
+
+	var back SettingsMarketplaceSource
+	require.NoError(t, json.Unmarshal(data, &back))
+
+	catalog, ok := back["catalog"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, catalog, 1)
+
+	entry, ok := catalog[0].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "/usr/local/bin/entry-headers", entry["headersHelper"])
+	assert.Equal(t,
+		map[string]interface{}{"Authorization": "Bearer placeholder"},
+		entry["headers"])
+}
+
+func TestSettingsMarketplaceSourceURLConstant(t *testing.T) {
+	assert.Equal(t,
+		SettingsMarketplaceSourceKind("url"),
+		SettingsMarketplaceSourceURL)
+}
