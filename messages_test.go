@@ -823,6 +823,7 @@ func TestParseMessageResultMessageOriginPeer(t *testing.T) {
 			"name": "reviewer",
 			"body": "please take a look",
 			"fromSession": "local_abc",
+			"fromMode": "bypass",
 			"verifiedPeerPid": 4242
 		}
 	}`)
@@ -838,14 +839,62 @@ func TestParseMessageResultMessageOriginPeer(t *testing.T) {
 	assert.Equal(t, "reviewer", resultMsg.Origin.Name)
 	assert.Equal(t, "please take a look", resultMsg.Origin.Body)
 	assert.Equal(t, "local_abc", resultMsg.Origin.FromSession)
+	assert.Equal(t, PeerFromModeBypass, resultMsg.Origin.FromMode)
 	require.NotNil(t, resultMsg.Origin.VerifiedPeerPid)
 	assert.Equal(t, 4242, *resultMsg.Origin.VerifiedPeerPid)
 
-	// Both are omitempty; a peer origin without them stays lean on the wire.
+	// All three are omitempty; a peer origin without them stays lean on the
+	// wire. An undeclared fromMode is "hold", not a default class, so it must
+	// not marshal as one.
 	out, err := json.Marshal(MessageOrigin{Kind: MessageOriginKindPeer, From: "a"})
 	require.NoError(t, err)
 	assert.NotContains(t, string(out), "fromSession")
 	assert.NotContains(t, string(out), "verifiedPeerPid")
+	assert.NotContains(t, string(out), "fromMode")
+}
+
+func TestParseMessageResultMessageOriginPeerFromModePrompting(t *testing.T) {
+	input := []byte(`{
+		"type": "result",
+		"status": "success",
+		"subtype": "success",
+		"result": "done",
+		"origin": {
+			"kind": "peer",
+			"from": "agent-7",
+			"fromMode": "prompting"
+		}
+	}`)
+
+	msg, err := ParseMessage(input)
+	require.NoError(t, err)
+
+	resultMsg, ok := msg.(ResultMessage)
+	require.True(t, ok)
+	require.NotNil(t, resultMsg.Origin)
+	assert.Equal(t, PeerFromModePrompting, resultMsg.Origin.FromMode)
+}
+
+func TestParseMessageResultMessageOriginProjectsRelay(t *testing.T) {
+	input := []byte(`{
+		"type": "result",
+		"status": "success",
+		"subtype": "success",
+		"result": "done",
+		"origin": {
+			"kind": "task-notification",
+			"subkind": "projects-relay"
+		}
+	}`)
+
+	msg, err := ParseMessage(input)
+	require.NoError(t, err)
+
+	resultMsg, ok := msg.(ResultMessage)
+	require.True(t, ok)
+	require.NotNil(t, resultMsg.Origin)
+	assert.Equal(t, MessageOriginKindTaskNotification, resultMsg.Origin.Kind)
+	assert.Equal(t, MessageOriginSubkindProjectsRelay, resultMsg.Origin.Subkind)
 }
 
 func TestParseMessageResultMessageOriginHuman(t *testing.T) {
