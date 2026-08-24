@@ -2448,6 +2448,53 @@ func TestIntegrationReinitialize(t *testing.T) {
 	require.NotNil(t, resp, "expected a fresh initialize response")
 }
 
+// TestIntegrationReinitializeHooksApplied checks hooks_applied on a repeated
+// initialize. This SDK owns the CLI's stdin, so if the CLI reports the field at
+// all it must report true — the repeated initialize's hook set replaces the one
+// registered earlier. CLIs predating the field omit it, so the assertion is
+// conditional on presence.
+func TestIntegrationReinitializeHooksApplied(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+		WithHooks(map[HookType][]HookConfig{
+			HookTypePreToolUse: {
+				{Matcher: "*", Callback: func(
+					ctx context.Context, input HookInput,
+				) (HookResult, error) {
+					return HookResult{Continue: true}, nil
+				}},
+			},
+		}),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	resp, err := stream.Reinitialize(ctx)
+	if err != nil {
+		t.Skipf("CLI does not support reinitialize: %v", err)
+	}
+	require.NotNil(t, resp)
+
+	if resp.HooksApplied == nil {
+		t.Skip("CLI does not report hooks_applied on the initialize response")
+	}
+	assert.True(t, *resp.HooksApplied,
+		"a repeated initialize from the process owning stdin must replace "+
+			"the registered hook set")
+}
+
 func TestIntegrationModelRefusalNoFallback(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
