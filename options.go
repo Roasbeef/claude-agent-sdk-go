@@ -372,9 +372,10 @@ type Settings struct {
 	// extraKnownMarketplaces when it updates the file.
 	//
 	// Prefer ExtraKnownMarketplaces while older clients still share the same
-	// settings: a client predating the alias ignores it outright, and its
-	// settings sync then uploads a file that declares no marketplaces at all.
-	// Mirrors sdk.d.ts v0.3.233 L6023.
+	// settings: a client predating the alias ignores it outright. Mirrors
+	// sdk.d.ts v0.3.241 L6152, which dropped the earlier claim that such a
+	// client's settings sync re-uploads the file as declaring no
+	// marketplaces.
 	AdditionalMarketplaces map[string]SettingsMarketplace `json:"additionalMarketplaces,omitempty"`
 	// AllowedMarketplaces is read exactly as if it were spelled
 	// StrictKnownMarketplaces, and like it is honored only from managed
@@ -746,6 +747,21 @@ type SettingsMarketplace struct {
 // selects the variant; remaining keys depend on the variant (e.g. "repo", "url", "package",
 // "path", "ref", "sparsePaths", "skipLfs"). Per sdk.d.ts v0.3.168 L4695/L4717 (github) and
 // L4895/L4917 (git), the optional "skipLfs": boolean key sets GIT_LFS_SKIP_SMUDGE=1 on clone/update.
+//
+// Sources that carry an inline "catalog" array accept two per-entry keys
+// scoped to downloading that entry's "archive" source: "headers"
+// (map[string]string) and "headersHelper" (string, a command printing a JSON
+// object of headers). The helper here runs only when a user explicitly
+// installs or updates that plugin — unlike the url source's helper, which is
+// re-run on every marketplace refresh. Use an absolute path.
+//
+// Two asymmetries worth knowing before writing one. An entry declared in a
+// settings file does not need "strict": false the way a manifest catalog entry
+// does, because a settings file has no manifest fields to inline. And a
+// declaration in *project* settings is not operator-authored, so
+// request-routing and client-identity header names stay filtered there even
+// though the same declaration in user or managed settings would pass.
+// Mirrors sdk.d.ts v0.3.241 L6112.
 type SettingsMarketplaceSource map[string]interface{}
 
 // SettingsMarketplaceSourceKind is the discriminator value stored in a SettingsMarketplaceSource "source" entry.
@@ -770,6 +786,21 @@ const (
 	SettingsMarketplaceSourceHostPattern SettingsMarketplaceSourceKind = "hostPattern"
 	// SettingsMarketplaceSourcePathPattern identifies a pathPattern marketplace source. Mirrors sdk.d.ts v0.3.150 L4555.
 	SettingsMarketplaceSourcePathPattern SettingsMarketplaceSourceKind = "pathPattern"
+	// SettingsMarketplaceSourceURL identifies a marketplace fetched from a
+	// direct URL to a marketplace.json file. Honors "url": string, optional
+	// "headers": map[string]string (custom HTTP headers, e.g. for auth), and
+	// optional "headersHelper": string.
+	//
+	// The helper is a command that prints a JSON object of HTTP headers — a
+	// short-lived auth token, typically. Its output overrides "headers" and,
+	// like "headers", is inherited by same-origin archive downloads from this
+	// marketplace. It runs from a fixed directory (the Claude config home,
+	// never the session's), so a relative path will not resolve the way a
+	// caller expects: give a bare command found via PATH, or an absolute
+	// path. Re-run on later refreshes of this marketplace, so it must stay
+	// callable for the life of the config, not just at install time.
+	// Mirrors sdk.d.ts v0.3.241 L5930.
+	SettingsMarketplaceSourceURL SettingsMarketplaceSourceKind = "url"
 	// SettingsMarketplaceSourceArchive identifies a zip-archive plugin source.
 	// Honors "url": string (HTTPS URL of the archive; the plugin root may sit at
 	// the top or one directory deep, as a single wrapping directory is stripped)
