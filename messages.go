@@ -1006,6 +1006,57 @@ type SystemMessage struct {
 	// accepts inbound queued_notification stream messages and drains them via
 	// the ReadNotifications tool. Absent on older CLIs.
 	Capabilities []string `json:"capabilities,omitempty"`
+	// Effort is the effort level the session will send on its next request,
+	// after env overrides, session state, org caps and model-support
+	// downgrades — the same value get_settings reports as applied.effort.
+	//
+	// Three states, all distinguishable: an unset Effort (Present false)
+	// means the host does not publish the field, or the CLI predates it, so
+	// the applied effort is unknown. Present with a nil Level is an explicit
+	// wire null, meaning no effort parameter will be sent at all — a model
+	// without effort, CLAUDE_CODE_EFFORT_LEVEL=unset, or an internal numeric
+	// budget. A non-nil Level is the level itself.
+	//
+	// Published on Remote Control bridge init frames (terminal- and
+	// Desktop/VS Code-hosted sessions). Re-emitted inits carry the current
+	// value, so the newest frame wins (sdk.d.ts v0.3.241 L4816).
+	Effort NullableEffortLevel `json:"effort,omitzero"`
+}
+
+// NullableEffortLevel carries a wire field where an explicit JSON null means
+// something other than "absent".
+//
+// The field must be tagged omitzero, not omitempty: encoding/json resolves a
+// null into a nil pointer without ever calling UnmarshalJSON, so a pointer
+// field cannot tell an explicit null apart from an absent key.
+type NullableEffortLevel struct {
+	// Present is false only when the key was absent from the wire.
+	Present bool
+	// Level is nil when the wire carried an explicit null.
+	Level *EffortLevel
+}
+
+// MarshalJSON implements json.Marshaler.
+func (e NullableEffortLevel) MarshalJSON() ([]byte, error) {
+	if e.Level == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(*e.Level)
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (e *NullableEffortLevel) UnmarshalJSON(data []byte) error {
+	e.Present = true
+	if string(data) == "null" {
+		e.Level = nil
+		return nil
+	}
+	var level EffortLevel
+	if err := json.Unmarshal(data, &level); err != nil {
+		return err
+	}
+	e.Level = &level
+	return nil
 }
 
 // MessageType implements Message.
