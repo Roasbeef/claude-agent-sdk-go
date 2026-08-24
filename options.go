@@ -2005,10 +2005,17 @@ type UserPromptSubmitInput struct {
 	// Source names who authored or injected the prompt: "user" (interactive
 	// composer), "sdk" (non-interactive entrypoint, -p / Agent SDK),
 	// "loop_wakeup" (dynamic /loop wakeup), "schedule_wakeup" (scheduled-task
-	// fire), or "system" (other machine-injected turns: peer/channel messages,
-	// task notifications, auto-continuation). Empty when absent — as of
-	// v0.3.215 it is only set for Anthropic-internal sessions while the field
-	// is trialed; external payloads omit it (sdk.d.ts v0.3.215).
+	// fire), "system" (other machine-injected turns: peer/channel messages,
+	// task notifications, auto-continuation), or "poll_event" (the poll-event
+	// channel enqueue-time pass, added in sdk.d.ts v0.3.241 L8228).
+	//
+	// A "poll_event" pass is the one source where a blocking verdict rejects
+	// something that has not been delivered yet: the hook fires when the host
+	// submits the event, before its delivery ack exists.
+	//
+	// Empty when absent — as of v0.3.215 it is only set for
+	// Anthropic-internal sessions while the field is trialed; external
+	// payloads omit it (sdk.d.ts v0.3.215).
 	Source string `json:"source,omitempty"`
 	// SessionTitle is the optional user-facing session label from TS L6094.
 	// Nil means the field was absent on the wire.
@@ -2587,13 +2594,14 @@ type HookResult struct {
 	// Honored on any hook return, sync or async.
 	TerminalSequence string
 
-	// SuppressOriginalPrompt, when set on a UserPromptSubmit hook return,
-	// asks the CLI to omit the original user prompt from the block message
-	// it returns when the hook blocks. Honored only on UserPromptSubmit
-	// hooks; nil (the default) leaves the wire field unset; a pointer to
-	// false explicitly opts out. Translates into hookSpecificOutput.
-	// suppressOriginalPrompt per sdk.d.ts v0.3.150 L5808. Useful when the
-	// prompt itself was the reason for the block (PII, credentials, etc.).
+	// SuppressOriginalPrompt asks the CLI to omit the original user prompt
+	// from the block message it returns when the hook blocks. Honored on
+	// UserPromptSubmit (sdk.d.ts v0.3.150 L5808) and UserPromptExpansion
+	// (sdk.d.ts v0.3.241 L8219) hooks, with identical semantics on both;
+	// silently dropped for other hook types. Nil (the default) leaves the
+	// wire field unset; a pointer to false explicitly opts out. Translates
+	// into hookSpecificOutput.suppressOriginalPrompt. Useful when the prompt
+	// itself was the reason for the block (PII, credentials, etc.).
 	SuppressOriginalPrompt *bool
 
 	// ReloadSkills, when set on a SessionStart hook return, asks the CLI to
