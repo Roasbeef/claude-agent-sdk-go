@@ -740,6 +740,17 @@ func TestIntegrationHookSuppressOriginalPrompt(t *testing.T) {
 	t.Skip("not directly assertable from CLI: suppressOriginalPrompt is a CLI block-message rendering behavior, not surfaced on the SDK transport")
 }
 
+func TestIntegrationInitEffort(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// effort is published on Remote Control bridge init frames; a subprocess
+	// transport is not one. Verified against CLI 2.1.222: the init message
+	// carries apiKeySource and capabilities but no effort key at all, so a
+	// live assertion here could only ever re-assert the absent state.
+	t.Skip("not triggerable from CLI: effort is published on Remote Control bridge init frames, not on the subprocess transport's init message")
+}
+
 func TestIntegrationSessionStartReloadSkills(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
