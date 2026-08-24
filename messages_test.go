@@ -823,6 +823,7 @@ func TestParseMessageResultMessageOriginPeer(t *testing.T) {
 			"name": "reviewer",
 			"body": "please take a look",
 			"fromSession": "local_abc",
+			"fromMode": "bypass",
 			"verifiedPeerPid": 4242
 		}
 	}`)
@@ -838,14 +839,62 @@ func TestParseMessageResultMessageOriginPeer(t *testing.T) {
 	assert.Equal(t, "reviewer", resultMsg.Origin.Name)
 	assert.Equal(t, "please take a look", resultMsg.Origin.Body)
 	assert.Equal(t, "local_abc", resultMsg.Origin.FromSession)
+	assert.Equal(t, PeerFromModeBypass, resultMsg.Origin.FromMode)
 	require.NotNil(t, resultMsg.Origin.VerifiedPeerPid)
 	assert.Equal(t, 4242, *resultMsg.Origin.VerifiedPeerPid)
 
-	// Both are omitempty; a peer origin without them stays lean on the wire.
+	// All three are omitempty; a peer origin without them stays lean on the
+	// wire. An undeclared fromMode is "hold", not a default class, so it must
+	// not marshal as one.
 	out, err := json.Marshal(MessageOrigin{Kind: MessageOriginKindPeer, From: "a"})
 	require.NoError(t, err)
 	assert.NotContains(t, string(out), "fromSession")
 	assert.NotContains(t, string(out), "verifiedPeerPid")
+	assert.NotContains(t, string(out), "fromMode")
+}
+
+func TestParseMessageResultMessageOriginPeerFromModePrompting(t *testing.T) {
+	input := []byte(`{
+		"type": "result",
+		"status": "success",
+		"subtype": "success",
+		"result": "done",
+		"origin": {
+			"kind": "peer",
+			"from": "agent-7",
+			"fromMode": "prompting"
+		}
+	}`)
+
+	msg, err := ParseMessage(input)
+	require.NoError(t, err)
+
+	resultMsg, ok := msg.(ResultMessage)
+	require.True(t, ok)
+	require.NotNil(t, resultMsg.Origin)
+	assert.Equal(t, PeerFromModePrompting, resultMsg.Origin.FromMode)
+}
+
+func TestParseMessageResultMessageOriginProjectsRelay(t *testing.T) {
+	input := []byte(`{
+		"type": "result",
+		"status": "success",
+		"subtype": "success",
+		"result": "done",
+		"origin": {
+			"kind": "task-notification",
+			"subkind": "projects-relay"
+		}
+	}`)
+
+	msg, err := ParseMessage(input)
+	require.NoError(t, err)
+
+	resultMsg, ok := msg.(ResultMessage)
+	require.True(t, ok)
+	require.NotNil(t, resultMsg.Origin)
+	assert.Equal(t, MessageOriginKindTaskNotification, resultMsg.Origin.Kind)
+	assert.Equal(t, MessageOriginSubkindProjectsRelay, resultMsg.Origin.Subkind)
 }
 
 func TestParseMessageResultMessageOriginHuman(t *testing.T) {
@@ -2785,6 +2834,57 @@ func TestParseMessageTaskStarted(t *testing.T) {
 				assert.Empty(t, taskMsg.WorkflowName)
 				assert.Empty(t, taskMsg.Prompt)
 				assert.Nil(t, taskMsg.SkipTranscript)
+				assert.Nil(t, taskMsg.IsBackgrounded)
+				assert.Nil(t, taskMsg.SpawnDepth)
+			},
+		},
+		{
+			name: "foreground subagent spawn",
+			input: `{
+				"type": "system",
+				"subtype": "task_started",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0T9",
+				"description": "Search the repo",
+				"task_type": "local_agent",
+				"subagent_type": "Explore",
+				"is_backgrounded": false,
+				"spawn_depth": 1,
+				"uuid": "550e8400-e29b-41d4-a716-446655440013",
+				"session_id": "sess_task_123"
+			}`,
+			check: func(t *testing.T, taskMsg TaskStartedMessage) {
+				t.Helper()
+				assert.Equal(t, "local_agent", taskMsg.TaskType)
+				assert.Equal(t, "Explore", taskMsg.SubagentType)
+				// false is a meaningful value here, not an absent
+				// field: the spawning tool call is blocking on it.
+				require.NotNil(t, taskMsg.IsBackgrounded)
+				assert.False(t, *taskMsg.IsBackgrounded)
+				require.NotNil(t, taskMsg.SpawnDepth)
+				assert.Equal(t, 1, *taskMsg.SpawnDepth)
+			},
+		},
+		{
+			name: "nested background subagent spawn",
+			input: `{
+				"type": "system",
+				"subtype": "task_started",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0TA",
+				"description": "Verify a finding",
+				"task_type": "local_agent",
+				"subagent_type": "general-purpose",
+				"is_backgrounded": true,
+				"spawn_depth": 2,
+				"uuid": "550e8400-e29b-41d4-a716-446655440014",
+				"session_id": "sess_task_123"
+			}`,
+			check: func(t *testing.T, taskMsg TaskStartedMessage) {
+				t.Helper()
+				require.NotNil(t, taskMsg.IsBackgrounded)
+				assert.True(t, *taskMsg.IsBackgrounded)
+				require.NotNil(t, taskMsg.SpawnDepth)
+				assert.Equal(t, 2, *taskMsg.SpawnDepth,
+					"a spawn from inside a depth-1 agent is depth 2")
 			},
 		},
 	}
