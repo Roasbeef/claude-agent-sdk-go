@@ -2,6 +2,7 @@ package claudeagent
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -2193,7 +2194,120 @@ func TestParseMessageSystemInit(t *testing.T) {
 	assert.Empty(t, systemMsg.Capabilities, "capabilities absent on older CLIs")
 	assert.Empty(t, systemMsg.TerminalSlashCommands,
 		"terminal_slash_commands absent on older CLIs")
+	assert.False(t, systemMsg.Effort.Present, "effort absent on hosts that omit it")
 }
+
+func TestParseMessageSystemInitEffort(t *testing.T) {
+	tests := []struct {
+		name      string
+		field     string
+		wantSet   bool
+		wantLevel *EffortLevel
+	}{
+		{
+			name:    "absent",
+			field:   "",
+			wantSet: false,
+		},
+		{
+			name:    "explicit null",
+			field:   `"effort": null,`,
+			wantSet: true,
+		},
+		{
+			name:      "level",
+			field:     `"effort": "xhigh",`,
+			wantSet:   true,
+			wantLevel: effortPtr(EffortXHigh),
+		},
+		{
+			name:      "max",
+			field:     `"effort": "max",`,
+			wantSet:   true,
+			wantLevel: effortPtr(EffortMax),
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			input := fmt.Sprintf(`{
+				"type": "system",
+				"subtype": "init",
+				"uuid": "550e8400-e29b-41d4-a716-446655440900",
+				"session_id": "sess_effort_001",
+				"apiKeySource": "none",
+				"cwd": "/workspace/project",
+				"tools": ["Read"],
+				"mcp_servers": [],
+				"model": "claude-opus-4-5-20250929",
+				"permissionMode": "default",
+				"slash_commands": ["/help"],
+				%s
+				"output_style": "default"
+			}`, tc.field)
+
+			msg, err := ParseMessage([]byte(input))
+			require.NoError(t, err)
+
+			systemMsg, ok := msg.(SystemMessage)
+			require.True(t, ok, "expected SystemMessage")
+
+			assert.Equal(t, tc.wantSet, systemMsg.Effort.Present,
+				"an explicit null must stay distinguishable from an absent key")
+			assert.Equal(t, tc.wantLevel, systemMsg.Effort.Level)
+		})
+	}
+}
+
+func TestSystemMessageEffortRoundTrip(t *testing.T) {
+	tests := []struct {
+		name   string
+		effort NullableEffortLevel
+		want   string
+	}{
+		{
+			name:   "absent omits the key",
+			effort: NullableEffortLevel{},
+		},
+		{
+			name:   "explicit null",
+			effort: NullableEffortLevel{Present: true},
+			want:   "null",
+		},
+		{
+			name:   "level",
+			effort: NullableEffortLevel{Present: true, Level: effortPtr(EffortLow)},
+			want:   `"low"`,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(SystemMessage{
+				Type:    "system",
+				Subtype: "init",
+				Effort:  tc.effort,
+			})
+			require.NoError(t, err)
+
+			var raw map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(data, &raw))
+
+			if tc.want == "" {
+				assert.NotContains(t, raw, "effort")
+				return
+			}
+			require.Contains(t, raw, "effort")
+			assert.JSONEq(t, tc.want, string(raw["effort"]))
+
+			var back SystemMessage
+			require.NoError(t, json.Unmarshal(data, &back))
+			assert.Equal(t, tc.effort, back.Effort)
+		})
+	}
+}
+
+func effortPtr(l EffortLevel) *EffortLevel { return &l }
 
 func TestParseMessageSystemInitTerminalSlashCommands(t *testing.T) {
 	input := `{
