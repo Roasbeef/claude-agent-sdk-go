@@ -2347,10 +2347,11 @@ const (
 const (
 	// APIKeySourceAnthropicAPIKey means the ANTHROPIC_API_KEY environment
 	// variable supplied the credential.
-	APIKeySourceAnthropicAPIKey = "ANTHROPIC_API_KEY"
+	// These name where a credential came from; they are not credentials.
+	APIKeySourceAnthropicAPIKey = "ANTHROPIC_API_KEY" // #nosec G101
 	// APIKeySourceAPIKeyHelper means the configured apiKeyHelper command
 	// supplied the credential.
-	APIKeySourceAPIKeyHelper = "apiKeyHelper"
+	APIKeySourceAPIKeyHelper = "apiKeyHelper" // #nosec G101
 	// APIKeySourceLoginManagedKey means the credential is an API key created
 	// and stored by /login with an Anthropic Console account.
 	APIKeySourceLoginManagedKey = "/login managed key"
