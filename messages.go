@@ -1209,8 +1209,20 @@ type TaskStartedMessage struct {
 	WorkflowName   string `json:"workflow_name,omitempty"`   // Workflow script metadata name
 	Prompt         string `json:"prompt,omitempty"`          // Task prompt
 	SkipTranscript *bool  `json:"skip_transcript,omitempty"` // Ambient task marker
-	UUID           string `json:"uuid"`                      // Unique message ID
-	SessionID      string `json:"session_id"`                // Session identifier
+	// IsBackgrounded reports whether the task was registered in the
+	// background (true) or in the foreground with the spawning tool call
+	// blocking on it (false). A resumed subagent is always registered in the
+	// background. A later move to the background does not restate this field
+	// — it arrives as TaskUpdatePatch.IsBackgrounded on a task_updated
+	// message. Set for local_agent and local_bash tasks; nil elsewhere and on
+	// CLIs that predate the field (sdk.d.ts v0.3.241 L4883).
+	IsBackgrounded *bool `json:"is_backgrounded,omitempty"`
+	// SpawnDepth is the nesting depth of a spawned subagent (local_agent)
+	// task: 1 for a top-level spawn, N+1 when spawned from inside a depth-N
+	// agent. Not set on other task types (sdk.d.ts v0.3.241 L4887).
+	SpawnDepth *int   `json:"spawn_depth,omitempty"`
+	UUID       string `json:"uuid"`       // Unique message ID
+	SessionID  string `json:"session_id"` // Session identifier
 }
 
 // MessageType implements Message.
