@@ -4236,3 +4236,45 @@ func TestHandleHookCallback_RetryWatchPathsEvents(t *testing.T) {
 		assert.Equal(t, "success", resp.Response.Subtype)
 	})
 }
+
+func TestBuildHookResponse_SuppressOriginalPrompt_UserPromptExpansion(t *testing.T) {
+	t.Run("emitted with the expansion event name", func(t *testing.T) {
+		v := true
+		resp := buildHookResponse("UserPromptExpansion", HookResult{
+			Continue:               true,
+			SuppressOriginalPrompt: &v,
+		})
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		// The envelope must name the hook that produced it, not the
+		// UserPromptSubmit literal the gate used to hardcode.
+		assert.Equal(t, "UserPromptExpansion", hso["hookEventName"])
+		assert.Equal(t, true, hso["suppressOriginalPrompt"])
+	})
+
+	t.Run("explicit false still reaches the wire", func(t *testing.T) {
+		v := false
+		resp := buildHookResponse("UserPromptExpansion", HookResult{
+			Continue:               true,
+			SuppressOriginalPrompt: &v,
+		})
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, false, hso["suppressOriginalPrompt"])
+	})
+
+	t.Run("UserPromptSubmit still names itself", func(t *testing.T) {
+		v := true
+		resp := buildHookResponse("UserPromptSubmit", HookResult{
+			Continue:               true,
+			SuppressOriginalPrompt: &v,
+		})
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "UserPromptSubmit", hso["hookEventName"])
+		assert.Equal(t, true, hso["suppressOriginalPrompt"])
+	})
+}
