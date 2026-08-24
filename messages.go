@@ -411,6 +411,15 @@ type MessageOrigin struct {
 	Server string            `json:"server,omitempty"`
 	From   string            `json:"from,omitempty"`
 	Name   string            `json:"name,omitempty"`
+	// FromMode is the SENDING session's permission class, as declared by the
+	// host that injects this message on local stdin. It lets a recipient
+	// deliver a same-class message immediately while a cross-class or
+	// undeclared sender is still held at a recipient that runs without
+	// asking — so an empty FromMode must be treated as "hold", not as a
+	// default. Honored only from the injecting host on local stdin, and set
+	// only for the "peer" kind; absent when the host does not declare it
+	// (sdk.d.ts v0.3.241 L4350).
+	FromMode PeerFromMode `json:"fromMode,omitempty"`
 	// SenderTaskID is the observer's task id; set only for the
 	// "observer" kind (sdk.d.ts v0.3.201).
 	SenderTaskID string `json:"senderTaskId,omitempty"`
@@ -433,10 +442,10 @@ type MessageOrigin struct {
 	// only when the turn is exactly one harness-formed envelope; render it
 	// instead of re-parsing the message text (sdk.d.ts v0.3.207).
 	Body string `json:"body,omitempty"`
-	// Subkind refines the "task-notification" kind: a scheduled trigger or a
-	// coordinator co-member SendMessage delivery. Absent on webhook,
-	// PR-steward, plugin, and background-event deliveries (sdk.d.ts v0.3.226
-	// L4223).
+	// Subkind refines the "task-notification" kind: a scheduled trigger, a
+	// coordinator co-member SendMessage delivery, or a Claude Code Projects
+	// relay. Absent on webhook, PR-steward, plugin, and background-event
+	// deliveries (sdk.d.ts v0.3.241 L4377).
 	Subkind MessageOriginSubkind `json:"subkind,omitempty"`
 }
 
@@ -457,6 +466,27 @@ const (
 	// prompt authority but stays distinguishable so the receive-side
 	// crossSessionInbound setting can apply to it (sdk.d.ts v0.3.226 L4223).
 	MessageOriginSubkindPeerSendMessage MessageOriginSubkind = "peer-send-message"
+	// MessageOriginSubkindProjectsRelay marks a "task-notification" origin
+	// whose delivery is a Claude Code Projects message that Anthropic servers
+	// composed for the project's coordinator session and addressed to one of
+	// its thread sessions — either the thread's first message, or a relay
+	// carrying project messages. Stamped from server-asserted provenance.
+	//
+	// The harness frames such a delivery as a message from the coordinator
+	// session only when it carries the server's relay stamps; one without them
+	// keeps the generic background-notification frame (sdk.d.ts v0.3.241
+	// L4377).
+	MessageOriginSubkindProjectsRelay MessageOriginSubkind = "projects-relay"
+)
+
+// PeerFromMode is the sending session's permission class on a "peer" origin.
+type PeerFromMode string
+
+const (
+	// PeerFromModeBypass marks a sender that runs tools without asking.
+	PeerFromModeBypass PeerFromMode = "bypass"
+	// PeerFromModePrompting marks a sender that prompts before running tools.
+	PeerFromModePrompting PeerFromMode = "prompting"
 )
 
 // StreamEvent represents a progressive delta update during streaming.
