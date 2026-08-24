@@ -2092,6 +2092,52 @@ exec "$real_cli" "$@"
 		assert.Equal(t, want.Env, got.Env)
 	})
 
+	// The v0.3.241 fields are all top-level scalars, maps or plain nested
+	// objects — no source-union members — so the installed CLI accepts them
+	// rather than failing schema validation and stalling the handshake the
+	// way an unknown union variant does. Verified against the bare binary
+	// before landing this: CLI 2.1.222 runs a --settings payload carrying all
+	// six to completion.
+	t.Run("v0_3_241_fields", func(t *testing.T) {
+		syncOff := false
+		autoContinue := true
+		spellcheckOn := true
+
+		want := Settings{
+			SyncClaudeAiSkills:       &syncOff,
+			KeybindingFlavor:         KeybindingFlavorReadline,
+			AutoContinueAtUsageLimit: &autoContinue,
+			Worktree: &SettingsWorktree{
+				Location: "~/src/worktrees",
+			},
+			ModelSettings: map[string]SettingsModel{
+				"claude-opus-4-7": {EffortLevel: EffortXHigh},
+			},
+			Spellcheck: &SettingsSpellcheck{
+				Enabled:  &spellcheckOn,
+				Checker:  "auto",
+				Language: "en_GB",
+				Color:    "ansi256(203)",
+			},
+		}
+
+		argv := runWithArgvCapture(t, WithSettings(want))
+		var got Settings
+		require.NoError(t, json.Unmarshal(
+			[]byte(argValue(t, argv, "--settings")), &got))
+
+		require.NotNil(t, got.SyncClaudeAiSkills)
+		assert.False(t, *got.SyncClaudeAiSkills,
+			"only false is honored upstream, so it must survive the round trip")
+		assert.Equal(t, KeybindingFlavorReadline, got.KeybindingFlavor)
+		require.NotNil(t, got.AutoContinueAtUsageLimit)
+		assert.True(t, *got.AutoContinueAtUsageLimit)
+		require.NotNil(t, got.Worktree)
+		assert.Equal(t, "~/src/worktrees", got.Worktree.Location)
+		assert.Equal(t, want.ModelSettings, got.ModelSettings)
+		assert.Equal(t, want.Spellcheck, got.Spellcheck)
+	})
+
 	// Only the gate is asserted live. Feeding a command-sourced marketplace to
 	// a CLI that predates the variant makes it fail schema validation on the
 	// managed tier and stall the handshake, so that half stays in
