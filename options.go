@@ -2348,13 +2348,13 @@ const (
 	// APIKeySourceAnthropicAPIKey means the ANTHROPIC_API_KEY environment
 	// variable supplied the credential.
 	// These name where a credential came from; they are not credentials.
-	APIKeySourceAnthropicAPIKey = "ANTHROPIC_API_KEY" // #nosec G101
+	APIKeySourceAnthropicAPIKey = "ANTHROPIC_API_KEY" // #nosec G101 // #nosec G101
 	// APIKeySourceAPIKeyHelper means the configured apiKeyHelper command
 	// supplied the credential.
 	APIKeySourceAPIKeyHelper = "apiKeyHelper" // #nosec G101
 	// APIKeySourceLoginManagedKey means the credential is an API key created
 	// and stored by /login with an Anthropic Console account.
-	APIKeySourceLoginManagedKey = "/login managed key"
+	APIKeySourceLoginManagedKey = "/login managed key" // #nosec G101
 	// APIKeySourceNone means no API key is in use — a claude.ai OAuth login,
 	// a bearer token, or a third-party cloud provider. This is what a
 	// subscription-authenticated session reports, so it is not an error state.
