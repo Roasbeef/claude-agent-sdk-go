@@ -1986,6 +1986,131 @@ func TestSettingsForceLoginGatewayURLJSON(t *testing.T) {
 	})
 }
 
+func TestAPIKeySourceConstants(t *testing.T) {
+	// The wire values are not derivable from the constant names — two carry
+	// characters Go identifiers cannot ("/login managed key") or a casing
+	// that differs from the identifier ("apiKeyHelper") — so pin them.
+	assert.Equal(t, "ANTHROPIC_API_KEY", APIKeySourceAnthropicAPIKey)
+	assert.Equal(t, "apiKeyHelper", APIKeySourceAPIKeyHelper)
+	assert.Equal(t, "/login managed key", APIKeySourceLoginManagedKey)
+	assert.Equal(t, "none", APIKeySourceNone)
+}
+
+func TestSystemMessageAPIKeySourceNone(t *testing.T) {
+	// A subscription-authenticated session reports "none": no API key is in
+	// use, which is not an error state. This is what CLI 2.1.222 emits under
+	// a claude.ai OAuth login.
+	msg, err := ParseMessage([]byte(`{
+		"type": "system",
+		"subtype": "init",
+		"uuid": "550e8400-e29b-41d4-a716-446655440a00",
+		"session_id": "sess_aks_001",
+		"apiKeySource": "none",
+		"cwd": "/workspace",
+		"tools": [],
+		"mcp_servers": [],
+		"model": "claude-opus-4-5-20250929",
+		"permissionMode": "default",
+		"slash_commands": [],
+		"output_style": "default"
+	}`))
+	require.NoError(t, err)
+
+	systemMsg, ok := msg.(SystemMessage)
+	require.True(t, ok)
+	assert.Equal(t, APIKeySourceNone, systemMsg.APIKeySource)
+}
+
+func TestAssistantMessageErrorAccountOnHold(t *testing.T) {
+	assert.Equal(t,
+		AssistantMessageError("account_on_hold"),
+		AssistantMessageErrorAccountOnHold)
+}
+
+func TestSettingsParityV0_3_241(t *testing.T) {
+	enabled := true
+	syncOff := false
+	autoContinue := true
+
+	settings := Settings{
+		SyncClaudeAiSkills:       &syncOff,
+		KeybindingFlavor:         KeybindingFlavorReadline,
+		AutoContinueAtUsageLimit: &autoContinue,
+		Worktree: &SettingsWorktree{
+			BgIsolation: "worktree",
+			Location:    "~/src/worktrees",
+		},
+		ModelSettings: map[string]SettingsModel{
+			"claude-opus-4-7": {EffortLevel: EffortXHigh},
+			"claude-sonnet-5": {EffortLevel: EffortLow},
+		},
+		Spellcheck: &SettingsSpellcheck{
+			Enabled:  &enabled,
+			Checker:  "hunspell",
+			Language: "en_GB",
+			Color:    "ansi256(203)",
+		},
+	}
+
+	data, err := json.Marshal(settings)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.Equal(t, false, got["syncClaudeAiSkills"])
+	assert.Equal(t, "readline", got["keybindingFlavor"])
+	assert.Equal(t, true, got["autoContinueAtUsageLimit"])
+
+	worktree, ok := got["worktree"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "~/src/worktrees", worktree["location"])
+
+	modelSettings, ok := got["modelSettings"].(map[string]interface{})
+	require.True(t, ok)
+	opus, ok := modelSettings["claude-opus-4-7"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "xhigh", opus["effortLevel"])
+
+	spellcheck, ok := got["spellcheck"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, true, spellcheck["enabled"])
+	assert.Equal(t, "hunspell", spellcheck["checker"])
+	assert.Equal(t, "en_GB", spellcheck["language"])
+	assert.Equal(t, "ansi256(203)", spellcheck["color"])
+
+	var back Settings
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, settings, back)
+}
+
+func TestSettingsParityV0_3_241OmitEmpty(t *testing.T) {
+	data, err := json.Marshal(Settings{})
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	for _, key := range []string{
+		"syncClaudeAiSkills",
+		"keybindingFlavor",
+		"autoContinueAtUsageLimit",
+		"modelSettings",
+		"spellcheck",
+	} {
+		assert.NotContains(t, got, key)
+	}
+}
+
+func TestSettingsSyncClaudeAiSkillsFalseSurvives(t *testing.T) {
+	// Only false is honored upstream, so it is the one value that must not be
+	// swallowed by omitempty. A *bool is what makes that work.
+	off := false
+	data, err := json.Marshal(Settings{SyncClaudeAiSkills: &off})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"syncClaudeAiSkills": false}`, string(data))
+}
+
 func TestSettingsMarketplaceSourceURLHeadersHelper(t *testing.T) {
 	// The source descriptor is an open map, so the point of this test is that
 	// the documented v0.3.241 keys survive a round trip intact rather than
