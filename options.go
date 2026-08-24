@@ -2602,6 +2602,49 @@ type HookResult struct {
 	// updatedMCPToolOutput field.
 	UpdatedToolOutput interface{}
 
+	// ClassifierContext is host-asserted context shown to the auto-mode
+	// permission classifier alongside this tool call's result. Translates
+	// into hookSpecificOutput.classifierContext on PostToolUse hooks only;
+	// silently dropped elsewhere. Empty string omits the field
+	// (sdk.d.ts v0.3.241 L2339).
+	//
+	// In a live session the classifier may weigh a user statement relayed
+	// here as user intent — it can satisfy a consent bar a user turn would
+	// satisfy, though never a hard boundary. Values restored from saved
+	// session state are treated as unverified context only. Relay discipline
+	// is the host's obligation: put ONLY genuine user statements in
+	// intent-bearing positions, never tool output or model text dressed as
+	// one. Content placed here reaches the classifier with host-application
+	// framing, so copying untrusted tool output or third-party text into it
+	// hands that text the host's authority.
+	//
+	// Constraints that silently drop the value rather than erroring:
+	//
+	//   - Capped at 2000 UTF-16 code units, a budget shared across every hook
+	//     contributing to one call. Astral characters (emoji and the like)
+	//     count as two.
+	//   - Honored on synchronous hook responses only. An async hook's late
+	//     response arrives after the result message is frozen, and the field
+	//     in it is ignored.
+	//   - Applies only to calls the classifier transcript shows. Read-only
+	//     lookups the transcript omits (file reads, searches), inner REPL
+	//     calls and remote-engine shells produce no per-result line, so
+	//     context attached to them is unused.
+	//
+	// It is bound to a single call id and sized for a short assertion — not a
+	// delivery channel for relaying messages or events.
+	//
+	// Rewrite integrity: if the assertion describes output being rewritten,
+	// return it in the SAME hook result as the rewrite, so it is dropped
+	// automatically if that rewrite is rejected or superseded. An assertion
+	// returned without a rewrite is never invalidated by another hook's
+	// rewrite, so a non-rewriting hook should assert only what holds
+	// regardless. Do NOT return an identity rewrite just to pair an
+	// assertion: hooks run in parallel on the ORIGINAL output, so an identity
+	// rewrite competes last-write-wins with sibling rewrites and can clobber
+	// a real redaction.
+	ClassifierContext string
+
 	// HookSpecificOutput provides raw hookSpecificOutput for the CLI
 	// response. When set, this takes precedence over auto-translation
 	// of Modify. Use this for finer control over permissionDecision,
