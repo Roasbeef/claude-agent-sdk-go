@@ -555,6 +555,18 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			Trigger:        getString(inputData, "trigger"),
 			CompactSummary: getString(inputData, "compact_summary"),
 		}
+	case HookTypePreModelSwitch:
+		input = PreModelSwitchInput{
+			BaseHookInput:      base,
+			modelSwitchContext: getModelSwitchContext(inputData),
+			Source:             ModelSwitchSource(getString(inputData, "source")),
+		}
+	case HookTypePostModelSwitch:
+		input = PostModelSwitchInput{
+			BaseHookInput:      base,
+			modelSwitchContext: getModelSwitchContext(inputData),
+			Source:             ModelSwitchSource(getString(inputData, "source")),
+		}
 	case HookTypePostToolBatch:
 		input = PostToolBatchInput{
 			BaseHookInput: base,
@@ -1072,6 +1084,18 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			Trigger:        getString(hookInput, "trigger"),
 			CompactSummary: getString(hookInput, "compact_summary"),
 		}
+	case "PreModelSwitch":
+		input = PreModelSwitchInput{
+			BaseHookInput:      base,
+			modelSwitchContext: getModelSwitchContext(hookInput),
+			Source:             ModelSwitchSource(getString(hookInput, "source")),
+		}
+	case "PostModelSwitch":
+		input = PostModelSwitchInput{
+			BaseHookInput:      base,
+			modelSwitchContext: getModelSwitchContext(hookInput),
+			Source:             ModelSwitchSource(getString(hookInput, "source")),
+		}
 	case "PostToolBatch":
 		input = PostToolBatchInput{
 			BaseHookInput: base,
@@ -1537,6 +1561,27 @@ func getBool(m map[string]interface{}, key string) bool {
 	return v
 }
 
+func getFloat(m map[string]interface{}, key string) float64 {
+	v, ok := m[key].(float64)
+	if !ok {
+		return 0
+	}
+	return v
+}
+
+func getModelSwitchContext(m map[string]interface{}) modelSwitchContext {
+	return modelSwitchContext{
+		FromModel:              getString(m, "from_model"),
+		ToModel:                getString(m, "to_model"),
+		RequestedModel:         getOptionalString(m, "requested_model"),
+		ContextTokens:          getInt(m, "context_tokens"),
+		PromptCacheWarm:        getBool(m, "prompt_cache_warm"),
+		CacheTTL:               CacheTTL(getString(m, "cache_ttl")),
+		EstimatedCacheWriteUSD: getFloat(m, "estimated_cache_write_usd"),
+		Pricing:                ModelPricingBasis(getString(m, "pricing")),
+	}
+}
+
 func getHookEffort(m map[string]interface{}) *HookEffort {
 	effort, ok := m["effort"].(map[string]interface{})
 	if !ok {
@@ -1741,6 +1786,20 @@ func buildHookResponse(hookType string, result HookResult) map[string]interface{
 		resp["hookSpecificOutput"] = hookSpecificOutput
 	}
 
+	if result.PermissionDecision != "" && isPermissionDecisionHook(hookType) {
+		hookSpecificOutput, _ := resp["hookSpecificOutput"].(map[string]interface{})
+		if hookSpecificOutput == nil {
+			hookSpecificOutput = map[string]interface{}{
+				"hookEventName": hookType,
+			}
+		}
+		hookSpecificOutput["permissionDecision"] = string(result.PermissionDecision)
+		if result.PermissionDecisionReason != "" {
+			hookSpecificOutput["permissionDecisionReason"] = result.PermissionDecisionReason
+		}
+		resp["hookSpecificOutput"] = hookSpecificOutput
+	}
+
 	if result.AdditionalContext != "" && isAdditionalContextHook(hookType) {
 		hookSpecificOutput, _ := resp["hookSpecificOutput"].(map[string]interface{})
 		if hookSpecificOutput == nil {
@@ -1820,6 +1879,7 @@ func isAdditionalContextHook(hookType string) bool {
 		string(HookTypePostToolUseFailure),
 		string(HookTypePostToolUse),
 		string(HookTypePreToolUse),
+		string(HookTypePostModelSwitch),
 		string(HookTypeSessionStart),
 		string(HookTypeSetup),
 		string(HookTypeStop),
@@ -1827,6 +1887,18 @@ func isAdditionalContextHook(hookType string) bool {
 		string(HookTypeSubagentStop),
 		string(HookTypeUserPromptExpansion),
 		string(HookTypeUserPromptSubmit):
+		return true
+	default:
+		return false
+	}
+}
+
+// isPermissionDecisionHook returns true for hook events whose
+// hookSpecificOutput accepts permissionDecision: PreToolUse (sdk.d.ts
+// v0.3.251 L2500) and PreModelSwitch (L2487).
+func isPermissionDecisionHook(hookType string) bool {
+	switch hookType {
+	case string(HookTypePreToolUse), string(HookTypePreModelSwitch):
 		return true
 	default:
 		return false
