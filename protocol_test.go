@@ -317,6 +317,29 @@ func TestProtocolInitializeOptions(t *testing.T) {
 			unexpected: []string{"agents"},
 		},
 		{
+			name: "per-task stop affordance wired through",
+			configure: func(opts *Options) {
+				WithPerTaskStopAffordance(true)(opts)
+			},
+			expected: map[string]interface{}{
+				"perTaskStopAffordance": true,
+			},
+		},
+		{
+			name: "per-task stop affordance false is explicit",
+			configure: func(opts *Options) {
+				WithPerTaskStopAffordance(false)(opts)
+			},
+			expected: map[string]interface{}{
+				"perTaskStopAffordance": false,
+			},
+		},
+		{
+			name:       "unset per-task stop affordance omits key",
+			configure:  func(opts *Options) {},
+			unexpected: []string{"perTaskStopAffordance"},
+		},
+		{
 			name: "sdk mcp server timeout wired through",
 			configure: func(opts *Options) {
 				timeout := 45000
