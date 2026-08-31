@@ -1889,6 +1889,11 @@ type PermissionContext struct {
 	// rendering approve options should omit any persistent-rule row when set
 	// (sdk.d.ts v0.3.215).
 	SuppressAlwaysAllowRule bool
+	// DefaultToNo is true when the ask must not be approvable by a single
+	// stray keystroke: a terminal-style prompt opens on its decline option
+	// and takes no digit shortcut. Hosts rendering approve options must not
+	// pre-select approve (sdk.d.ts v0.3.251 L4079).
+	DefaultToNo bool
 	// MatchedAskRule is set when a user-configured ask rule forced this prompt
 	// while the ask still carries the tool's own decision reason. Nil when no
 	// such rule applied. See MatchedAskRule (sdk.d.ts v0.3.215).

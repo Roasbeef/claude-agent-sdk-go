@@ -292,6 +292,7 @@ func (p *Protocol) handlePermissionRequest(ctx context.Context, req ControlReque
 	agentID, _ := req.Payload["agent_id"].(string)
 	requiresUserInteraction, _ := req.Payload["requires_user_interaction"].(bool)
 	suppressAlwaysAllowRule, _ := req.Payload["suppress_always_allow_rule"].(bool)
+	defaultToNo, _ := req.Payload["default_to_no"].(bool)
 	matchedAskRule := parseMatchedAskRule(req.Payload["matched_ask_rule"])
 
 	// Build permission request.
@@ -303,6 +304,7 @@ func (p *Protocol) handlePermissionRequest(ctx context.Context, req ControlReque
 			AgentID:                 agentID,
 			RequiresUserInteraction: requiresUserInteraction,
 			SuppressAlwaysAllowRule: suppressAlwaysAllowRule,
+			DefaultToNo:             defaultToNo,
 			MatchedAskRule:          matchedAskRule,
 		},
 	}
@@ -937,11 +939,21 @@ func (p *Protocol) handleSDKPermissionRequest(ctx context.Context, req SDKContro
 	toolName := req.Request.ToolName
 	arguments := req.Request.Input
 
-	// Build permission request.
+	// Build permission request. The context fields were only ever populated
+	// on the legacy control_request path; this is the shape the TS SDK
+	// documents as SDKControlPermissionRequest, so a host on this path was
+	// getting an empty context.
 	permReq := ToolPermissionRequest{
 		ToolName:  toolName,
 		Arguments: marshalJSON(arguments),
-		Context:   PermissionContext{},
+		Context: PermissionContext{
+			ToolUseID:               req.Request.ToolUseID,
+			AgentID:                 req.Request.AgentID,
+			RequiresUserInteraction: req.Request.RequiresUserInteraction,
+			SuppressAlwaysAllowRule: req.Request.SuppressAlwaysAllowRule,
+			DefaultToNo:             req.Request.DefaultToNo,
+			MatchedAskRule:          req.Request.MatchedAskRule,
+		},
 	}
 
 	// Check permission callback.
