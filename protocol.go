@@ -487,6 +487,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 		SessionID:      getString(inputData, "session_id"),
 		TranscriptPath: getString(inputData, "transcript_path"),
 		Cwd:            getString(inputData, "cwd"),
+		PromptID:       getString(inputData, "prompt_id"),
 		PermissionMode: getString(inputData, "permission_mode"),
 		AgentID:        getString(inputData, "agent_id"),
 		AgentType:      getString(inputData, "agent_type"),
@@ -606,9 +607,14 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 		}
 	case HookTypeSessionStart:
 		input = SessionStartInput{
-			BaseHookInput: base,
-			Source:        getString(inputData, "source"),
-			SessionTitle:  getOptionalString(inputData, "session_title"),
+			BaseHookInput:            base,
+			Source:                   getString(inputData, "source"),
+			SessionTitle:             getOptionalString(inputData, "session_title"),
+			Model:                    getOptionalString(inputData, "model"),
+			SecondsSinceLastResponse: getOptionalFloat(inputData, "seconds_since_last_response"),
+			ContextTokens:            getOptionalInt(inputData, "context_tokens"),
+			PromptCacheLikelyExpired: getOptionalBool(inputData, "prompt_cache_likely_expired"),
+			EstimatedCacheWriteUSD:   getOptionalFloat(inputData, "estimated_cache_write_usd"),
 		}
 	case HookTypeSessionEnd:
 		input = SessionEndInput{
@@ -1024,6 +1030,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 		SessionID:      getString(hookInput, "session_id"),
 		TranscriptPath: getString(hookInput, "transcript_path"),
 		Cwd:            getString(hookInput, "cwd"),
+		PromptID:       getString(hookInput, "prompt_id"),
 		PermissionMode: getString(hookInput, "permission_mode"),
 		AgentID:        getString(hookInput, "agent_id"),
 		AgentType:      getString(hookInput, "agent_type"),
@@ -1145,9 +1152,14 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 		}
 	case "SessionStart":
 		input = SessionStartInput{
-			BaseHookInput: base,
-			Source:        getString(hookInput, "source"),
-			SessionTitle:  getOptionalString(hookInput, "session_title"),
+			BaseHookInput:            base,
+			Source:                   getString(hookInput, "source"),
+			SessionTitle:             getOptionalString(hookInput, "session_title"),
+			Model:                    getOptionalString(hookInput, "model"),
+			SecondsSinceLastResponse: getOptionalFloat(hookInput, "seconds_since_last_response"),
+			ContextTokens:            getOptionalInt(hookInput, "context_tokens"),
+			PromptCacheLikelyExpired: getOptionalBool(hookInput, "prompt_cache_likely_expired"),
+			EstimatedCacheWriteUSD:   getOptionalFloat(hookInput, "estimated_cache_write_usd"),
 		}
 	case "SessionEnd":
 		input = SessionEndInput{
@@ -1595,6 +1607,31 @@ func getFloat(m map[string]interface{}, key string) float64 {
 		return 0
 	}
 	return v
+}
+
+func getOptionalFloat(m map[string]interface{}, key string) *float64 {
+	v, ok := m[key].(float64)
+	if !ok {
+		return nil
+	}
+	return &v
+}
+
+func getOptionalInt(m map[string]interface{}, key string) *int {
+	v, ok := m[key].(float64) // JSON numbers are float64
+	if !ok {
+		return nil
+	}
+	i := int(v)
+	return &i
+}
+
+func getOptionalBool(m map[string]interface{}, key string) *bool {
+	v, ok := m[key].(bool)
+	if !ok {
+		return nil
+	}
+	return &v
 }
 
 func getModelSwitchContext(m map[string]interface{}) modelSwitchContext {

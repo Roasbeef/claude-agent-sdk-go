@@ -3211,3 +3211,112 @@ func TestIntegrationPermissionRequestContext(t *testing.T) {
 			"a permission ask must arrive carrying its tool_use_id")
 	}
 }
+
+// TestIntegrationSessionStartResumeCost resumes a real session and inspects the
+// SessionStart hook input for the resume-cost fields added in TS SDK v0.3.251.
+// They only populate on source "resume" and "fork", so a fresh startup is not
+// enough to exercise them.
+func TestIntegrationSessionStartResumeCost(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// isolatedClientOptions disables session persistence, which makes resume
+	// impossible. Share one config dir across both clients and keep sessions
+	// on disk, but stay out of the user's ~/.claude.
+	configDir := filepath.Join(t.TempDir(), ".claude")
+	require.NoError(t, os.MkdirAll(configDir, 0755))
+	shared := []Option{
+		WithConfigDir(configDir),
+		WithSkillsDisabled(),
+		WithSettingSources(nil),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	}
+
+	// First session: produce a transcript worth resuming.
+	var sessionID string
+	func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		client, err := NewClient(shared...)
+		require.NoError(t, err)
+		defer client.Close()
+
+		for msg := range client.Query(ctx, "Say OK.") {
+			if m, ok := msg.(ResultMessage); ok {
+				sessionID = m.SessionID
+				break
+			}
+		}
+	}()
+	require.NotEmpty(t, sessionID, "expected a session id to resume")
+
+	var (
+		mu   sync.Mutex
+		seen []SessionStartInput
+	)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	client, err := NewClient(append(shared,
+		WithResume(sessionID),
+		WithHooks(map[HookType][]HookConfig{
+			HookTypeSessionStart: {
+				{Matcher: "*", Callback: func(
+					ctx context.Context, input HookInput,
+				) (HookResult, error) {
+					if in, ok := input.(SessionStartInput); ok {
+						mu.Lock()
+						seen = append(seen, in)
+						mu.Unlock()
+					}
+					return HookResult{Continue: true}, nil
+				}},
+			},
+		}),
+	)...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	for msg := range client.Query(ctx, "Say OK again.") {
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen) == 0 {
+		t.Skip("not triggerable from CLI: no SessionStart hook fired on resume")
+	}
+
+	var sawCost bool
+	for _, in := range seen {
+		t.Logf("SessionStart source=%q model=%v ctx_tokens=%v age_s=%v "+
+			"expired=%v cache_write_usd=%v",
+			in.Source, in.Model, in.ContextTokens,
+			in.SecondsSinceLastResponse, in.PromptCacheLikelyExpired,
+			in.EstimatedCacheWriteUSD)
+
+		if in.Source != "resume" && in.Source != "fork" {
+			assert.Nil(t, in.ContextTokens,
+				"resume-cost fields are scoped to resume and fork")
+			continue
+		}
+		if in.ContextTokens == nil {
+			continue
+		}
+		sawCost = true
+		assert.Greater(t, *in.ContextTokens, 0,
+			"a resumed transcript has a non-empty window to re-send")
+		require.NotNil(t, in.PromptCacheLikelyExpired)
+		require.NotNil(t, in.EstimatedCacheWriteUSD)
+		assert.GreaterOrEqual(t, *in.EstimatedCacheWriteUSD, 0.0)
+	}
+
+	if !sawCost {
+		t.Skip("not triggerable from CLI: this CLI build does not report " +
+			"resume-cost fields on the SessionStart hook input")
+	}
+}

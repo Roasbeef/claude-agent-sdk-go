@@ -4646,3 +4646,131 @@ func TestProtocolPermissionDefaultToNo(t *testing.T) {
 		assert.Nil(t, captured.MatchedAskRule)
 	})
 }
+
+// TestSessionStartCacheContext covers the resume-cost fields added to
+// SessionStart in TS SDK v0.3.251, through both hook-input builders.
+func TestSessionStartCacheContext(t *testing.T) {
+	resumePayload := func(eventKey string) map[string]interface{} {
+		return map[string]interface{}{
+			eventKey:                      "SessionStart",
+			"source":                      "resume",
+			"model":                       "claude-opus-4-8",
+			"prompt_id":                   "prompt_42",
+			"seconds_since_last_response": float64(5400),
+			"context_tokens":              float64(148000),
+			"prompt_cache_likely_expired": true,
+			"estimated_cache_write_usd":   2.22,
+		}
+	}
+
+	assertResume := func(t *testing.T, in SessionStartInput) {
+		t.Helper()
+		assert.Equal(t, "resume", in.Source)
+		require.NotNil(t, in.Model)
+		assert.Equal(t, "claude-opus-4-8", *in.Model)
+		require.NotNil(t, in.SecondsSinceLastResponse)
+		assert.InDelta(t, 5400, *in.SecondsSinceLastResponse, 1e-9)
+		require.NotNil(t, in.ContextTokens)
+		assert.Equal(t, 148000, *in.ContextTokens)
+		require.NotNil(t, in.PromptCacheLikelyExpired)
+		assert.True(t, *in.PromptCacheLikelyExpired)
+		require.NotNil(t, in.EstimatedCacheWriteUSD)
+		assert.InDelta(t, 2.22, *in.EstimatedCacheWriteUSD, 1e-9)
+		assert.Equal(t, "prompt_42", in.Base().PromptID)
+	}
+
+	t.Run("legacy builder", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+
+		var got SessionStartInput
+		protocol.hookCallbacks["hook_ss"] = func(
+			ctx context.Context, input HookInput,
+		) (HookResult, error) {
+			in, ok := input.(SessionStartInput)
+			require.True(t, ok)
+			got = in
+			return HookResult{Continue: true}, nil
+		}
+
+		resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "hook_callback",
+			RequestID: "req_ss",
+			Payload: map[string]interface{}{
+				"callback_id": "hook_ss",
+				"input":       resumePayload("hook_event"),
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		assertResume(t, got)
+	})
+
+	t.Run("sdk builder", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+
+		var got SessionStartInput
+		protocol.hookCallbacks["sdk_ss"] = func(
+			ctx context.Context, input HookInput,
+		) (HookResult, error) {
+			in, ok := input.(SessionStartInput)
+			require.True(t, ok)
+			got = in
+			return HookResult{Continue: true}, nil
+		}
+
+		resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+			Type:      "control_request",
+			RequestID: "sdk_ss",
+			Request: SDKControlRequestBody{
+				Subtype:    "hook_callback",
+				CallbackID: "sdk_ss",
+				Input:      resumePayload("hook_event_name"),
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		assertResume(t, got)
+	})
+
+	// A plain startup carries none of them, and nil has to stay nil rather
+	// than becoming a zero a hook would read as "free to resume".
+	t.Run("startup carries no resume cost", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+
+		var got SessionStartInput
+		protocol.hookCallbacks["hook_startup"] = func(
+			ctx context.Context, input HookInput,
+		) (HookResult, error) {
+			got = input.(SessionStartInput)
+			return HookResult{Continue: true}, nil
+		}
+
+		resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "hook_callback",
+			RequestID: "req_startup",
+			Payload: map[string]interface{}{
+				"callback_id": "hook_startup",
+				"input": map[string]interface{}{
+					"hook_event": "SessionStart",
+					"source":     "startup",
+				},
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		assert.Equal(t, "startup", got.Source)
+		assert.Nil(t, got.Model)
+		assert.Nil(t, got.SecondsSinceLastResponse)
+		assert.Nil(t, got.ContextTokens)
+		assert.Nil(t, got.PromptCacheLikelyExpired)
+		assert.Nil(t, got.EstimatedCacheWriteUSD)
+	})
+}

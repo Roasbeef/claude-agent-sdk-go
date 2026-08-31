@@ -2472,6 +2472,36 @@ type SessionStartInput struct {
 	// SessionTitle is the optional user-facing session label from TS L3978.
 	// Nil means the field was absent on the wire.
 	SessionTitle *string `json:"session_title,omitempty"`
+
+	// Model is the session's model id. Nil when the wire field was absent.
+	Model *string `json:"model,omitempty"`
+
+	// SecondsSinceLastResponse is the age of the resumed transcript's last
+	// assistant response. Set on "resume" and "fork" only.
+	SecondsSinceLastResponse *float64 `json:"seconds_since_last_response,omitempty"`
+
+	// ContextTokens is the size of the window that would be re-sent: the
+	// resumed transcript's last response input + cache_read + cache_creation
+	// + output tokens. For a server-side tool loop this is the last
+	// iteration's window, not the summed totals. Set on "resume" and "fork"
+	// only.
+	ContextTokens *int `json:"context_tokens,omitempty"`
+
+	// PromptCacheLikelyExpired is true when SecondsSinceLastResponse exceeds
+	// the prompt-cache TTL, so the first request of the resumed session
+	// re-caches ContextTokens rather than reading them back. Set on "resume"
+	// and "fork" only.
+	PromptCacheLikelyExpired *bool `json:"prompt_cache_likely_expired,omitempty"`
+
+	// EstimatedCacheWriteUSD is the estimated cost of that re-cache on the
+	// session model, priced from the managed Settings.ModelPricing when one
+	// is configured and list price otherwise. Excludes the response. Set on
+	// "resume" and "fork" only.
+	//
+	// Together with the three above, this is what lets a SessionStart hook
+	// decide whether resuming this session is worth the cache write before
+	// it commits to injecting context (sdk.d.ts v0.3.251 L5367).
+	EstimatedCacheWriteUSD *float64 `json:"estimated_cache_write_usd,omitempty"`
 }
 
 // HookType implements HookInput.
