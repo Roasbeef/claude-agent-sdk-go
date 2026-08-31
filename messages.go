@@ -1296,16 +1296,29 @@ const (
 
 // TaskStartedMessage reports that a task has started executing.
 type TaskStartedMessage struct {
-	Type           string `json:"type"`                      // Always "system"
-	Subtype        string `json:"subtype"`                   // "task_started"
-	TaskID         string `json:"task_id"`                   // Task identifier
-	ToolUseID      string `json:"tool_use_id,omitempty"`     // Related tool use ID
-	Description    string `json:"description"`               // Task description
-	SubagentType   string `json:"subagent_type,omitempty"`   // Subagent type for Task tool subagents
-	TaskType       string `json:"task_type,omitempty"`       // Task type
-	WorkflowName   string `json:"workflow_name,omitempty"`   // Workflow script metadata name
-	Prompt         string `json:"prompt,omitempty"`          // Task prompt
-	SkipTranscript *bool  `json:"skip_transcript,omitempty"` // Ambient task marker
+	Type         string `json:"type"`                    // Always "system"
+	Subtype      string `json:"subtype"`                 // "task_started"
+	TaskID       string `json:"task_id"`                 // Task identifier
+	ToolUseID    string `json:"tool_use_id,omitempty"`   // Related tool use ID
+	Description  string `json:"description"`             // Task description
+	SubagentType string `json:"subagent_type,omitempty"` // Subagent type for Task tool subagents
+	TaskType     string `json:"task_type,omitempty"`     // Task type
+	WorkflowName string `json:"workflow_name,omitempty"` // Workflow script metadata name
+	Prompt       string `json:"prompt,omitempty"`        // Task prompt
+	// SkipTranscript asks consumers to hide this task from the inline
+	// transcript; it may still appear in a tasks panel. See Ambient, which
+	// covers every SkipTranscript task and more.
+	SkipTranscript *bool `json:"skip_transcript,omitempty"`
+	// Ambient marks a housekeeping task the CLI does not surface as user
+	// work — every SkipTranscript task, plus auto-started live-update
+	// watchers. Hosts should leave these out of activity indicators.
+	//
+	// It is the broader of the two markers and they are not
+	// interchangeable: SkipTranscript asks a consumer to hide the task from
+	// the inline transcript while still listing it in a tasks panel, whereas
+	// Ambient says it is not user work at all. Nil on CLIs that predate the
+	// field (sdk.d.ts v0.3.251 L5088).
+	Ambient *bool `json:"ambient,omitempty"`
 	// IsBackgrounded reports whether the task was registered in the
 	// background (true) or in the foreground with the spawning tool call
 	// blocking on it (false). A resumed subagent is always registered in the
@@ -1370,17 +1383,30 @@ func (m TaskUpdatedMessage) MessageType() string { return "system" }
 
 // TaskNotificationMessage reports terminal task output.
 type TaskNotificationMessage struct {
-	Type           string                 `json:"type"`                      // Always "system"
-	Subtype        string                 `json:"subtype"`                   // "task_notification"
-	TaskID         string                 `json:"task_id"`                   // Task identifier
-	ToolUseID      string                 `json:"tool_use_id,omitempty"`     // Related tool use ID
-	Status         TaskNotificationStatus `json:"status"`                    // Terminal status
-	OutputFile     string                 `json:"output_file"`               // Output file path
-	Summary        string                 `json:"summary"`                   // Task summary
-	Usage          *TaskUsage             `json:"usage,omitempty"`           // Resource consumption
-	SkipTranscript *bool                  `json:"skip_transcript,omitempty"` // Ambient task marker
-	UUID           string                 `json:"uuid"`                      // Unique message ID
-	SessionID      string                 `json:"session_id"`                // Session identifier
+	Type       string                 `json:"type"`                  // Always "system"
+	Subtype    string                 `json:"subtype"`               // "task_notification"
+	TaskID     string                 `json:"task_id"`               // Task identifier
+	ToolUseID  string                 `json:"tool_use_id,omitempty"` // Related tool use ID
+	Status     TaskNotificationStatus `json:"status"`                // Terminal status
+	OutputFile string                 `json:"output_file"`           // Output file path
+	Summary    string                 `json:"summary"`               // Task summary
+	Usage      *TaskUsage             `json:"usage,omitempty"`       // Resource consumption
+	// SkipTranscript asks consumers to hide this task from the inline
+	// transcript; it may still appear in a tasks panel. See Ambient, which
+	// covers every SkipTranscript task and more.
+	SkipTranscript *bool `json:"skip_transcript,omitempty"`
+	// Ambient marks a housekeeping task the CLI does not surface as user
+	// work — every SkipTranscript task, plus auto-started live-update
+	// watchers. Hosts should leave these out of activity indicators.
+	//
+	// It is the broader of the two markers and they are not
+	// interchangeable: SkipTranscript asks a consumer to hide the task from
+	// the inline transcript while still listing it in a tasks panel, whereas
+	// Ambient says it is not user work at all. Nil on CLIs that predate the
+	// field (sdk.d.ts v0.3.251 L5088).
+	Ambient   *bool  `json:"ambient,omitempty"`
+	UUID      string `json:"uuid"`       // Unique message ID
+	SessionID string `json:"session_id"` // Session identifier
 }
 
 // MessageType implements Message.
@@ -1813,6 +1839,12 @@ type BackgroundTask struct {
 	TaskID      string `json:"task_id"`
 	TaskType    string `json:"task_type"`
 	Description string `json:"description"`
+
+	// Ambient marks a housekeeping task the CLI does not surface as user
+	// work — every skip_transcript task, plus auto-started live-update
+	// watchers. Hosts should leave these out of activity indicators. Nil on
+	// CLIs that predate the field (sdk.d.ts v0.3.251 L3283).
+	Ambient *bool `json:"ambient,omitempty"`
 }
 
 // MessageType implements Message.
