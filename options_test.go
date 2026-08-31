@@ -2189,3 +2189,84 @@ func TestSettingsMarketplaceSourceURLConstant(t *testing.T) {
 		SettingsMarketplaceSourceKind("url"),
 		SettingsMarketplaceSourceURL)
 }
+
+func TestSettingsParityV0_3_251(t *testing.T) {
+	desktopRetention := 14
+	syncPlugins := false
+	excludeDefault := true
+
+	settings := Settings{
+		DesktopSessionCleanupPeriodDays: &desktopRetention,
+		SyncClaudeAiPlugins:             &syncPlugins,
+		ManagedSourcesBehavior:          "merge",
+		PromptCacheTTL:                  CacheTTL1h,
+		SubagentPromptCacheTTL:          CacheTTL5m,
+		SpinnerTipsOverride: &SettingsSpinnerTipsOverride{
+			ExcludeDefault: &excludeDefault,
+			Tips:           []string{"run make lint before pushing"},
+			TipsFile:       "~/.claude/tips.json",
+			Label:          "Ops",
+		},
+	}
+
+	data, err := json.Marshal(settings)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.Equal(t, float64(14), got["desktopSessionCleanupPeriodDays"])
+	assert.Equal(t, false, got["syncClaudeAiPlugins"])
+	assert.Equal(t, "merge", got["managedSourcesBehavior"])
+	assert.Equal(t, "1h", got["promptCacheTtl"])
+	assert.Equal(t, "5m", got["subagentPromptCacheTtl"])
+
+	override, ok := got["spinnerTipsOverride"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "~/.claude/tips.json", override["tipsFile"])
+	assert.Equal(t, "Ops", override["label"])
+
+	var back Settings
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, settings, back)
+}
+
+func TestSettingsParityV0_3_251OmitEmpty(t *testing.T) {
+	data, err := json.Marshal(Settings{})
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	for _, key := range []string{
+		"desktopSessionCleanupPeriodDays",
+		"syncClaudeAiPlugins",
+		"managedSourcesBehavior",
+		"promptCacheTtl",
+		"subagentPromptCacheTtl",
+	} {
+		assert.NotContains(t, got, key)
+	}
+}
+
+// Zero is a meaningful value for the desktop ceiling — it means "no ceiling",
+// unlike cleanupPeriodDays where a zero would disable transcript writes. The
+// pointer is what keeps it distinguishable from unset.
+func TestSettingsDesktopCleanupZeroSurvives(t *testing.T) {
+	noCeiling := 0
+	data, err := json.Marshal(Settings{
+		DesktopSessionCleanupPeriodDays: &noCeiling,
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"desktopSessionCleanupPeriodDays": 0}`, string(data))
+}
+
+// tips went required to optional upstream. An override that only points at a
+// tipsFile must not emit an empty tips array the CLI would read as "no tips".
+func TestSettingsSpinnerTipsOverrideFileOnly(t *testing.T) {
+	data, err := json.Marshal(SettingsSpinnerTipsOverride{
+		TipsFile: "~/.claude/tips.json",
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"tipsFile": "~/.claude/tips.json"}`, string(data))
+}

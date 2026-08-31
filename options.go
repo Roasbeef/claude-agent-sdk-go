@@ -340,6 +340,19 @@ type Settings struct {
 	FileSuggestion    *SettingsFileSuggestion `json:"fileSuggestion,omitempty"`
 	RespectGitignore  *bool                   `json:"respectGitignore,omitempty"`
 	CleanupPeriodDays *int                    `json:"cleanupPeriodDays,omitempty"`
+	// DesktopSessionCleanupPeriodDays bounds retention for transcripts a
+	// desktop-host surface (Claude Desktop, Cowork) created or last wrote,
+	// which are otherwise exempt from the CleanupPeriodDays sweep. Zero — the
+	// default — means no ceiling, and is allowed here where it is not on
+	// CleanupPeriodDays because this setting never disables writes, only
+	// bounds an exemption from deletion.
+	//
+	// It is a hard cap, so it also bounds an active archive grace: a release
+	// marker's grace window never keeps files past the ceiling. Setting it at
+	// or below CleanupPeriodDays effectively removes the exemption, and the
+	// effective retention is whichever period is longer. Ignored when
+	// CleanupPeriodDays is managed by org policy (sdk.d.ts v0.3.251 L5600).
+	DesktopSessionCleanupPeriodDays *int `json:"desktopSessionCleanupPeriodDays,omitempty"`
 	// SyncClaudeAiSkills turns off syncing of the skills enabled on
 	// claude.ai. Only false is honored: the feature is enabled server-side per
 	// account, so setting true does not turn it on early. Not read from
@@ -356,7 +369,14 @@ type Settings struct {
 	// downloads stop and synced skills are blocked and hidden for that
 	// workspace or invocation only, with nothing moved (sdk.d.ts v0.3.241
 	// L5392).
-	SyncClaudeAiSkills         *bool                            `json:"syncClaudeAiSkills,omitempty"`
+	SyncClaudeAiSkills *bool `json:"syncClaudeAiSkills,omitempty"`
+	// SyncClaudeAiPlugins is the plugin twin of SyncClaudeAiSkills, with the
+	// same only-false-is-honored rule and the same split between destructive
+	// user/managed scope and reversible workspace scope. While on, synced
+	// plugins load like ones installed locally, except that a locally
+	// installed plugin of the same name wins, and they re-sync at each launch
+	// rather than on a timer (sdk.d.ts v0.3.251 L5607).
+	SyncClaudeAiPlugins        *bool                            `json:"syncClaudeAiPlugins,omitempty"`
 	SkillListingMaxDescChars   *int                             `json:"skillListingMaxDescChars,omitempty"`
 	SkillListingBudgetFraction *float64                         `json:"skillListingBudgetFraction,omitempty"`
 	WSLInheritsWindowsSettings *bool                            `json:"wslInheritsWindowsSettings,omitempty"`
@@ -463,8 +483,22 @@ type Settings struct {
 	SpinnerTipsOverride        *SettingsSpinnerTipsOverride `json:"spinnerTipsOverride,omitempty"`
 	SyntaxHighlightingDisabled *bool                        `json:"syntaxHighlightingDisabled,omitempty"`
 	TerminalTitleFromRename    *bool                        `json:"terminalTitleFromRename,omitempty"`
-	AlwaysThinkingEnabled      *bool                        `json:"alwaysThinkingEnabled,omitempty"`
-	EffortLevel                EffortLevel                  `json:"effortLevel,omitempty"`
+	// PromptCacheTTL is the prompt-cache lifetime for the main conversation —
+	// interactive, -p and SDK turns, plus the helpers running inline with
+	// them. Empty means automatic: one hour on a Claude subscription within
+	// its usage limits, five minutes on an API key, Bedrock, Vertex or
+	// Foundry. A one-hour cache is billed at a higher write rate in exchange
+	// for staying warm across longer breaks. CLAUDE_CODE_PROMPT_CACHE_TTL
+	// takes precedence over this (sdk.d.ts v0.3.251 L7679).
+	PromptCacheTTL CacheTTL `json:"promptCacheTtl,omitempty"`
+	// SubagentPromptCacheTTL is the same for everything outside the main
+	// conversation: subagents, workflows, background and helper requests.
+	// Empty means automatic, which is five minutes unless
+	// ENABLE_PROMPT_CACHING_1H=1. CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL takes
+	// precedence (sdk.d.ts v0.3.251 L7683).
+	SubagentPromptCacheTTL CacheTTL    `json:"subagentPromptCacheTtl,omitempty"`
+	AlwaysThinkingEnabled  *bool       `json:"alwaysThinkingEnabled,omitempty"`
+	EffortLevel            EffortLevel `json:"effortLevel,omitempty"`
 	// ModelSettings holds per-model settings keyed by canonical model name —
 	// the per-model twin of EffortLevel above. Note the ceiling differs: a
 	// persisted per-model effort tops out at "xhigh", where the init message's
@@ -592,6 +626,25 @@ type Settings struct {
 	AllowAllClaudeAiMcps *bool `json:"allowAllClaudeAiMcps,omitempty"`
 	// ParentSettingsBehavior controls whether the SDK parent tier layers under the admin tier. Mirrors sdk.d.ts v0.3.150 L5019.
 	ParentSettingsBehavior string `json:"parentSettingsBehavior,omitempty"`
+	// ManagedSourcesBehavior controls how the managed settings sources
+	// compose. "first-wins" (the default) uses the highest-priority source
+	// present — server-managed, then MDM, then managed-settings.json — as the
+	// managed tier alone. "merge" deep-merges every present source at that
+	// fixed precedence: scalars take the highest source's value and arrays
+	// union.
+	//
+	// Three groups opt out of the union. The restriction allowlists
+	// (fallbackModel, allowedMcpServers, availableModels,
+	// strictKnownMarketplaces, allowedChannelPlugins) are owned whole by the
+	// highest source that sets one, and the auth pins (forceLoginOrgUUID,
+	// forceLoginMethod, forceLoginGatewayUrl) come from the highest source
+	// only — merging either would let a lower source widen a restriction.
+	//
+	// Honored only from the highest-priority source present. Enable it only
+	// when every lower source is admin-controlled, since under "merge" they
+	// start contributing entries such as permissions.allow. HKCU and
+	// --managed-settings never take part (sdk.d.ts v0.3.251 L7367).
+	ManagedSourcesBehavior string `json:"managedSourcesBehavior,omitempty"`
 	// IsolatePeerMachines requires approval before SendMessage can reach peer sessions on other machines. Mirrors sdk.d.ts v0.3.150 L5407.
 	IsolatePeerMachines *bool `json:"isolatePeerMachines,omitempty"`
 	// DaemonColdStart controls daemon behavior when no background service is running. Mirrors sdk.d.ts v0.3.150 L5411.
@@ -987,9 +1040,28 @@ type SettingsSpinnerVerbs struct {
 	Verbs []string `json:"verbs"`
 }
 
+// SettingsSpinnerTipsOverride adds an organization's own tips to the spinner
+// tip rotation.
 type SettingsSpinnerTipsOverride struct {
-	ExcludeDefault *bool    `json:"excludeDefault,omitempty"`
-	Tips           []string `json:"tips"`
+	// ExcludeDefault shows only these tips instead of mixing them into the
+	// built-in rotation. Defaults to false.
+	ExcludeDefault *bool `json:"excludeDefault,omitempty"`
+
+	// Tips are the tip strings. Upstream widened the element to also accept
+	// an object ({id, text, cooldownSessions?, priority?}); that form is not
+	// modeled here yet, since widening this field's type is a breaking
+	// change and Settings only flows outward from this SDK.
+	Tips []string `json:"tips,omitempty"`
+
+	// TipsFile is an absolute or ~/-relative path to a JSON file holding an
+	// array of tips in the same shapes as Tips. Honored from user, --settings
+	// and on-disk managed settings only, and read once per CLI process —
+	// edits need a restart (sdk.d.ts v0.3.251 L7640).
+	TipsFile string `json:"tipsFile,omitempty"`
+
+	// Label is the prefix shown before these tips in the spinner. Defaults to
+	// "Tip".
+	Label string `json:"label,omitempty"`
 }
 
 type SettingsSandbox struct {
