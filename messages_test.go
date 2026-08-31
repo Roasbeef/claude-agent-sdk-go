@@ -4972,3 +4972,59 @@ func TestUserMessageUUIDTurnCorrelation(t *testing.T) {
 		}
 	})
 }
+
+func TestResultMessageQueuedTurnCount(t *testing.T) {
+	t.Run("pending sends reported", func(t *testing.T) {
+		msg, err := ParseMessage([]byte(`{
+			"type": "result",
+			"subtype": "success",
+			"uuid": "550e8400-e29b-41d4-a716-446655441101",
+			"session_id": "sess",
+			"queued_turn_count": 3
+		}`))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		require.NotNil(t, rm.QueuedTurnCount)
+		assert.Equal(t, 3, *rm.QueuedTurnCount)
+	})
+
+	// An empty queue and no queue at all are different facts, so an explicit
+	// zero must survive the round trip rather than being folded into nil.
+	t.Run("explicit zero is not absence", func(t *testing.T) {
+		msg, err := ParseMessage([]byte(`{
+			"type": "result",
+			"subtype": "success",
+			"uuid": "550e8400-e29b-41d4-a716-446655441102",
+			"session_id": "sess",
+			"queued_turn_count": 0
+		}`))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		require.NotNil(t, rm.QueuedTurnCount)
+		assert.Equal(t, 0, *rm.QueuedTurnCount)
+
+		data, err := json.Marshal(rm)
+		require.NoError(t, err)
+		assert.Contains(t, string(data), `"queued_turn_count":0`)
+	})
+
+	t.Run("absent on a queueless surface", func(t *testing.T) {
+		msg, err := ParseMessage([]byte(`{
+			"type": "result",
+			"subtype": "error_during_execution",
+			"uuid": "550e8400-e29b-41d4-a716-446655441103",
+			"session_id": "sess",
+			"is_error": true
+		}`))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.Nil(t, rm.QueuedTurnCount)
+
+		data, err := json.Marshal(rm)
+		require.NoError(t, err)
+		assert.NotContains(t, string(data), "queued_turn_count")
+	})
+}

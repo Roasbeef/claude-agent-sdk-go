@@ -3016,3 +3016,61 @@ func TestIntegrationUserMessageUUIDCorrelation(t *testing.T) {
 			"first reply frame")
 	}
 }
+
+// TestIntegrationQueuedTurnCount queues a second send behind the first and
+// asserts the first result reports the backlog, so a host draining a queue can
+// tell "the run is done" from "more is inbound" (TS SDK v0.3.251).
+func TestIntegrationQueuedTurnCount(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Reply with one word."),
+		WithMaxTurns(4),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	// Both sends go out before the first turn resolves, so the first result
+	// is produced with the second still queued.
+	require.NoError(t, stream.Send(ctx, "Say ONE."))
+	require.NoError(t, stream.Send(ctx, "Say TWO."))
+
+	var counts []*int
+	for msg := range stream.Messages() {
+		if m, ok := msg.(ResultMessage); ok {
+			counts = append(counts, m.QueuedTurnCount)
+			t.Logf("result %d: queued=%v", len(counts), derefInt(m.QueuedTurnCount))
+			if len(counts) == 2 {
+				break
+			}
+		}
+	}
+	require.Len(t, counts, 2, "expected a result per send")
+
+	if counts[0] == nil {
+		t.Skip("not triggerable from CLI: this CLI build does not report " +
+			"queued_turn_count on results")
+	}
+
+	assert.Greater(t, *counts[0], 0,
+		"the first result is produced with the second send still queued")
+	require.NotNil(t, counts[1])
+	assert.Equal(t, 0, *counts[1],
+		"nothing is pending behind the last send")
+}
+
+func derefInt(v *int) interface{} {
+	if v == nil {
+		return "absent"
+	}
+	return *v
+}
