@@ -4356,3 +4356,149 @@ func TestBuildHookResponse_SuppressOriginalPrompt_UserPromptExpansion(t *testing
 		assert.Equal(t, true, hso["suppressOriginalPrompt"])
 	})
 }
+
+// TestHandleHookCallback_PreModelSwitchInput exercises the legacy hook-callback
+// builder for the PreModelSwitch event added in TS SDK v0.3.251.
+func TestHandleHookCallback_PreModelSwitchInput(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+
+	protocol.hookCallbacks["hook_pre_switch"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+		in, ok := input.(PreModelSwitchInput)
+		require.True(t, ok)
+		assert.Equal(t, "claude-sonnet-4-6", in.FromModel)
+		assert.Equal(t, "claude-opus-4-8", in.ToModel)
+		require.NotNil(t, in.RequestedModel)
+		assert.Equal(t, "opus", *in.RequestedModel)
+		assert.Equal(t, ModelSwitchSourceCommand, in.Source)
+		assert.Equal(t, 148000, in.ContextTokens)
+		assert.True(t, in.PromptCacheWarm)
+		assert.Equal(t, CacheTTL1h, in.CacheTTL)
+		assert.InDelta(t, 2.22, in.EstimatedCacheWriteUSD, 1e-9)
+		assert.Equal(t, ModelPricingCatalog, in.Pricing)
+		return HookResult{
+			Continue:                 true,
+			PermissionDecision:       HookPermissionDeny,
+			PermissionDecisionReason: "cache write over budget",
+		}, nil
+	}
+
+	resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+		Type:      "control",
+		Subtype:   "hook_callback",
+		RequestID: "req_pre_switch",
+		Payload: map[string]interface{}{
+			"callback_id": "hook_pre_switch",
+			"input": map[string]interface{}{
+				"hook_event":                "PreModelSwitch",
+				"from_model":                "claude-sonnet-4-6",
+				"to_model":                  "claude-opus-4-8",
+				"requested_model":           "opus",
+				"source":                    "command",
+				"context_tokens":            float64(148000),
+				"prompt_cache_warm":         true,
+				"cache_ttl":                 "1h",
+				"estimated_cache_write_usd": 2.22,
+				"pricing":                   "catalog",
+			},
+		},
+	})
+
+	require.Equal(t, "success", resp.Response.Subtype)
+	hso, ok := resp.Response.Response["hookSpecificOutput"].(map[string]interface{})
+	require.True(t, ok, "a PreModelSwitch veto must ride hookSpecificOutput")
+	assert.Equal(t, "PreModelSwitch", hso["hookEventName"])
+	assert.Equal(t, "deny", hso["permissionDecision"])
+	assert.Equal(t, "cache write over budget", hso["permissionDecisionReason"])
+}
+
+// TestHandleSDKHookCallback_PostModelSwitchInput exercises the SDK
+// hook-callback builder, which is a separate field-mapping switch from the
+// legacy one and drifts independently.
+func TestHandleSDKHookCallback_PostModelSwitchInput(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+
+	protocol.hookCallbacks["sdk_post_switch"] = func(ctx context.Context, input HookInput) (HookResult, error) {
+		in, ok := input.(PostModelSwitchInput)
+		require.True(t, ok)
+		assert.Equal(t, "claude-opus-4-8", in.FromModel)
+		assert.Equal(t, "claude-sonnet-4-6", in.ToModel)
+		assert.Nil(t, in.RequestedModel, "a resume names no requested model")
+		assert.Equal(t, ModelSwitchSourceResume, in.Source)
+		assert.False(t, in.PromptCacheWarm)
+		assert.Equal(t, CacheTTL5m, in.CacheTTL)
+		assert.Equal(t, ModelPricingConfigured, in.Pricing)
+		return HookResult{Continue: true, AdditionalContext: "restored after resume"}, nil
+	}
+
+	resp := protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+		Type:      "control_request",
+		RequestID: "sdk_post_switch",
+		Request: SDKControlRequestBody{
+			Subtype:    "hook_callback",
+			CallbackID: "sdk_post_switch",
+			Input: map[string]interface{}{
+				"hook_event_name":           "PostModelSwitch",
+				"from_model":                "claude-opus-4-8",
+				"to_model":                  "claude-sonnet-4-6",
+				"source":                    "resume",
+				"context_tokens":            float64(9000),
+				"prompt_cache_warm":         false,
+				"cache_ttl":                 "5m",
+				"estimated_cache_write_usd": 0.14,
+				"pricing":                   "configured",
+			},
+		},
+	})
+
+	require.Equal(t, "success", resp.Response.Subtype)
+	hso, ok := resp.Response.Response["hookSpecificOutput"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "PostModelSwitch", hso["hookEventName"])
+	assert.Equal(t, "restored after resume", hso["additionalContext"])
+}
+
+func TestBuildHookResponse_PermissionDecision(t *testing.T) {
+	t.Run("emitted on PreToolUse", func(t *testing.T) {
+		resp := buildHookResponse("PreToolUse", HookResult{
+			Continue:           true,
+			PermissionDecision: HookPermissionDefer,
+		})
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "defer", hso["permissionDecision"])
+		_, hasReason := hso["permissionDecisionReason"]
+		assert.False(t, hasReason, "an empty reason must not reach the wire")
+	})
+
+	t.Run("dropped on unsupported hook", func(t *testing.T) {
+		resp := buildHookResponse("PostModelSwitch", HookResult{
+			Continue:           true,
+			PermissionDecision: HookPermissionDeny,
+		})
+
+		_, has := resp["hookSpecificOutput"]
+		assert.False(t, has,
+			"only pre-phase hooks gate an action; the post-phase cannot veto one")
+	})
+
+	t.Run("composes with an explicit hookSpecificOutput", func(t *testing.T) {
+		resp := buildHookResponse("PreModelSwitch", HookResult{
+			Continue:           true,
+			PermissionDecision: HookPermissionAsk,
+			HookSpecificOutput: map[string]interface{}{
+				"hookEventName": "PreModelSwitch",
+				"customKey":     "preserved",
+			},
+		})
+
+		hso, ok := resp["hookSpecificOutput"].(map[string]interface{})
+		require.True(t, ok)
+		assert.Equal(t, "ask", hso["permissionDecision"])
+		assert.Equal(t, "preserved", hso["customKey"])
+	})
+}

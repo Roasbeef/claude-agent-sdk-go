@@ -1952,6 +1952,13 @@ const (
 	// HookTypePostCompact fires after context compaction.
 	HookTypePostCompact HookType = "PostCompact"
 
+	// HookTypePreModelSwitch fires before the active model changes, and can
+	// veto the switch via HookResult.PermissionDecision.
+	HookTypePreModelSwitch HookType = "PreModelSwitch"
+
+	// HookTypePostModelSwitch fires after the active model has changed.
+	HookTypePostModelSwitch HookType = "PostModelSwitch"
+
 	// HookTypePostToolBatch fires after a batch of tool calls completes.
 	HookTypePostToolBatch HookType = "PostToolBatch"
 
@@ -2243,6 +2250,137 @@ func (PostCompactInput) HookType() HookType { return HookTypePostCompact }
 
 // Base implements HookInput.
 func (i PostCompactInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// CacheTTL is the lifetime of a prompt-cache entry. It bounds how long a warm
+// cache stays warm, and so how much of a model switch or a session resume can
+// be served without paying a fresh cache write.
+type CacheTTL string
+
+const (
+	// CacheTTL5m is the default prompt-cache lifetime.
+	CacheTTL5m CacheTTL = "5m"
+
+	// CacheTTL1h is the extended prompt-cache lifetime.
+	CacheTTL1h CacheTTL = "1h"
+)
+
+// ModelSwitchSource identifies what initiated a model switch.
+type ModelSwitchSource string
+
+const (
+	// ModelSwitchSourceCommand is a switch from the /model slash command.
+	ModelSwitchSourceCommand ModelSwitchSource = "command"
+
+	// ModelSwitchSourcePicker is a switch from the interactive model picker.
+	ModelSwitchSourcePicker ModelSwitchSource = "picker"
+
+	// ModelSwitchSourceSDK is a switch driven by the SDK's set_model control
+	// request.
+	ModelSwitchSourceSDK ModelSwitchSource = "sdk"
+
+	// ModelSwitchSourceAuto is a switch the CLI performed on its own, such as
+	// a fallback after a refusal. PostModelSwitch only — see
+	// PostModelSwitchInput.Source.
+	ModelSwitchSourceAuto ModelSwitchSource = "auto"
+
+	// ModelSwitchSourceResume is the model being restored when a session is
+	// resumed. PostModelSwitch only — see PostModelSwitchInput.Source.
+	ModelSwitchSourceResume ModelSwitchSource = "resume"
+)
+
+// ModelPricingBasis says where the per-token prices behind a cost estimate came
+// from.
+type ModelPricingBasis string
+
+const (
+	// ModelPricingConfigured means Settings.ModelPricing supplied the rates.
+	ModelPricingConfigured ModelPricingBasis = "configured"
+
+	// ModelPricingCatalog means the rates came from the published model
+	// catalog.
+	ModelPricingCatalog ModelPricingBasis = "catalog"
+
+	// ModelPricingDefault means neither applied and a fallback rate was used,
+	// so the estimate is indicative only.
+	ModelPricingDefault ModelPricingBasis = "default"
+)
+
+// modelSwitchContext is the prompt-cache economics both model-switch hooks
+// carry. A switch invalidates the warm cache for the outgoing model, so the
+// interesting question at hook time is what re-warming will cost.
+type modelSwitchContext struct {
+	// FromModel is the model in effect before the switch.
+	FromModel string `json:"from_model"`
+
+	// ToModel is the model that will be (or has been) switched to.
+	ToModel string `json:"to_model"`
+
+	// RequestedModel is what the user or caller actually asked for, when that
+	// differs from the resolved ToModel. Nil when the request named no target
+	// — cycling the picker, say — and also on CLIs that predate the field;
+	// the two are not distinguishable and nothing consumes the difference.
+	RequestedModel *string `json:"requested_model,omitempty"`
+
+	// ContextTokens is the size of the context that would have to be re-sent
+	// against the new model.
+	ContextTokens int `json:"context_tokens"`
+
+	// PromptCacheWarm reports whether the outgoing model's prompt cache is
+	// currently warm. Switching away from a warm cache is what makes
+	// EstimatedCacheWriteUSD non-trivial.
+	PromptCacheWarm bool `json:"prompt_cache_warm"`
+
+	// CacheTTL is the prompt-cache lifetime in effect.
+	CacheTTL CacheTTL `json:"cache_ttl"`
+
+	// EstimatedCacheWriteUSD is the projected cost of writing the context into
+	// the new model's cache.
+	EstimatedCacheWriteUSD float64 `json:"estimated_cache_write_usd"`
+
+	// Pricing says where the rates behind EstimatedCacheWriteUSD came from.
+	// ModelPricingDefault means treat the figure as indicative.
+	Pricing ModelPricingBasis `json:"pricing"`
+}
+
+// PreModelSwitchInput contains data for PreModelSwitch hooks.
+//
+// The hook can veto the switch: returning HookResult.PermissionDecision "deny"
+// cancels it, "ask" asks the user to confirm (a headless session refuses
+// instead), and "allow" proceeds while skipping the interactive cache-miss
+// confirm (sdk.d.ts v0.3.251 L2482).
+type PreModelSwitchInput struct {
+	BaseHookInput
+	modelSwitchContext
+
+	// Source is what initiated the switch: ModelSwitchSourceCommand,
+	// ModelSwitchSourcePicker, or ModelSwitchSourceSDK. A switch the CLI made
+	// on its own has no vetoable pre-phase and so never reaches this hook.
+	Source ModelSwitchSource `json:"source"`
+}
+
+// HookType implements HookInput.
+func (PreModelSwitchInput) HookType() HookType { return HookTypePreModelSwitch }
+
+// Base implements HookInput.
+func (i PreModelSwitchInput) Base() BaseHookInput { return i.BaseHookInput }
+
+// PostModelSwitchInput contains data for PostModelSwitch hooks.
+type PostModelSwitchInput struct {
+	BaseHookInput
+	modelSwitchContext
+
+	// Source is what initiated the switch. Beyond the three values
+	// PreModelSwitch admits, this also reports ModelSwitchSourceAuto and
+	// ModelSwitchSourceResume — switches the CLI performed itself, which by
+	// construction only ever surface after the fact.
+	Source ModelSwitchSource `json:"source"`
+}
+
+// HookType implements HookInput.
+func (PostModelSwitchInput) HookType() HookType { return HookTypePostModelSwitch }
+
+// Base implements HookInput.
+func (i PostModelSwitchInput) Base() BaseHookInput { return i.BaseHookInput }
 
 // PostToolBatchInput contains data for PostToolBatch hooks.
 type PostToolBatchInput struct {
@@ -2813,12 +2951,50 @@ type HookResult struct {
 	// a real redaction.
 	ClassifierContext string
 
+	// PermissionDecision lets a pre-phase hook rule on the action it is
+	// gating. Honored on PreToolUse (sdk.d.ts v0.3.251 L2500) and
+	// PreModelSwitch (L2487); silently dropped elsewhere. Empty string omits
+	// the field on the wire. Composes with an explicit HookSpecificOutput
+	// map the same way AdditionalContext does: the typed value overwrites
+	// permissionDecision and leaves the caller's other keys alone.
+	//
+	// Note the value sets differ. PreToolUse takes all four constants;
+	// PreModelSwitch takes allow, deny and ask only, and there is no
+	// deferred model switch to hand off to.
+	PermissionDecision HookPermissionDecision
+
+	// PermissionDecisionReason is the human-readable justification shown
+	// alongside PermissionDecision. Honored on the same hook events, and
+	// meaningless without one.
+	PermissionDecisionReason string
+
 	// HookSpecificOutput provides raw hookSpecificOutput for the CLI
 	// response. When set, this takes precedence over auto-translation
 	// of Modify. Use this for finer control over permissionDecision,
 	// additionalContext, or other hook-specific fields.
 	HookSpecificOutput map[string]interface{}
 }
+
+// HookPermissionDecision is a pre-phase hook's ruling on the action it gates
+// (sdk.d.ts v0.3.251 L878).
+type HookPermissionDecision string
+
+const (
+	// HookPermissionAllow proceeds without asking the user. On PreModelSwitch
+	// this also skips the interactive cache-miss confirm.
+	HookPermissionAllow HookPermissionDecision = "allow"
+
+	// HookPermissionDeny cancels the action.
+	HookPermissionDeny HookPermissionDecision = "deny"
+
+	// HookPermissionAsk puts the decision to the user. A headless session has
+	// nobody to ask and refuses instead.
+	HookPermissionAsk HookPermissionDecision = "ask"
+
+	// HookPermissionDefer hands the decision to the normal permission flow as
+	// though the hook had not run. PreToolUse only.
+	HookPermissionDefer HookPermissionDecision = "defer"
+)
 
 // AgentDefinition defines a specialized subagent.
 type AgentDefinition struct {

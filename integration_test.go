@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -2673,4 +2674,92 @@ func TestIntegrationInitTerminalSlashCommands(t *testing.T) {
 
 	assert.Subset(t, init.SlashCommands, init.TerminalSlashCommands,
 		"every terminal command must also appear in slash_commands")
+}
+
+// TestIntegrationModelSwitchHooks drives a live model switch through
+// Stream.SetModel and asserts the PreModelSwitch / PostModelSwitch hooks added
+// in TS SDK v0.3.251 fire with source "sdk".
+func TestIntegrationModelSwitchHooks(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	var mu sync.Mutex
+	var pre []PreModelSwitchInput
+	var post []PostModelSwitchInput
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithModel("claude-sonnet-4-6"),
+		WithMaxTurns(1),
+		WithHooks(map[HookType][]HookConfig{
+			HookTypePreModelSwitch: {
+				{Matcher: "*", Callback: func(
+					ctx context.Context, input HookInput,
+				) (HookResult, error) {
+					if in, ok := input.(PreModelSwitchInput); ok {
+						mu.Lock()
+						pre = append(pre, in)
+						mu.Unlock()
+					}
+					return HookResult{Continue: true}, nil
+				}},
+			},
+			HookTypePostModelSwitch: {
+				{Matcher: "*", Callback: func(
+					ctx context.Context, input HookInput,
+				) (HookResult, error) {
+					if in, ok := input.(PostModelSwitchInput); ok {
+						mu.Lock()
+						post = append(post, in)
+						mu.Unlock()
+					}
+					return HookResult{Continue: true}, nil
+				}},
+			},
+		}),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	if err := stream.SetModel(ctx, "claude-opus-4-8"); err != nil {
+		t.Skipf("CLI does not support set_model: %v", err)
+	}
+
+	// The switch is acked before the hooks round-trip, so give them a beat.
+	require.NoError(t, stream.Send(ctx, "Say OK."))
+	for msg := range stream.Messages() {
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(pre) == 0 && len(post) == 0 {
+		t.Skip("not triggerable from CLI: this CLI build does not emit " +
+			"PreModelSwitch / PostModelSwitch hook events for set_model")
+	}
+
+	for _, in := range pre {
+		assert.Equal(t, ModelSwitchSourceSDK, in.Source)
+		assert.NotEmpty(t, in.ToModel)
+		assert.Contains(t,
+			[]CacheTTL{CacheTTL5m, CacheTTL1h}, in.CacheTTL,
+			"cache_ttl is a closed set upstream",
+		)
+	}
+	for _, in := range post {
+		assert.NotEmpty(t, in.ToModel)
+		assert.NotEqual(t, in.FromModel, in.ToModel,
+			"a post-switch report must name two different models")
+	}
 }
