@@ -394,11 +394,28 @@ type ResultMessage struct {
 	ModelUsage map[string]ModelUsage `json:"modelUsage,omitempty"`
 
 	PermissionDenials []PermissionDenial `json:"permission_denials,omitempty"` // Denied permissions
-	StructuredOutput  interface{}        `json:"structured_output,omitempty"`  // Structured output (if OutputFormat set)
-	StopReason        *string            `json:"stop_reason"`                  // Stop reason, explicitly null when absent
-	TerminalReason    *TerminalReason    `json:"terminal_reason,omitempty"`    // Terminal completion reason
-	Origin            *MessageOrigin     `json:"origin,omitempty"`             // Originating actor for this result
-	FastModeState     *FastModeState     `json:"fast_mode_state,omitempty"`    // Fast mode state at completion
+
+	// QueuedTurnCount is how many user-initiated sends were still waiting in
+	// the command queue when this result was produced. Greater than zero
+	// means at least one more turn and result follow without further input,
+	// barring cancellation — the signal that distinguishes "the run is done"
+	// from "more is inbound" for a host draining a queue.
+	//
+	// Zero means nothing is pending, or the session is ending: end_session or
+	// a shutdown latched mid-turn discards the backlog. It counts pending
+	// sends, not remaining results, and queued sends may coalesce into fewer
+	// turns, so it bounds what follows rather than predicting it.
+	// System-generated queue entries are excluded.
+	//
+	// Nil on fatal startup results, on surfaces with no command queue, and on
+	// CLIs that predate the field — none of which are the same as a queue
+	// that happens to be empty (sdk.d.ts v0.3.251 L4848).
+	QueuedTurnCount  *int            `json:"queued_turn_count,omitempty"`
+	StructuredOutput interface{}     `json:"structured_output,omitempty"` // Structured output (if OutputFormat set)
+	StopReason       *string         `json:"stop_reason"`                 // Stop reason, explicitly null when absent
+	TerminalReason   *TerminalReason `json:"terminal_reason,omitempty"`   // Terminal completion reason
+	Origin           *MessageOrigin  `json:"origin,omitempty"`            // Originating actor for this result
+	FastModeState    *FastModeState  `json:"fast_mode_state,omitempty"`   // Fast mode state at completion
 	// FastModeDisabledReason explains why fast mode could not serve, when
 	// fast_mode_state is not "on". Absent when nothing blocks it.
 	FastModeDisabledReason *FastModeDisabledReason `json:"fast_mode_disabled_reason,omitempty"`
