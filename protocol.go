@@ -100,12 +100,26 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 		}
 	}
 
-	// Build list of SDK MCP server names.
+	// Build list of SDK MCP server names, plus per-server config for the
+	// subset that carries any. The config map stays absent when no server
+	// sets a timeout — the CLI reads a missing key and an empty object the
+	// same way, and sending {} is noise.
 	var sdkMcpServers []string
+	var sdkMcpServerConfigs map[string]SDKMCPServerConfig
 	if len(p.sdkMcpServers) > 0 {
 		sdkMcpServers = make([]string, 0, len(p.sdkMcpServers))
-		for name := range p.sdkMcpServers {
+		for name, server := range p.sdkMcpServers {
 			sdkMcpServers = append(sdkMcpServers, name)
+
+			if server == nil || server.Timeout() == nil {
+				continue
+			}
+			if sdkMcpServerConfigs == nil {
+				sdkMcpServerConfigs = make(map[string]SDKMCPServerConfig)
+			}
+			sdkMcpServerConfigs[name] = SDKMCPServerConfig{
+				Timeout: server.Timeout(),
+			}
 		}
 	}
 
@@ -132,6 +146,7 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 			Subtype:                "initialize",
 			Hooks:                  hooks,
 			SDKMCPServers:          sdkMcpServers,
+			SDKMCPServerConfigs:    sdkMcpServerConfigs,
 			MCPServers:             p.options.MCPServers,
 			SystemPrompt:           p.options.SystemPrompt,
 			PlanModeInstructions:   p.options.PlanModeInstructions,

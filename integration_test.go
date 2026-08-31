@@ -2763,3 +2763,81 @@ func TestIntegrationModelSwitchHooks(t *testing.T) {
 			"a post-switch report must name two different models")
 	}
 }
+
+// TestIntegrationSdkMcpServerTimeout registers an in-process MCP server with a
+// short per-server timeout and a tool that sleeps well past it, then asserts
+// the CLI cuts the call off rather than waiting for the tool. This exercises
+// sdkMcpServerConfigs on the initialize request, added in TS SDK v0.3.251.
+func TestIntegrationSdkMcpServerTimeout(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	const (
+		toolTimeoutMs = 2000
+		toolSleep     = 60 * time.Second
+	)
+
+	type NoArgs struct{}
+
+	timeout := toolTimeoutMs
+	server := CreateMcpServer(McpServerOptions{
+		Name:    "slowpoke",
+		Timeout: &timeout,
+		Tools: []ToolRegistrar{
+			Tool("stall", "Stall for a long time",
+				func(ctx context.Context, args NoArgs) (ToolResult, error) {
+					select {
+					case <-time.After(toolSleep):
+						return TextResult("finished"), nil
+					case <-ctx.Done():
+						return TextResult("cancelled"), nil
+					}
+				},
+			),
+		},
+	})
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You have one tool, mcp__slowpoke__stall. When asked "+
+			"to run it you MUST call it. Do not explain, do not refuse, do "+
+			"not ask questions. Call it exactly once, then stop."),
+		WithMcpServer("slowpoke", server),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(2),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	var calledTool bool
+	for msg := range client.Query(ctx, "Call the mcp__slowpoke__stall tool now.") {
+		if m, ok := msg.(AssistantMessage); ok {
+			for _, block := range m.Message.Content {
+				if block.Type == "tool_use" {
+					calledTool = true
+				}
+			}
+		}
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+	elapsed := time.Since(start)
+
+	if !calledTool {
+		t.Skip("not triggerable from CLI: the model declined to call the tool")
+	}
+
+	// The tool itself never returns inside the window. Finishing the turn at
+	// all means the timeout fired; the generous bound leaves room for model
+	// latency around the call without admitting a full tool completion.
+	assert.Less(t, elapsed, toolSleep,
+		"a per-server timeout of %dms must cut the call off well before the "+
+			"tool's own %s sleep", toolTimeoutMs, toolSleep)
+}

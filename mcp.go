@@ -17,6 +17,7 @@ type McpServer struct {
 	name         string
 	version      string
 	instructions string
+	timeout      *int
 	tools        map[string]*toolEntry
 }
 
@@ -67,6 +68,17 @@ type McpServerOptions struct {
 	// the way through. Empty string omits the field entirely from the
 	// MCP initialize response.
 	Instructions string
+
+	// Timeout is the per-server tool-call timeout in milliseconds. Overrides
+	// the MCP_TOOL_TIMEOUT environment variable for this server. Hard
+	// wall-clock limit per call; progress notifications do not extend it.
+	// Values below 1000ms are ignored and fall through to MCP_TOOL_TIMEOUT
+	// or the default, as are non-positive and non-integer values.
+	//
+	// It is read when the server is registered. Changing it on a server the
+	// CLI already knows about has no effect until the server is removed and
+	// re-added (sdk.d.ts v0.3.251 L1093).
+	Timeout *int
 }
 
 // CreateMcpServer creates a new in-process MCP server.
@@ -91,6 +103,7 @@ func CreateMcpServer(opts McpServerOptions) *McpServer {
 		name:         opts.Name,
 		version:      version,
 		instructions: opts.Instructions,
+		timeout:      opts.Timeout,
 		tools:        make(map[string]*toolEntry),
 	}
 
@@ -354,6 +367,12 @@ func (s *McpServer) Version() string {
 // Empty string means no instructions block is exposed.
 func (s *McpServer) Instructions() string {
 	return s.instructions
+}
+
+// Timeout returns the per-server tool-call timeout in milliseconds, or nil
+// when this server takes the CLI default. See McpServerOptions.Timeout.
+func (s *McpServer) Timeout() *int {
+	return s.timeout
 }
 
 // ToolNames returns the names of all registered tools.

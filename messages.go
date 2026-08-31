@@ -597,12 +597,23 @@ func (d *ThinkingDisplayOverride) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// SDKMCPServerConfig carries per-server settings for an in-process MCP server
+// named in SDKControlRequestBody.SDKMCPServers. The name list stays a bare
+// []string; this map sits beside it and is keyed by the same names
+// (sdk.d.ts v0.3.251 L3845).
+type SDKMCPServerConfig struct {
+	// Timeout is the per-server tool-call timeout in milliseconds. See
+	// McpServerOptions.Timeout.
+	Timeout *int `json:"timeout,omitempty"`
+}
+
 // SDKControlRequestBody contains the actual request data.
 // Note: This is a union type - different fields are used for different subtypes.
 type SDKControlRequestBody struct {
 	Subtype                string                              `json:"subtype"`                          // Request subtype
 	Hooks                  map[string][]SDKHookCallbackMatcher `json:"hooks,omitempty"`                  // For initialize
 	SDKMCPServers          []string                            `json:"sdkMcpServers,omitempty"`          // For initialize
+	SDKMCPServerConfigs    map[string]SDKMCPServerConfig       `json:"sdkMcpServerConfigs,omitempty"`    // For initialize
 	MCPServers             map[string]MCPServerConfig          `json:"mcpServers,omitempty"`             // For initialize
 	JSONSchema             map[string]interface{}              `json:"jsonSchema,omitempty"`             // For initialize
 	SystemPrompt           string                              `json:"systemPrompt,omitempty"`           // For initialize
