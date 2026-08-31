@@ -4900,3 +4900,75 @@ func TestModelUsagePricingProvenanceAbsent(t *testing.T) {
 	assert.NotContains(t, string(data), "canonicalModel")
 	assert.NotContains(t, string(data), "provider")
 }
+
+// The turn-correlation uuid is stamped on the turn's first reply frame,
+// whichever kind that is, so every shape that can be first has to carry it.
+func TestUserMessageUUIDTurnCorrelation(t *testing.T) {
+	const sendUUID = "550e8400-e29b-41d4-a716-446655441001"
+
+	t.Run("assistant message", func(t *testing.T) {
+		msg, err := ParseMessage([]byte(`{
+			"type": "assistant",
+			"uuid": "550e8400-e29b-41d4-a716-446655441002",
+			"session_id": "sess",
+			"parent_tool_use_id": null,
+			"message": {"role": "assistant", "content": []},
+			"user_message_uuid": "` + sendUUID + `"
+		}`))
+		require.NoError(t, err)
+		am, ok := msg.(AssistantMessage)
+		require.True(t, ok)
+		assert.Equal(t, sendUUID, am.UserMessageUUID)
+	})
+
+	t.Run("partial assistant message", func(t *testing.T) {
+		msg, err := ParseMessage([]byte(`{
+			"type": "stream_event",
+			"uuid": "550e8400-e29b-41d4-a716-446655441003",
+			"session_id": "sess",
+			"parent_tool_use_id": null,
+			"event": {"type": "message_start"},
+			"ttft_ms": 412,
+			"user_message_uuid": "` + sendUUID + `"
+		}`))
+		require.NoError(t, err)
+		pm, ok := msg.(PartialAssistantMessage)
+		require.True(t, ok)
+		assert.Equal(t, sendUUID, pm.UserMessageUUID)
+		require.NotNil(t, pm.TTFTMs)
+		assert.Equal(t, int64(412), *pm.TTFTMs)
+	})
+
+	// v0.3.251 extends the field to the error result. Go models success and
+	// error as one ResultMessage, so this is the same field either way.
+	t.Run("error result", func(t *testing.T) {
+		msg, err := ParseMessage([]byte(`{
+			"type": "result",
+			"subtype": "error_during_execution",
+			"uuid": "550e8400-e29b-41d4-a716-446655441004",
+			"session_id": "sess",
+			"is_error": true,
+			"errors": ["boom"],
+			"user_message_uuid": "` + sendUUID + `"
+		}`))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.True(t, rm.IsError)
+		assert.Equal(t, sendUUID, rm.UserMessageUUID)
+	})
+
+	// Later frames of the turn, subagent frames, and older producers all send
+	// nothing, which must not become an empty key on re-marshal.
+	t.Run("absent stays absent", func(t *testing.T) {
+		for _, m := range []interface{}{
+			AssistantMessage{Type: "assistant"},
+			PartialAssistantMessage{Type: "stream_event"},
+			ResultMessage{Type: "result"},
+		} {
+			data, err := json.Marshal(m)
+			require.NoError(t, err)
+			assert.NotContains(t, string(data), "user_message_uuid")
+		}
+	})
+}

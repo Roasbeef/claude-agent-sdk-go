@@ -2950,3 +2950,69 @@ func TestIntegrationPerTaskStopAffordance(t *testing.T) {
 	}
 	assert.True(t, gotResult, "expected a result message")
 }
+
+// TestIntegrationUserMessageUUIDCorrelation sends a user message carrying a
+// client uuid and asserts the CLI echoes it back, so a consumer can bind a
+// reply to the send it answers. The success result has carried the echo since
+// v0.3.220; v0.3.251 extends it to the assistant and stream_event frames and
+// to the error result, which is what lets a consumer bind the reply without
+// waiting for the turn to finish.
+func TestIntegrationUserMessageUUIDCorrelation(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	const sendUUID = "550e8400-e29b-41d4-a716-4466554412ab"
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithIncludePartialMessages(true),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	// Stream.Send mints no client uuid, so go through the protocol directly —
+	// there is no echo for a send that carried nothing to echo.
+	require.NoError(t, client.protocol.SendMessage(ctx, UserMessage{
+		Type:      "user",
+		UUID:      sendUUID,
+		SessionID: stream.sessionID,
+		Message: APIUserMessage{
+			Role:    "user",
+			Content: []UserContentBlock{{Type: "text", Text: "Say OK."}},
+		},
+	}))
+
+	var onAssistant, onPartial, onResult bool
+	for msg := range stream.Messages() {
+		switch m := msg.(type) {
+		case AssistantMessage:
+			onAssistant = onAssistant || m.UserMessageUUID == sendUUID
+		case PartialAssistantMessage:
+			onPartial = onPartial || m.UserMessageUUID == sendUUID
+		case ResultMessage:
+			onResult = m.UserMessageUUID == sendUUID
+		}
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+
+	// The result echo is live on CLI 2.1.222 and must not regress.
+	assert.True(t, onResult, "the result must echo the send's client uuid")
+
+	t.Logf("first-frame echo: assistant=%v partial=%v", onAssistant, onPartial)
+	if !onAssistant && !onPartial {
+		t.Skip("not triggerable from CLI: this CLI build echoes " +
+			"user_message_uuid on the result only, not on the turn's " +
+			"first reply frame")
+	}
+}

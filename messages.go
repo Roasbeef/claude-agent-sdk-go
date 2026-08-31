@@ -94,6 +94,21 @@ type AssistantMessage struct {
 	// when available. Optional.
 	RequestID string `json:"request_id,omitempty"`
 
+	// UserMessageUUID is the client uuid of the user message that triggered
+	// this turn, so a consumer can bind a reply to the send it answers
+	// without waiting for the result. A wrapper-level sibling — never inside
+	// message.content — so it is not replayed to the model.
+	//
+	// It marks the turn's FIRST reply frame only. In complete-message mode
+	// that is this message; with IncludePartialMessages the stamp normally
+	// rides the first non-ping stream event instead (see
+	// PartialAssistantMessage.UserMessageUUID), though a turn that produces
+	// no stream events still stamps its first assistant message. Every later
+	// frame of the turn leaves it empty, as do subagent frames
+	// (ParentToolUseID set), synthetic and scheduled turns, turns the caller
+	// sent no uuid for, and older producers (sdk.d.ts v0.3.251 L3211).
+	UserMessageUUID string `json:"user_message_uuid,omitempty"`
+
 	// Supersedes lists wire UUIDs of previously-delivered messages that this
 	// message replaces (refusal-fallback supersede). The list can include
 	// tombstoned tool_result frames from the refused leg, not only assistant
@@ -336,9 +351,19 @@ type ResultMessage struct {
 		TS SDK v0.3.168 sdk.d.ts L3566-L3569 exposes these spawn-pool timing fields
 		between ttft_ms and is_error.
 	*/
-	TTFTStreamMs             *int64 `json:"ttft_stream_ms,omitempty"`                // Streaming time-to-first-token in milliseconds
-	TimeToRequestMs          *int64 `json:"time_to_request_ms,omitempty"`            // Time to request in milliseconds
-	UserMessageUUID          string `json:"user_message_uuid,omitempty"`             // UUID of the user message that drove this turn (success only; sdk.d.ts v0.3.220 L4300)
+	TTFTStreamMs    *int64 `json:"ttft_stream_ms,omitempty"`     // Streaming time-to-first-token in milliseconds
+	TimeToRequestMs *int64 `json:"time_to_request_ms,omitempty"` // Time to request in milliseconds
+	// UserMessageUUID is the client uuid of the user message that drove this
+	// turn, echoed back so a consumer can link the result to the send it
+	// answers. Carried on both the success and the error result — Go models
+	// them as one struct, and v0.3.251 added the field to the error variant
+	// upstream (sdk.d.ts L4799), where it rides alone because an error turn
+	// has no RequestSentWallMs to report.
+	//
+	// Empty on synthetic and scheduled turns, on turns the caller sent no
+	// uuid for, on session-scoped failures with no single triggering send
+	// (a crashed worker's zeroed result), and from older producers.
+	UserMessageUUID          string `json:"user_message_uuid,omitempty"`
 	RequestSentWallMs        *int64 `json:"request_sent_wall_ms,omitempty"`          // Wall-clock time the request was sent, ms since epoch (success only; sdk.d.ts v0.3.220 L4301)
 	TimeToRequestFromSpawnMs *int64 `json:"time_to_request_from_spawn_ms,omitempty"` // Time to request from spawn in milliseconds
 	WarmSpareClaimed         *bool  `json:"warm_spare_claimed,omitempty"`            // Whether a warm spare was claimed
@@ -1129,6 +1154,19 @@ type PartialAssistantMessage struct {
 	ParentToolUseID *string `json:"parent_tool_use_id"`
 	UUID            string  `json:"uuid"`       // Unique message ID
 	SessionID       string  `json:"session_id"` // Session identifier
+
+	// TTFTMs is the time-to-first-token for this turn in milliseconds.
+	TTFTMs *int64 `json:"ttft_ms,omitempty"`
+
+	// UserMessageUUID is the client uuid of the user message that triggered
+	// this turn, so a consumer can bind the reply stream to the send it
+	// answers without waiting for the result.
+	//
+	// It marks the turn's FIRST non-ping stream event only — the frame that
+	// triggers the turn's initial ack. Every later stream event of the turn
+	// leaves it empty, as do synthetic and scheduled turns, turns the caller
+	// sent no uuid for, and older producers (sdk.d.ts v0.3.251 L4653).
+	UserMessageUUID string `json:"user_message_uuid,omitempty"`
 }
 
 // MessageType implements Message.
