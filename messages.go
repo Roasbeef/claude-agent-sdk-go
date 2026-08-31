@@ -1884,7 +1884,48 @@ type ModelUsage struct {
 	CostUSD                  float64 `json:"costUSD"`                  // Cost in USD
 	ContextWindow            int     `json:"contextWindow"`            // Context window size
 	MaxOutputTokens          int     `json:"maxOutputTokens"`          // Max output tokens for this model
+
+	// CanonicalModel is the model id the pricing lookup used, which can
+	// differ from the raw model string this entry is keyed by — a
+	// provider-specific id or an alias resolves to it (sdk.d.ts v0.3.251
+	// L1318). Empty when this process has not yet priced a request for the
+	// model.
+	CanonicalModel string `json:"canonicalModel,omitempty"`
+
+	// Provider is the API provider that served the model: "firstParty",
+	// "bedrock", "vertex", "foundry", "anthropicAws", "mantle", or
+	// "gateway" (sdk.d.ts v0.3.251 L1322).
+	Provider string `json:"provider,omitempty"`
+
+	// CostBasis says which price table produced CostUSD, so a host
+	// aggregating spend does not sum figures that are not the same kind of
+	// number. ModelCostBasisUnknown in particular means CostUSD is a guess at
+	// the default model's rate rather than a price for this model.
+	//
+	// Like CanonicalModel it is overwritten per request, so differencing the
+	// cumulative CostUSD across turns yields the basis for that turn. Empty
+	// until this process has priced a request for the model — right after a
+	// --resume, say — and on CLIs that predate the field. Treat empty as
+	// ModelCostBasisList (sdk.d.ts v0.3.251 L1326).
+	CostBasis ModelCostBasis `json:"costBasis,omitempty"`
 }
+
+// ModelCostBasis identifies the price table behind a ModelUsage.CostUSD.
+type ModelCostBasis string
+
+const (
+	// ModelCostBasisList is Claude Code's built-in list pricing.
+	ModelCostBasisList ModelCostBasis = "list"
+
+	// ModelCostBasisManaged is the organization's managed-settings rates or
+	// multiplier — Settings.ModelPricing.
+	ModelCostBasisManaged ModelCostBasis = "managed"
+
+	// ModelCostBasisUnknown means neither applied: no pricing row and no
+	// built-in price matched the model id, so CostUSD carries the default
+	// model's rate as a stand-in.
+	ModelCostBasisUnknown ModelCostBasis = "unknown"
+)
 
 // NonNullableUsage is like Usage but all fields are guaranteed non-zero.
 type NonNullableUsage struct {

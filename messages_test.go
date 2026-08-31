@@ -4837,3 +4837,66 @@ func TestParseMessageResultTerminalReasonV0207(t *testing.T) {
 	require.NotNil(t, resultMsg.TerminalReason)
 	assert.Equal(t, TerminalReasonBudgetExhausted, *resultMsg.TerminalReason)
 }
+
+func TestModelUsagePricingProvenanceRoundTrip(t *testing.T) {
+	usage := ModelUsage{
+		InputTokens:              10,
+		OutputTokens:             20,
+		CacheReadInputTokens:     3,
+		CacheCreationInputTokens: 4,
+		WebSearchRequests:        1,
+		CostUSD:                  0.25,
+		ContextWindow:            200000,
+		MaxOutputTokens:          32000,
+		CanonicalModel:           "claude-opus-4-8",
+		Provider:                 "bedrock",
+		CostBasis:                ModelCostBasisManaged,
+	}
+
+	data, err := json.Marshal(usage)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{
+		"inputTokens": 10,
+		"outputTokens": 20,
+		"cacheReadInputTokens": 3,
+		"cacheCreationInputTokens": 4,
+		"webSearchRequests": 1,
+		"costUSD": 0.25,
+		"contextWindow": 200000,
+		"maxOutputTokens": 32000,
+		"canonicalModel": "claude-opus-4-8",
+		"provider": "bedrock",
+		"costBasis": "managed"
+	}`, string(data))
+
+	var decoded ModelUsage
+	require.NoError(t, json.Unmarshal(data, &decoded))
+	assert.Equal(t, usage, decoded)
+}
+
+// A CLI that predates the field, or one that has not yet priced a request for
+// the model, sends neither key. Both decode empty, and callers are told to
+// read that as list pricing.
+func TestModelUsagePricingProvenanceAbsent(t *testing.T) {
+	var decoded ModelUsage
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"inputTokens": 1,
+		"outputTokens": 2,
+		"cacheReadInputTokens": 0,
+		"cacheCreationInputTokens": 0,
+		"webSearchRequests": 0,
+		"costUSD": 0.01,
+		"contextWindow": 200000,
+		"maxOutputTokens": 32000
+	}`), &decoded))
+
+	assert.Empty(t, decoded.CanonicalModel)
+	assert.Empty(t, decoded.Provider)
+	assert.Equal(t, ModelCostBasis(""), decoded.CostBasis)
+
+	data, err := json.Marshal(decoded)
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "costBasis")
+	assert.NotContains(t, string(data), "canonicalModel")
+	assert.NotContains(t, string(data), "provider")
+}
