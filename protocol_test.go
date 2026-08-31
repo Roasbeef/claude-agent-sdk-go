@@ -316,6 +316,36 @@ func TestProtocolInitializeOptions(t *testing.T) {
 			configure:  func(opts *Options) {},
 			unexpected: []string{"agents"},
 		},
+		{
+			name: "sdk mcp server timeout wired through",
+			configure: func(opts *Options) {
+				timeout := 45000
+				WithMcpServer("timed", CreateMcpServer(McpServerOptions{
+					Name:    "timed",
+					Timeout: &timeout,
+				}))(opts)
+			},
+			expected: map[string]interface{}{
+				"sdkMcpServers": []interface{}{"timed"},
+				"sdkMcpServerConfigs": map[string]interface{}{
+					"timed": map[string]interface{}{
+						"timeout": float64(45000),
+					},
+				},
+			},
+		},
+		{
+			name: "sdk mcp server without timeout omits configs",
+			configure: func(opts *Options) {
+				WithMcpServer("plain", CreateMcpServer(McpServerOptions{
+					Name: "plain",
+				}))(opts)
+			},
+			expected: map[string]interface{}{
+				"sdkMcpServers": []interface{}{"plain"},
+			},
+			unexpected: []string{"sdkMcpServerConfigs"},
+		},
 	}
 
 	for _, tt := range tests {
