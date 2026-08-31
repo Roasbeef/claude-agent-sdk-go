@@ -159,6 +159,7 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 			ForwardSubagentText:    p.options.ForwardSubagentText,
 			ToolAliases:            p.options.ToolAliases,
 			SupportedDialogKinds:   p.options.SupportedDialogKinds,
+			PerTaskStopAffordance:  p.options.PerTaskStopAffordance,
 		},
 	}
 

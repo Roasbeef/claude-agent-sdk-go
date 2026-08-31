@@ -2908,3 +2908,45 @@ func TestIntegrationModelUsageCostBasis(t *testing.T) {
 			"costBasis on modelUsage")
 	}
 }
+
+// TestIntegrationPerTaskStopAffordance asserts the CLI accepts the
+// perTaskStopAffordance declaration added to the initialize request in TS SDK
+// v0.3.251. The behavior it selects — an interrupt sparing background tasks —
+// needs a running background task to observe and is tracked in
+// INTEGRATION-FOLLOWUPS.md.
+func TestIntegrationPerTaskStopAffordance(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithPerTaskStopAffordance(true),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	// An initialize carrying an unknown key is not automatically benign — an
+	// unrecognized nested member can stall the handshake outright. Completing
+	// a turn is the cheap proof that this one is understood.
+	require.NoError(t, stream.Send(ctx, "Say OK."))
+
+	var gotResult bool
+	for msg := range stream.Messages() {
+		if m, ok := msg.(ResultMessage); ok {
+			assert.False(t, m.IsError, "declaring the affordance must not "+
+				"fail the session: %s", m.Result)
+			gotResult = true
+			break
+		}
+	}
+	assert.True(t, gotResult, "expected a result message")
+}

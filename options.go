@@ -92,6 +92,27 @@ type Options struct {
 	// multi-client sessions the first-attached client's declaration wins.
 	SupportedDialogKinds []string
 
+	// PerTaskStopAffordance declares that this consumer renders a per-task
+	// stop control wired to the stop_task control request, so a user can stop
+	// one background task without stopping the rest.
+	//
+	// It changes what an interrupt does. Declared, an interrupt on an
+	// open-input (interactive stream-json) session aborts only the current
+	// turn and spares running background agents and workflows; the user stops
+	// those one at a time through the consumer's own affordance. The CLI
+	// fails closed on absence — an interrupt kills background tasks, because
+	// a spared runaway task would otherwise be unstoppable from a consumer
+	// that cannot render a stop control.
+	//
+	// A closed-input run is the exception. The string-prompt form and -p both
+	// close stdin, and with stdin closed a stop_task control could never be
+	// delivered, so hold-back tasks are killed at the held-result release
+	// regardless of this declaration.
+	//
+	// First-attached-client wins on multi-client sessions; later initializes
+	// do not change it (sdk.d.ts v0.3.251 L1667).
+	PerTaskStopAffordance *bool
+
 	// GetHostAuthToken handles host-auth-token refresh requests from the CLI.
 	// If unset, the SDK replies with an error response.
 	GetHostAuthToken GetHostAuthTokenFunc
@@ -1548,6 +1569,15 @@ func WithOnUserDialog(fn OnUserDialogFunc) Option {
 func WithSupportedDialogKinds(kinds ...string) Option {
 	return func(o *Options) {
 		o.SupportedDialogKinds = kinds
+	}
+}
+
+// WithPerTaskStopAffordance declares whether this consumer renders a per-task
+// stop control, which decides whether an interrupt spares background tasks or
+// kills them. See Options.PerTaskStopAffordance.
+func WithPerTaskStopAffordance(enabled bool) Option {
+	return func(o *Options) {
+		o.PerTaskStopAffordance = &enabled
 	}
 }
 
