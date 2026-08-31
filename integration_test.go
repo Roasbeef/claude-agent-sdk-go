@@ -3139,3 +3139,75 @@ func TestIntegrationAmbientTaskMarker(t *testing.T) {
 	assert.False(t, userWorkSet,
 		"a subagent the user asked for is not a housekeeping task")
 }
+
+// TestIntegrationPermissionRequestContext provokes a real permission ask and
+// records the context the CLI attached. default_to_no is new in TS SDK
+// v0.3.251; the siblings are asserted because the SDK-format path used to
+// deliver an empty context regardless of what the CLI sent.
+func TestIntegrationPermissionRequestContext(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// An in-process SDK MCP server is auto-allowed, so the ask has to come
+	// from a stdio server under a strict config — the same setup
+	// TestIntegrationPermissionCallback uses.
+	mcpServerPath := filepath.Join(t.TempDir(), "example-mcp-server")
+	buildCmd := exec.Command("go", "build", "-o", mcpServerPath,
+		"./cmd/example-mcp-server")
+	buildCmd.Dir = "."
+	if out, err := buildCmd.CombinedOutput(); err != nil {
+		t.Fatalf("failed to build MCP server: %v\n%s", err, out)
+	}
+
+	var (
+		mu       sync.Mutex
+		captured []PermissionContext
+	)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("When asked to add numbers you MUST use the "+
+			"add_numbers tool. Do not calculate manually."),
+		WithMCPServers(map[string]MCPServerConfig{
+			"example": {Type: "stdio", Command: mcpServerPath},
+		}),
+		WithStrictMCPConfig(true),
+		WithPermissionMode(PermissionModeDefault),
+		WithCanUseTool(func(
+			ctx context.Context, req ToolPermissionRequest,
+		) PermissionResult {
+			mu.Lock()
+			captured = append(captured, req.Context)
+			mu.Unlock()
+			return PermissionAllow{}
+		}),
+		WithMaxTurns(5),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	for msg := range client.Query(ctx, "Use the add_numbers tool to add 7 and 5.") {
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.NotEmpty(t, captured, "expected at least one permission ask")
+
+	for _, c := range captured {
+		t.Logf("ask: tool_use_id=%q agent_id=%q requires_interaction=%v "+
+			"suppress_always_allow=%v default_to_no=%v",
+			c.ToolUseID, c.AgentID, c.RequiresUserInteraction,
+			c.SuppressAlwaysAllowRule, c.DefaultToNo)
+
+		// Whichever control path served the ask, tool_use_id is always on
+		// the wire — an empty one means the context never got populated.
+		assert.NotEmpty(t, c.ToolUseID,
+			"a permission ask must arrive carrying its tool_use_id")
+	}
+}

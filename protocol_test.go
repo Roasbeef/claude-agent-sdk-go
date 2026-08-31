@@ -4555,3 +4555,94 @@ func TestBuildHookResponse_PermissionDecision(t *testing.T) {
 		assert.Equal(t, "preserved", hso["customKey"])
 	})
 }
+
+// TestProtocolPermissionDefaultToNo covers default_to_no on both permission
+// paths. The two are separate field-mapping sites and drift independently.
+func TestProtocolPermissionDefaultToNo(t *testing.T) {
+	capture := func(into *PermissionContext) *Options {
+		opts := NewOptions()
+		opts.CanUseTool = func(
+			ctx context.Context, req ToolPermissionRequest,
+		) PermissionResult {
+			*into = req.Context
+			return PermissionAllow{}
+		}
+		return opts
+	}
+
+	t.Run("legacy control_request path", func(t *testing.T) {
+		var captured PermissionContext
+		protocol := NewProtocol(nil, capture(&captured))
+
+		resp := protocol.handlePermissionRequest(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "can_use_tool",
+			RequestID: "req_1",
+			Payload: map[string]interface{}{
+				"tool_name":     "Bash",
+				"tool_use_id":   "tool_1",
+				"input":         map[string]interface{}{},
+				"default_to_no": true,
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		assert.True(t, captured.DefaultToNo)
+	})
+
+	// This path built an empty PermissionContext before v0.3.251, so the
+	// siblings are asserted alongside default_to_no rather than assumed.
+	t.Run("sdk control_request path", func(t *testing.T) {
+		var captured PermissionContext
+		protocol := NewProtocol(nil, capture(&captured))
+
+		resp := protocol.handleSDKPermissionRequest(context.Background(), SDKControlRequest{
+			Type:      "control_request",
+			RequestID: "sdk_req_1",
+			Request: SDKControlRequestBody{
+				Subtype:                 "can_use_tool",
+				ToolName:                "Bash",
+				ToolUseID:               "tool_1",
+				AgentID:                 "agent_1",
+				Input:                   map[string]interface{}{},
+				DefaultToNo:             true,
+				RequiresUserInteraction: true,
+				SuppressAlwaysAllowRule: true,
+				MatchedAskRule: &MatchedAskRule{
+					Source:      "settings",
+					ToolName:    "Bash",
+					RuleContent: "Bash(rm:*)",
+				},
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		assert.True(t, captured.DefaultToNo)
+		assert.True(t, captured.RequiresUserInteraction)
+		assert.True(t, captured.SuppressAlwaysAllowRule)
+		assert.Equal(t, "tool_1", captured.ToolUseID)
+		assert.Equal(t, "agent_1", captured.AgentID)
+		require.NotNil(t, captured.MatchedAskRule)
+		assert.Equal(t, "Bash(rm:*)", captured.MatchedAskRule.RuleContent)
+	})
+
+	t.Run("absent leaves the safe-by-default false", func(t *testing.T) {
+		var captured PermissionContext
+		protocol := NewProtocol(nil, capture(&captured))
+
+		resp := protocol.handleSDKPermissionRequest(context.Background(), SDKControlRequest{
+			Type:      "control_request",
+			RequestID: "sdk_req_2",
+			Request: SDKControlRequestBody{
+				Subtype:   "can_use_tool",
+				ToolName:  "Read",
+				ToolUseID: "tool_2",
+				Input:     map[string]interface{}{},
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		assert.False(t, captured.DefaultToNo)
+		assert.Nil(t, captured.MatchedAskRule)
+	})
+}
