@@ -2841,3 +2841,70 @@ func TestIntegrationSdkMcpServerTimeout(t *testing.T) {
 		"a per-server timeout of %dms must cut the call off well before the "+
 			"tool's own %s sleep", toolTimeoutMs, toolSleep)
 }
+
+// TestIntegrationModelUsageCostBasis asserts the pricing-provenance fields on
+// ModelUsage — costBasis is new in TS SDK v0.3.251, canonicalModel and provider
+// predate it and were never modeled here.
+func TestIntegrationModelUsageCostBasis(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var result *ResultMessage
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(ResultMessage); ok {
+			result = &m
+			break
+		}
+	}
+	require.NotNil(t, result, "expected a result message")
+	require.NotEmpty(t, result.ModelUsage, "expected per-model usage")
+
+	var sawBasis, sawCanonical bool
+	for model, usage := range result.ModelUsage {
+		t.Logf("%s: canonical=%q provider=%q basis=%q cost=%v",
+			model, usage.CanonicalModel, usage.Provider,
+			usage.CostBasis, usage.CostUSD)
+
+		if usage.CanonicalModel != "" {
+			sawCanonical = true
+			assert.NotEmpty(t, usage.Provider,
+				"a priced entry names the provider that served it")
+		}
+
+		if usage.CostBasis == "" {
+			// Absent until this process has priced a request for the
+			// model, and on CLIs that predate the field.
+			continue
+		}
+		sawBasis = true
+		assert.Contains(t,
+			[]ModelCostBasis{
+				ModelCostBasisList,
+				ModelCostBasisManaged,
+				ModelCostBasisUnknown,
+			},
+			usage.CostBasis,
+			"costBasis is a closed set upstream",
+		)
+	}
+
+	assert.True(t, sawCanonical,
+		"canonicalModel/provider have been on the wire since v0.3.220 and "+
+			"were simply never decoded here")
+
+	if !sawBasis {
+		t.Skip("not triggerable from CLI: this CLI build does not report " +
+			"costBasis on modelUsage")
+	}
+}
