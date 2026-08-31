@@ -5028,3 +5028,91 @@ func TestResultMessageQueuedTurnCount(t *testing.T) {
 		assert.NotContains(t, string(data), "queued_turn_count")
 	})
 }
+
+// ambient is broader than skip_transcript — every skip_transcript task is
+// ambient, and auto-started live-update watchers are ambient without being
+// skip_transcript. The two drive different consumer behavior, so both have to
+// decode independently on every shape that carries them.
+func TestAmbientTaskMarker(t *testing.T) {
+	t.Run("task_started", func(t *testing.T) {
+		msg, err := ParseMessage([]byte(`{
+			"type": "system",
+			"subtype": "task_started",
+			"task_id": "task_watch",
+			"description": "live update watcher",
+			"ambient": true,
+			"uuid": "550e8400-e29b-41d4-a716-446655441201",
+			"session_id": "sess"
+		}`))
+		require.NoError(t, err)
+		m, ok := msg.(TaskStartedMessage)
+		require.True(t, ok)
+		require.NotNil(t, m.Ambient)
+		assert.True(t, *m.Ambient)
+		assert.Nil(t, m.SkipTranscript,
+			"a watcher is ambient without being skip_transcript")
+	})
+
+	t.Run("task_notification", func(t *testing.T) {
+		msg, err := ParseMessage([]byte(`{
+			"type": "system",
+			"subtype": "task_notification",
+			"task_id": "task_housekeeping",
+			"status": "completed",
+			"output_file": "/tmp/out",
+			"summary": "done",
+			"skip_transcript": true,
+			"ambient": true,
+			"uuid": "550e8400-e29b-41d4-a716-446655441202",
+			"session_id": "sess"
+		}`))
+		require.NoError(t, err)
+		m, ok := msg.(TaskNotificationMessage)
+		require.True(t, ok)
+		require.NotNil(t, m.Ambient)
+		assert.True(t, *m.Ambient)
+		require.NotNil(t, m.SkipTranscript)
+		assert.True(t, *m.SkipTranscript)
+	})
+
+	t.Run("background_tasks_changed", func(t *testing.T) {
+		msg, err := ParseMessage([]byte(`{
+			"type": "system",
+			"subtype": "background_tasks_changed",
+			"tasks": [
+				{
+					"task_id": "task_user",
+					"task_type": "local_agent",
+					"description": "review the diff"
+				},
+				{
+					"task_id": "task_watch",
+					"task_type": "watcher",
+					"description": "live update watcher",
+					"ambient": true
+				}
+			],
+			"uuid": "550e8400-e29b-41d4-a716-446655441203",
+			"session_id": "sess"
+		}`))
+		require.NoError(t, err)
+		m, ok := msg.(BackgroundTasksChangedMessage)
+		require.True(t, ok)
+		require.Len(t, m.Tasks, 2)
+		assert.Nil(t, m.Tasks[0].Ambient, "real user work is unmarked")
+		require.NotNil(t, m.Tasks[1].Ambient)
+		assert.True(t, *m.Tasks[1].Ambient)
+	})
+
+	t.Run("absent stays absent", func(t *testing.T) {
+		for _, v := range []interface{}{
+			TaskStartedMessage{Type: "system", Subtype: "task_started"},
+			TaskNotificationMessage{Type: "system", Subtype: "task_notification"},
+			BackgroundTask{TaskID: "t"},
+		} {
+			data, err := json.Marshal(v)
+			require.NoError(t, err)
+			assert.NotContains(t, string(data), "ambient")
+		}
+	})
+}

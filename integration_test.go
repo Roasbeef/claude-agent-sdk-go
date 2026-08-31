@@ -3074,3 +3074,68 @@ func derefInt(v *int) interface{} {
 	}
 	return *v
 }
+
+// TestIntegrationAmbientTaskMarker spawns a subagent task and inspects the
+// task frames for the ambient marker added in TS SDK v0.3.251. Real user work
+// must not be marked ambient; housekeeping tasks the CLI runs on its own are
+// the ones hosts should keep out of activity indicators.
+func TestIntegrationAmbientTaskMarker(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("Use the Task tool with the Explore subagent for "+
+			"any search request. Be brief."),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(4),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	var (
+		sawTask     bool
+		sawAmbient  bool
+		userWorkSet bool
+	)
+	for msg := range client.Query(ctx,
+		"Use the Explore subagent to find where ParseMessage is defined.",
+	) {
+		switch m := msg.(type) {
+		case TaskStartedMessage:
+			sawTask = true
+			t.Logf("task_started %s: ambient=%v skip_transcript=%v",
+				m.TaskID, m.Ambient, m.SkipTranscript)
+			if m.Ambient != nil {
+				sawAmbient = true
+				userWorkSet = userWorkSet || *m.Ambient
+			}
+		case BackgroundTasksChangedMessage:
+			for _, task := range m.Tasks {
+				t.Logf("background task %s: ambient=%v",
+					task.TaskID, task.Ambient)
+				if task.Ambient != nil {
+					sawAmbient = true
+				}
+			}
+		}
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+
+	if !sawTask {
+		t.Skip("not triggerable from CLI: the model declined to spawn a task")
+	}
+	if !sawAmbient {
+		t.Skip("not triggerable from CLI: this CLI build does not stamp " +
+			"ambient on task frames")
+	}
+
+	assert.False(t, userWorkSet,
+		"a subagent the user asked for is not a housekeeping task")
+}
