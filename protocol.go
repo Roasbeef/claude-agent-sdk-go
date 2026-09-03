@@ -163,15 +163,32 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 		},
 	}
 
+	// CPN VENDOR PATCH INIT-RACE (issue #1494). Register the response waiter
+	// BEFORE writing the request. The CLI answers `initialize` immediately, so
+	// under the 2-core -race envelope messagePump can read that control_response
+	// and run handleSDKControlResponse (pendingReqs.LoadAndDelete) before this
+	// goroutine resumes to register the waiter. With the previous ordering
+	// (waitForSDKResponse registered AFTER the write) that fast response found no
+	// pending entry, was dropped, and Connect then blocked on ctx for the full
+	// init deadline — a ~40% flake reported as "initialization failed: context
+	// deadline exceeded". The Interrupt/Set* path (sendSDKControlRequest) already
+	// registers first with the same rationale; this makes init match it.
+	ch := make(chan SDKControlResponse, 1)
+	p.pendingReqs.Store(requestID, ch)
+
 	// Send request.
 	if err := p.transport.Write(ctx, req); err != nil {
+		p.pendingReqs.Delete(requestID)
 		return fmt.Errorf("failed to send initialize request: %w", err)
 	}
 
 	// Wait for response.
-	resp, err := p.waitForSDKResponse(ctx, requestID)
-	if err != nil {
-		return fmt.Errorf("initialization failed: %w", err)
+	var resp SDKControlResponse
+	select {
+	case <-ctx.Done():
+		p.pendingReqs.Delete(requestID)
+		return fmt.Errorf("initialization failed: %w", ctx.Err())
+	case resp = <-ch:
 	}
 
 	if resp.Response.Subtype == "error" {
@@ -1506,20 +1523,6 @@ func (p *Protocol) handleSDKControlResponse(resp SDKControlResponse) error {
 	}
 
 	return nil
-}
-
-// waitForSDKResponse waits for an SDK control response with the given request ID.
-func (p *Protocol) waitForSDKResponse(ctx context.Context, requestID string) (SDKControlResponse, error) {
-	ch := make(chan SDKControlResponse, 1)
-	p.pendingReqs.Store(requestID, ch)
-
-	select {
-	case <-ctx.Done():
-		p.pendingReqs.Delete(requestID)
-		return SDKControlResponse{}, ctx.Err()
-	case resp := <-ch:
-		return resp, nil
-	}
 }
 
 // nextRequestID generates a unique request ID.
