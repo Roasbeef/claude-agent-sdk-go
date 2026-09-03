@@ -2,6 +2,7 @@ package claudeagent
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -528,7 +529,7 @@ func (c *Client) Stream(ctx context.Context) (*Stream, error) {
 		client:    c,
 		ctx:       ctx,
 		sessionID: c.options.SessionOptions.SessionID,
-		sendCh:    make(chan string, 4),
+		sendCh:    make(chan []UserContentBlock, 4),
 		closeCh:   make(chan struct{}),
 	}, nil
 }
@@ -661,7 +662,7 @@ type Stream struct {
 	client    *Client
 	ctx       context.Context
 	sessionID string
-	sendCh    chan string
+	sendCh    chan []UserContentBlock
 	closeCh   chan struct{}
 	closeOnce sync.Once
 }
@@ -671,12 +672,39 @@ type Stream struct {
 // Messages are queued and sent asynchronously. The response will appear
 // in the Messages() iterator.
 func (s *Stream) Send(ctx context.Context, prompt string) error {
+	return s.sendBlocks(ctx, []UserContentBlock{{Type: "text", Text: prompt}})
+}
+
+// ImageInput is an image attachment for SendWithImages.
+type ImageInput struct {
+	Data      []byte // raw image bytes
+	MediaType string // e.g. "image/png"
+}
+
+// SendWithImages submits a user turn with text plus one or more images, as a
+// multi-part content message (Anthropic vision).
+func (s *Stream) SendWithImages(ctx context.Context, prompt string, images []ImageInput) error {
+	blocks := []UserContentBlock{{Type: "text", Text: prompt}}
+	for _, img := range images {
+		blocks = append(blocks, UserContentBlock{
+			Type: "image",
+			Source: &ImageSource{
+				Type:      "base64",
+				MediaType: img.MediaType,
+				Data:      base64.StdEncoding.EncodeToString(img.Data),
+			},
+		})
+	}
+	return s.sendBlocks(ctx, blocks)
+}
+
+func (s *Stream) sendBlocks(ctx context.Context, blocks []UserContentBlock) error {
 	select {
 	case <-s.closeCh:
 		return &ErrTransportClosed{}
 	case <-ctx.Done():
 		return ctx.Err()
-	case s.sendCh <- prompt:
+	case s.sendCh <- blocks:
 		return nil
 	}
 }
@@ -732,15 +760,13 @@ func (s *Stream) handleSends() {
 			return
 		case <-s.ctx.Done():
 			return
-		case prompt := <-s.sendCh:
+		case blocks := <-s.sendCh:
 			userMsg := UserMessage{
 				Type:      "user",
 				SessionID: s.sessionID,
 				Message: APIUserMessage{
-					Role: "user",
-					Content: []UserContentBlock{
-						{Type: "text", Text: prompt},
-					},
+					Role:    "user",
+					Content: blocks,
 				},
 				ParentToolUseID: nil,
 			}
