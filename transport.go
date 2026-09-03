@@ -380,6 +380,10 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, "--debug")
 	}
 
+	if t.options.Goal != "" {
+		args = append(args, "--goal", t.options.Goal)
+	}
+
 	// Move per-machine system prompt sections (cwd, env, memory, git status)
 	// into the first user message. Stabilizes the system prompt prefix for
 	// cross-invocation prompt-cache reuse. The CLI ignores this flag when

@@ -1721,6 +1721,24 @@ type PermissionDeniedMessage struct {
 // MessageType implements Message.
 func (m PermissionDeniedMessage) MessageType() string { return "system" }
 
+// GoalStatusMessage reports the outcome of a /goal evaluation after each turn.
+// When Met is true, the goal condition has been satisfied and the session terminates.
+type GoalStatusMessage struct {
+	Type       string `json:"type"`                 // Always "system"
+	Subtype    string `json:"subtype"`              // "goal_status"
+	Met        bool   `json:"met"`                  // True when the goal condition has been satisfied
+	Condition  string `json:"condition"`            // Natural-language stop condition being evaluated
+	Reason     string `json:"reason,omitempty"`     // Evaluator's justification for the verdict
+	Iterations int    `json:"iterations,omitempty"` // Number of turns evaluated so far
+	DurationMs int64  `json:"durationMs,omitempty"` // Cumulative session duration in milliseconds
+	Tokens     int    `json:"tokens,omitempty"`     // Cumulative tokens consumed by the session
+	UUID       string `json:"uuid"`                 // Unique message ID
+	SessionID  string `json:"session_id"`           // Session identifier
+}
+
+// MessageType implements Message.
+func (m GoalStatusMessage) MessageType() string { return "system" }
+
 // PluginInstallStatus is the plugin installation progress state.
 type PluginInstallStatus string
 
@@ -2159,6 +2177,10 @@ func ParseMessage(data []byte) (Message, error) {
 			return msg, err
 		case "permission_denied":
 			var msg PermissionDeniedMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "goal_status":
+			var msg GoalStatusMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
 		case "plugin_install":
