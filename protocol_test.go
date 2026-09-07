@@ -415,6 +415,37 @@ func TestProtocolInitializeOptions(t *testing.T) {
 			},
 			unexpected: []string{"sdkMcpServerConfigs"},
 		},
+		{
+			// systemPrompt stays unset: that absence is what selects Claude
+			// Code's built-in prompt for the append to extend.
+			name: "preset sends only the append",
+			configure: func(opts *Options) {
+				WithSystemPromptPreset(
+					"claude_code", "Always explain your reasoning.")(opts)
+			},
+			expected: map[string]interface{}{
+				"appendSystemPrompt": "Always explain your reasoning.",
+			},
+			unexpected: []string{"systemPrompt"},
+		},
+		{
+			name: "preset without an append sends neither",
+			configure: func(opts *Options) {
+				WithSystemPromptPreset("claude_code", "")(opts)
+			},
+			unexpected: []string{"systemPrompt", "appendSystemPrompt"},
+		},
+		{
+			// A custom prompt replaces the preset rather than extending it.
+			name: "custom prompt sends no append",
+			configure: func(opts *Options) {
+				WithSystemPrompt("You are a release bot.")(opts)
+			},
+			expected: map[string]interface{}{
+				"systemPrompt": "You are a release bot.",
+			},
+			unexpected: []string{"appendSystemPrompt"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -4819,4 +4850,27 @@ func TestSessionStartCacheContext(t *testing.T) {
 		assert.Nil(t, got.PromptCacheLikelyExpired)
 		assert.Nil(t, got.EstimatedCacheWriteUSD)
 	})
+}
+
+// The two system-prompt forms are alternatives: a custom prompt replaces the
+// preset rather than extending it, so asking for both leaves no defensible
+// interpretation. Refuse rather than silently picking one.
+func TestProtocolInitializeSystemPromptConflict(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	WithSystemPrompt("You are a release bot.")(opts)
+	WithSystemPromptPreset("claude_code", "Be brief.")(opts)
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	protocol := NewProtocol(transport, opts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	require.NoError(t, transport.Connect(ctx))
+	defer transport.Close()
+
+	err := protocol.Initialize(ctx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mutually exclusive")
 }

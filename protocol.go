@@ -138,6 +138,22 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 		plugins = p.options.Plugins
 	}
 
+	// The preset form asks for Claude Code's own prompt plus an addition, so it
+	// sends only the addition: leaving systemPrompt unset is what selects the
+	// built-in prompt. Setting it to the append text instead would replace the
+	// preset with a fragment.
+	systemPrompt := p.options.SystemPrompt
+	appendSystemPrompt := ""
+	if preset := p.options.SystemPromptPreset; preset != nil {
+		if systemPrompt != "" {
+			return fmt.Errorf(
+				"SystemPrompt and SystemPromptPreset are mutually exclusive: " +
+					"a custom prompt replaces the preset, so setting both " +
+					"leaves it ambiguous which one the session should use")
+		}
+		appendSystemPrompt = preset.Append
+	}
+
 	var agents map[string]interface{}
 	if len(p.options.Agents) > 0 {
 		agents = make(map[string]interface{}, len(p.options.Agents))
@@ -157,7 +173,8 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 			SDKMCPServers:          sdkMcpServers,
 			SDKMCPServerConfigs:    sdkMcpServerConfigs,
 			MCPServers:             p.options.MCPServers,
-			SystemPrompt:           p.options.SystemPrompt,
+			SystemPrompt:           systemPrompt,
+			AppendSystemPrompt:     appendSystemPrompt,
 			PlanModeInstructions:   p.options.PlanModeInstructions,
 			ExcludeDynamicSections: excludeDynamicSections,
 			Agents:                 agents,

@@ -3747,3 +3747,58 @@ func TestIntegrationPermissionPromptsNone(t *testing.T) {
 		"a tool call that would have prompted must be denied outright, not "+
 			"silently allowed; result: %s", result.Result)
 }
+
+// TestIntegrationSystemPromptPresetAppend asserts that the preset form's
+// append actually reaches the model. WithSystemPromptPreset stored a config no
+// wire path read, so the append was silently dropped; a test that only checked
+// the session ran would have passed against that.
+//
+// The append carries a fact the model cannot otherwise know, and the prompt
+// asks for it. Recalling a fact is far more reliable than obeying a formatting
+// rule: an earlier version of this test appended "end every reply with X" and
+// asked for a three-word greeting, and the model split its compliance between
+// the two contradictory constraints about half the time.
+func TestIntegrationSystemPromptPresetAppend(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	const marker = "ZORBLAX7"
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPromptPreset("claude_code", fmt.Sprintf(
+			"The deployment codeword for this session is %s. "+
+				"When asked for the deployment codeword, reply with it.",
+			marker)),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var reply strings.Builder
+	var gotResult bool
+	for msg := range client.Query(ctx, "What is the deployment codeword?") {
+		switch m := msg.(type) {
+		case AssistantMessage:
+			for _, block := range m.Message.Content {
+				if block.Type == "text" {
+					reply.WriteString(block.Text)
+				}
+			}
+		case ResultMessage:
+			assert.False(t, m.IsError, "session failed: %s", m.Result)
+			gotResult = true
+		}
+		if gotResult {
+			break
+		}
+	}
+
+	require.True(t, gotResult, "no result message")
+	assert.Contains(t, reply.String(), marker,
+		"the preset append never reached the model; reply was %q",
+		reply.String())
+}
