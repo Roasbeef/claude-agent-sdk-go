@@ -129,6 +129,15 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 		excludeDynamicSections = &trueVal
 	}
 
+	// Only send the list when the CLI was launched to wait for it. A CLI
+	// started without --await-initialize ignores the field, so sending it
+	// anyway would suggest the plugins were delivered when argv already
+	// delivered them.
+	var plugins []PluginConfig
+	if p.options.usesInitializePluginDelivery() {
+		plugins = p.options.Plugins
+	}
+
 	var agents map[string]interface{}
 	if len(p.options.Agents) > 0 {
 		agents = make(map[string]interface{}, len(p.options.Agents))
@@ -160,6 +169,7 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 			ToolAliases:            p.options.ToolAliases,
 			SupportedDialogKinds:   p.options.SupportedDialogKinds,
 			PerTaskStopAffordance:  p.options.PerTaskStopAffordance,
+			Plugins:                plugins,
 		},
 	}
 

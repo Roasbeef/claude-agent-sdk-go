@@ -64,6 +64,21 @@ type SDKControlInitializeResponse struct {
 	// registered, and its own callbacks will never fire (sdk.d.ts v0.3.241
 	// L3752).
 	HooksApplied *bool `json:"hooks_applied,omitempty"`
+	// PluginsApplied reports whether every plugin this initialize listed is
+	// loaded in the process: true when each one is among the plugins loaded at
+	// launch, whether they arrived through PluginDeliveryInitialize under
+	// --await-initialize or as --plugin-dir flags. A re-sent initialize naming
+	// the launch set therefore also reads true.
+	//
+	// The request's plugin list never loads anything after launch, so a false
+	// here is not a transient state that a later initialize can repair — it
+	// means the running process does not have those plugins and will not get
+	// them. The usual cause is a CLI older than 2.1.261, which ignores
+	// --await-initialize's contract entirely.
+	//
+	// Nil when the request listed no plugins, and on CLIs that predate the
+	// field (sdk.d.ts v0.3.263 L4033).
+	PluginsApplied *bool `json:"plugins_applied,omitempty"`
 }
 
 // McpServerStatus reports the connection status of an MCP server.

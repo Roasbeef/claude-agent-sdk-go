@@ -671,10 +671,16 @@ type SDKControlRequestBody struct {
 	ToolAliases            map[string]string                   `json:"toolAliases,omitempty"`            // For initialize
 	SupportedDialogKinds   []string                            `json:"supportedDialogKinds,omitempty"`   // For initialize
 	PerTaskStopAffordance  *bool                               `json:"perTaskStopAffordance,omitempty"`  // For initialize
-	ToolName               string                              `json:"tool_name,omitempty"`              // For can_use_tool/hook_callback
-	Input                  map[string]interface{}              `json:"input,omitempty"`                  // For can_use_tool/hook_callback
-	ToolUseID              string                              `json:"tool_use_id,omitempty"`            // For can_use_tool/hooks/background_tasks
-	AgentID                string                              `json:"agent_id,omitempty"`               // For can_use_tool
+	// Plugins carries the plugin list when Options.PluginDelivery is
+	// PluginDeliveryInitialize, keeping it off the command line. Read only by
+	// a CLI launched with --await-initialize, which consults this request
+	// during startup before any plugin work; without that flag, on a repeated
+	// initialize, or over a remote session transport it loads nothing.
+	Plugins   []PluginConfig         `json:"plugins,omitempty"`     // For initialize
+	ToolName  string                 `json:"tool_name,omitempty"`   // For can_use_tool/hook_callback
+	Input     map[string]interface{} `json:"input,omitempty"`       // For can_use_tool/hook_callback
+	ToolUseID string                 `json:"tool_use_id,omitempty"` // For can_use_tool/hooks/background_tasks
+	AgentID   string                 `json:"agent_id,omitempty"`    // For can_use_tool
 
 	// Inbound can_use_tool context. These describe how the ask reached the
 	// host and constrain how it may be rendered; see PermissionContext.

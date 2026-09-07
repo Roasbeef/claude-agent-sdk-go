@@ -2312,3 +2312,97 @@ func TestSubprocessTransportPluginsEmpty(t *testing.T) {
 		assert.NotEqual(t, "--plugin-dir-no-mcp", arg)
 	}
 }
+
+// TestSubprocessTransportPluginDeliveryInitialize tests that initialize
+// delivery replaces the per-plugin flags with --await-initialize. The two are
+// exclusive: --await-initialize makes the CLI wait for the initialize request
+// before doing plugin work, so leaving the flags in would load each plugin a
+// second time at a point the request was meant to own.
+func TestSubprocessTransportPluginDeliveryInitialize(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	opts := &Options{
+		PluginDelivery: PluginDeliveryInitialize,
+		Plugins: []PluginConfig{
+			{Type: PluginTypeLocal, Path: "/plugins/lint"},
+			{
+				Type:             PluginTypeLocal,
+				Path:             "/plugins/deploy",
+				SkipMcpDiscovery: true,
+			},
+		},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	require.NoError(t, transport.Connect(context.Background()))
+	defer transport.Close()
+
+	assert.Contains(t, runner.StartArgs, "--await-initialize")
+	for _, arg := range runner.StartArgs {
+		assert.NotEqual(t, "--plugin-dir", arg,
+			"argv delivery leaked alongside --await-initialize: %v",
+			runner.StartArgs)
+		assert.NotEqual(t, "--plugin-dir-no-mcp", arg)
+	}
+}
+
+// Argv delivery is the default, so an unset PluginDelivery must not put a
+// version floor on the CLI by emitting --await-initialize.
+func TestSubprocessTransportPluginDeliveryDefaultsToArgv(t *testing.T) {
+	for _, delivery := range []PluginDelivery{"", PluginDeliveryArgv} {
+		t.Run(string(delivery), func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+
+			opts := &Options{
+				PluginDelivery: delivery,
+				Plugins: []PluginConfig{
+					{Type: PluginTypeLocal, Path: "/plugins/lint"},
+				},
+			}
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+
+			require.NoError(t, transport.Connect(context.Background()))
+			defer transport.Close()
+
+			assert.NotContains(t, runner.StartArgs, "--await-initialize")
+			assert.Subset(t, runner.StartArgs,
+				[]string{"--plugin-dir", "/plugins/lint"})
+		})
+	}
+}
+
+// With nothing to keep off the command line there is no reason to impose
+// --await-initialize's version floor, so an empty list stays on the argv path
+// even when initialize delivery was asked for.
+func TestSubprocessTransportPluginDeliveryInitializeNoPlugins(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	opts := &Options{PluginDelivery: PluginDeliveryInitialize}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	require.NoError(t, transport.Connect(context.Background()))
+	defer transport.Close()
+
+	assert.NotContains(t, runner.StartArgs, "--await-initialize")
+}
+
+func TestSubprocessTransportPluginDeliveryRejectsInvalid(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	opts := &Options{
+		PluginDelivery: PluginDelivery("stdin"),
+		Plugins: []PluginConfig{
+			{Type: PluginTypeLocal, Path: "/plugins/lint"},
+		},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	err := transport.Connect(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid plugin delivery")
+	assert.False(t, runner.started)
+}
