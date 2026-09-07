@@ -1458,9 +1458,13 @@ type SandboxIgnoreViolations struct {
 	Network []string
 }
 
+// PluginTypeLocal is the only supported PluginConfig.Type: a plugin loaded
+// from a directory on this machine.
+const PluginTypeLocal = "local"
+
 // PluginConfig configures a plugin to load.
 type PluginConfig struct {
-	// Type must be "local" (only local plugins currently supported).
+	// Type must be PluginTypeLocal (only local plugins currently supported).
 	Type string `json:"type"`
 	// Path is the absolute or relative path to the plugin directory.
 	Path string `json:"path"`
