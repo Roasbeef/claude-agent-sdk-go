@@ -3444,6 +3444,7 @@ func TestParseMessageAPIRetry(t *testing.T) {
 		input           string
 		wantErrorStatus *int
 		wantError       APIRetryError
+		wantNoResponse  *APIRetryNoResponse
 	}{
 		{
 			name: "rate limit with HTTP status",
@@ -3476,6 +3477,32 @@ func TestParseMessageAPIRetry(t *testing.T) {
 			}`,
 			wantError: APIRetryErrorServerError,
 		},
+		{
+			// A first-byte timeout. max_retries reads as this cause's own cap
+			// (one retry) rather than the session budget the cases above
+			// report, which is the reason the field exists.
+			name: "no response within the first-byte window",
+			input: `{
+				"type": "system",
+				"subtype": "api_retry",
+				"attempt": 1,
+				"max_retries": 1,
+				"retry_delay_ms": 0,
+				"error_status": null,
+				"error": "server_error",
+				"no_response": {
+					"waited_ms": 60000,
+					"retry_wait_ms": 120000
+				},
+				"uuid": "550e8400-e29b-41d4-a716-446655440202",
+				"session_id": "sess_misc_001"
+			}`,
+			wantError: APIRetryErrorServerError,
+			wantNoResponse: &APIRetryNoResponse{
+				WaitedMs:    60000,
+				RetryWaitMs: 120000,
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -3495,6 +3522,15 @@ func TestParseMessageAPIRetry(t *testing.T) {
 			} else {
 				require.NotNil(t, retryMsg.ErrorStatus)
 				assert.Equal(t, *tt.wantErrorStatus, *retryMsg.ErrorStatus)
+			}
+
+			// Absent for every retry cause but the first-byte timeout, so
+			// nil is the signal that max_retries means the session budget.
+			if tt.wantNoResponse == nil {
+				assert.Nil(t, retryMsg.NoResponse)
+			} else {
+				require.NotNil(t, retryMsg.NoResponse)
+				assert.Equal(t, *tt.wantNoResponse, *retryMsg.NoResponse)
 			}
 		})
 	}

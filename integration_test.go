@@ -923,6 +923,21 @@ func TestIntegrationResultFirstFrameTimings(t *testing.T) {
 	}
 }
 
+// TestIntegrationAPIRetryNoResponse is a slot for the v0.3.263 no_response
+// field on api_retry. It only populates when the API accepts a request and
+// then sends no response headers inside CLAUDE_STREAM_FIRST_BYTE_TIMEOUT_MS —
+// a stalled upstream, not something a well-behaved API produces on demand and
+// not something the SDK can inject, since the timeout is enforced inside the
+// CLI's own HTTP client. Parse path is covered by unit test; tracked in
+// INTEGRATION-FOLLOWUPS.md.
+func TestIntegrationAPIRetryNoResponse(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	t.Skip("not triggerable from CLI: no_response needs the API to stall " +
+		"past the first-byte window; parse covered by unit test")
+}
+
 func TestIntegrationTaskLifecycleFields(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)

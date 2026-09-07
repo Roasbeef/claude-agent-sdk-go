@@ -1512,8 +1512,22 @@ type APIRetryMessage struct {
 	RetryDelayMS int           `json:"retry_delay_ms"` // Delay before retry
 	ErrorStatus  *int          `json:"error_status"`   // HTTP status, nil represents JSON null (connection errors)
 	Error        APIRetryError `json:"error"`          // Retryable error category
-	UUID         string        `json:"uuid"`           // Unique message ID
-	SessionID    string        `json:"session_id"`     // Session identifier
+	// NoResponse is set only when the API sent no response headers inside the
+	// first-byte window (CLAUDE_STREAM_FIRST_BYTE_TIMEOUT_MS). Its presence
+	// changes how MaxRetries reads: for this cause MaxRetries is a cap of its
+	// own — normally one retry — rather than the session's retry budget, so a
+	// consumer tracking attempts against a budget must not mix the two
+	// (sdk.d.ts v0.3.263 L3307).
+	NoResponse *APIRetryNoResponse `json:"no_response,omitempty"`
+	UUID       string              `json:"uuid"`       // Unique message ID
+	SessionID  string              `json:"session_id"` // Session identifier
+}
+
+// APIRetryNoResponse reports how long a first-byte timeout waited and how long
+// its retry will wait. Carried by APIRetryMessage only for that cause.
+type APIRetryNoResponse struct {
+	WaitedMs    int64 `json:"waited_ms"`     // How long the failed attempt waited for headers
+	RetryWaitMs int64 `json:"retry_wait_ms"` // How long the retry will wait for them
 }
 
 // MessageType implements Message.
