@@ -2472,6 +2472,60 @@ func TestIntegrationGetUsageExperimental(t *testing.T) {
 	t.Skip("get_usage is EXPERIMENTAL upstream (unstable wire shape) and its response is account-dependent — rate_limits/behaviors are null for non-claude.ai-subscriber sessions and the installed CLI may not support the subtype; a live assertion would be brittle. Mirrors GetContextUsage, which ships without an integration test. Tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+// TestIntegrationGetContextUsageDetail exercises the detail option on the
+// get_context_usage control request. detail=summary answers from the last
+// response's usage and local estimates, skipping the per-category token-count
+// API calls. An older CLI that predates the option ignores the extra field and
+// still returns a usage payload, so the assertion only requires a non-empty
+// answer.
+func TestIntegrationGetContextUsageDetail(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	// Prime the session so there is a prior response for summary to read from.
+	require.NoError(t, stream.Send(ctx, "Say hi."))
+	for msg := range stream.Messages() {
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+
+	usage, err := stream.GetContextUsage(ctx, GetContextUsageOptions{
+		Detail: ContextUsageDetailSummary,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	assert.Positive(t, usage.TotalTokens,
+		"summary detail should still report a token total")
+}
+
+// TestIntegrationGetUsageSkipBehaviors would exercise skip_behaviors on
+// get_usage, but the base request is EXPERIMENTAL upstream with an
+// account-dependent, brittle response (see TestIntegrationGetUsageExperimental),
+// and the installed CLI may not support the subtype. Skipped for the same
+// reason; the wire shape of the option is covered by the unit test.
+func TestIntegrationGetUsageSkipBehaviors(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	t.Skip("get_usage is EXPERIMENTAL and account-dependent; skip_behaviors " +
+		"wire shape covered by unit test. Tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
 // TestIntegrationSetMcpPermissionModeOverride exercises the
 // set_mcp_permission_mode_override control request against the live CLI. The
 // override targets an unknown server name, which a supporting CLI answers with

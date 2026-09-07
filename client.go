@@ -1432,12 +1432,37 @@ func (s *Stream) AccountInfo(ctx context.Context) (*AccountInfo, error) {
 	return &account, nil
 }
 
+// ContextUsageDetail selects how GetContextUsage computes its answer.
+type ContextUsageDetail string
+
+const (
+	// ContextUsageDetailFull counts each category with the token-count API.
+	// This is the CLI's default when the field is omitted.
+	ContextUsageDetailFull ContextUsageDetail = "full"
+
+	// ContextUsageDetailSummary answers from the last response's usage and
+	// local estimates, skipping the per-category token-count API calls.
+	ContextUsageDetailSummary ContextUsageDetail = "summary"
+)
+
+// GetContextUsageOptions configures Stream.GetContextUsage.
+type GetContextUsageOptions struct {
+	// Detail selects the accounting method. The empty value defers to the
+	// CLI's default (full).
+	Detail ContextUsageDetail
+}
+
 // GetContextUsage fetches the current context usage from the CLI.
 func (s *Stream) GetContextUsage(
-	ctx context.Context,
+	ctx context.Context, opts ...GetContextUsageOptions,
 ) (*SDKControlGetContextUsageResponse, error) {
+	var o GetContextUsageOptions
+	if len(opts) > 0 {
+		o = opts[0]
+	}
 	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
 		Subtype: "get_context_usage",
+		Detail:  string(o.Detail),
 	})
 	if err != nil {
 		return nil, err
@@ -1453,6 +1478,15 @@ func (s *Stream) GetContextUsage(
 	return &out, nil
 }
 
+// GetUsageOptions configures Stream.GetUsageExperimental.
+type GetUsageOptions struct {
+	// SkipBehaviors drops the transcript scan that fills the response's
+	// Behaviors section, which comes back null. The scan reads every
+	// transcript touched in the last seven days, so a caller that needs only
+	// the plan rate limits (a usage meter, say) can set this to avoid it.
+	SkipBehaviors bool
+}
+
 // GetUsageExperimental fetches the structured data behind the `/usage`
 // command: session cost/usage totals plus claude.ai plan rate-limit
 // utilization windows (5-hour, 7-day, per-model) when available.
@@ -1462,11 +1496,19 @@ func (s *Stream) GetContextUsage(
 // EXPERIMENTAL: this control request is unstable upstream and may change or
 // be removed in any release without notice — do not rely on it yet. The
 // method name will change when the API stabilizes.
+//
+// Pass a GetUsageOptions with SkipBehaviors set to drop the transcript scan
+// when only the plan rate limits are needed.
 func (s *Stream) GetUsageExperimental(
-	ctx context.Context,
+	ctx context.Context, opts ...GetUsageOptions,
 ) (*SDKControlGetUsageResponse, error) {
+	var o GetUsageOptions
+	if len(opts) > 0 {
+		o = opts[0]
+	}
 	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
-		Subtype: "get_usage",
+		Subtype:       "get_usage",
+		SkipBehaviors: o.SkipBehaviors,
 	})
 	if err != nil {
 		return nil, err
