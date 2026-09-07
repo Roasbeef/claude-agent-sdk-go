@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.241 catchup work, using Go idioms where the API shape differs.
+v0.3.263 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -767,6 +767,96 @@ Deferred in v0.3.241:
   `SDKControlGetPlanRequest` / `SDKControlGetWorkspaceDiffRequest` were deleted
   outright (gone from `sdk.mjs` too). The Go SDK never modeled either surface, so
   both removals are no-ops here.
+
+The v0.3.251 catchup added:
+
+- `PreModelSwitch` / `PostModelSwitch` hooks — the first new hook pair since
+  `DirectoryAdded`, and the first hook input to carry prompt-cache economics.
+  Only `PreModelSwitch` is vetoable, which is why `source` differs between them:
+  the post phase adds `auto` and `resume`, switches the CLI initiates itself and
+  so never offers for approval.
+- Per-server `timeout` on SDK MCP servers, in milliseconds. Values under 1000ms
+  are ignored, and changing it on an already-registered server does nothing
+  until the server is removed and re-added.
+- `ModelUsage.CostBasis` (plus `CanonicalModel` and `Provider`, which predate it
+  and were never modeled) — which price table the most recent request was priced
+  at. Empty until this process has priced a request for the model, which a
+  `--resume` makes common; read that as list pricing.
+- `PerTaskStopAffordance` on the initialize request.
+- `UserMessageUUID` on every first reply frame, plus `QueuedTurnCount` on
+  results so a host draining a send queue can tell "this run is done" from "more
+  is inbound".
+- The `Ambient` marker on task frames, which covers every `SkipTranscript` task
+  and more.
+- `DefaultToNo` on permission asks.
+- SessionStart resume-cost fields, so a host can price a resume before
+  committing to it.
+- Settings: `PromptCacheTTL`, `SubagentPromptCacheTTL`,
+  `DesktopSessionCleanupPeriodDays`, `SyncClaudeAiPlugins`,
+  `ManagedSourcesBehavior`, `SpinnerTipsOverride`, plus the model picker and
+  contracted-rate pricing.
+
+PRs in this cycle (squash-merged): #218 model-switch hooks, #219 SDK MCP
+per-server timeout, #220 pricing provenance, #221 `perTaskStopAffordance`,
+#222 `user_message_uuid`, #223 queued-turn count, #224 ambient marker,
+#225 `default_to_no`, #226 SessionStart resume pricing, #228 Settings parity,
+#229 model picker and pricing.
+
+The v0.3.263 catchup added:
+
+- Plugin delivery over the initialize request. `pluginDelivery: 'initialize'`
+  moves the plugin list off the command line and into the initialize payload,
+  because Windows refuses a command line past 32,767 characters and one
+  `--plugin-dir` per plugin blows through it. `'argv'` remains the Go default:
+  `initialize` needs Claude Code 2.1.261+, and an older binary exits at startup
+  on the unknown `--await-initialize` option rather than degrading.
+- `PermissionPrompts` — lets a session declare it has no approval surface.
+- System prompt `snapshot`, a genuine tri-state: omitted records a bare preset,
+  `false` never records. Plus sending a preset system prompt's `append`.
+- `update_settings` and `reload_output_styles` control requests — the first new
+  control subtypes since `get_settings` — and options on `get_context_usage` and
+  `get_usage`.
+- `SDKMcpResourceLink` and `ResourceLinks` on task notifications. A backgrounded
+  MCP task's `tool_result` is placeholder text and its real result arrives as the
+  notification, so this is the only place a host learns which files the call
+  produced.
+- `UserMessageUUIDs` on reply, result and thinking frames. `UserMessageUUID`
+  alone turned out to be insufficient: when the host merges several
+  close-together sends into one turn it names only the last member, leaving
+  every other sender unable to recognize the reply. The result list can be
+  strictly longer than the reply list, because queued messages fold into a
+  running turn between tool rounds.
+- The first-frame result timings — `FirstContentFrameMs`, `FirstStreamPostMs`,
+  `FirstStreamPostAckMs`, `FirstStreamPostWallMs`. Success results only.
+- `NoResponse` on `api_retry`. Its presence, not its durations, is the point:
+  for a first-byte timeout `MaxRetries` is that cause's own cap — normally a
+  single retry — rather than the session's retry budget.
+- `ModelUsage.ThinkingTokens`, already counted inside `OutputTokens` so summing
+  the two double-counts. It tallies only turns run on a CLI recording the field,
+  which makes it partial for a session resumed across versions and unsafe as a
+  denominator.
+- Settings: `Permissions.BlockReadsOutsideWorkingDirectories` (nested in the
+  permissions block), `ManagedMCPServers`, `BashOutputMaxChars`,
+  `TaskOutputMaxChars`, `TimeFormat` and `TimeZone`. `TimeFormat` is an open
+  string type rather than an enum because upstream unions the four presets with
+  any strftime pattern containing `%`.
+
+PRs in this cycle (squash-merged): #231/#232 plugin delivery, #233
+`permissionPrompts`, #234/#235 system prompt append and snapshot, #236
+`update_settings`, #237 `reload_output_styles`, #238 control-request options,
+#239 `resource_links`, #240 `user_message_uuids`, #241 first-frame timings,
+#242 `no_response`, #243 `thinkingTokens`, #244 Settings parity, plus this docs
+refresh.
+
+Deferred in v0.3.251 and v0.3.263:
+
+- `bridge.d.ts` `onSetModel` (`notices` and a `Promise` return) — no Go bridge
+  transport exists. Deferred every cycle since v0.3.233.
+- `sdk-tools.d.ts` schema churn — the standing deferral since v0.3.207.
+- The `spinnerTipsOverride.tips` union element — breaking, outbound-only, and
+  with no decode consumer to justify it.
+- The prompt word-editing keys setting, which upstream now documents as having
+  no effect. The Go field stays: removing it is a breaking change for no gain.
 
 Some areas remain intentionally limited by the CLI or integration harness:
 desktop/IDE-only settings are not modeled exhaustively, several runtime control
