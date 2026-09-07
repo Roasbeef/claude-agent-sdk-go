@@ -386,6 +386,10 @@ type ResultMessage struct {
 	// (sdk.d.ts v0.3.263 L4991 error, L5014 success).
 	UserMessageUUIDs         []string `json:"user_message_uuids,omitempty"`
 	RequestSentWallMs        *int64   `json:"request_sent_wall_ms,omitempty"`          // Wall-clock time the request was sent, ms since epoch (success only; sdk.d.ts v0.3.220 L4301)
+	FirstContentFrameMs      *int64   `json:"first_content_frame_ms,omitempty"`        // Time to the first content frame, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5016)
+	FirstStreamPostMs        *int64   `json:"first_stream_post_ms,omitempty"`          // Time to the first stream post, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5017)
+	FirstStreamPostAckMs     *int64   `json:"first_stream_post_ack_ms,omitempty"`      // Time to that post being acked, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5018)
+	FirstStreamPostWallMs    *int64   `json:"first_stream_post_wall_ms,omitempty"`     // Wall-clock time of the first stream post, ms since epoch (success only; sdk.d.ts v0.3.263 L5019)
 	TimeToRequestFromSpawnMs *int64   `json:"time_to_request_from_spawn_ms,omitempty"` // Time to request from spawn in milliseconds
 	WarmSpareClaimed         *bool    `json:"warm_spare_claimed,omitempty"`            // Whether a warm spare was claimed
 	TimeOriginMs             *int64   `json:"time_origin_ms,omitempty"`                // Wall-clock origin for the above timings, in milliseconds (success only)

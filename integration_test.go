@@ -866,6 +866,63 @@ func TestIntegrationResultMessageTimingFields(t *testing.T) {
 	t.Skip("not triggerable from CLI: ttft_stream_ms / time_to_request_ms / time_to_request_from_spawn_ms / warm_spare_claimed are populated by CLI-internal spawn-pool timing instrumentation not exercisable from the standard integration run; tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+// TestIntegrationResultFirstFrameTimings runs a real streaming turn and, when
+// the CLI reports the v0.3.263 first-frame timings, asserts they order the way
+// the names claim. CLI 2.1.222 reports ttft_stream_ms and time_to_request_ms
+// but none of these four, so the test proves the turn produced a result and
+// then skips; tracked in INTEGRATION-FOLLOWUPS.md.
+func TestIntegrationResultFirstFrameTimings(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Reply with one word."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx, "Say OK."))
+
+	var result ResultMessage
+	var gotResult bool
+	for msg := range stream.Messages() {
+		if m, ok := msg.(ResultMessage); ok {
+			result = m
+			gotResult = true
+			break
+		}
+	}
+	require.True(t, gotResult, "expected a result")
+
+	if result.FirstStreamPostMs == nil {
+		t.Skip("not triggerable from CLI: this CLI build does not report " +
+			"the first_* result timings")
+	}
+
+	// The post cannot be acked before it was posted.
+	require.NotNil(t, result.FirstStreamPostAckMs)
+	assert.GreaterOrEqual(t, *result.FirstStreamPostAckMs,
+		*result.FirstStreamPostMs,
+		"the ack cannot precede the post it acknowledges")
+
+	// Whether the wall stamp is exactly TimeOriginMs plus the relative offset
+	// is not something upstream states, so log the pair for whoever backfills
+	// this test rather than asserting a relationship we have not observed.
+	if result.FirstStreamPostWallMs != nil && result.TimeOriginMs != nil {
+		t.Logf("origin=%d relative=%d wall=%d", *result.TimeOriginMs,
+			*result.FirstStreamPostMs, *result.FirstStreamPostWallMs)
+	}
+}
+
 func TestIntegrationTaskLifecycleFields(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
