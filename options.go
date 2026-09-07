@@ -335,9 +335,17 @@ type Options struct {
 
 // SystemPromptConfig represents system prompt configuration.
 type SystemPromptConfig struct {
-	Type   string // "preset"
-	Preset string // "claude_code"
-	Append string // Additional instructions to append
+	Type string // "preset"
+
+	// Preset names the base prompt. "claude_code" is the only one, and it is
+	// not sent on the wire: an initialize request that carries an append but
+	// no systemPrompt is already unambiguous about wanting the built-in
+	// prompt. The field is kept because the upstream option has it.
+	Preset string
+
+	// Append holds instructions added to the preset prompt. This is the only
+	// part of the preset form that reaches the CLI.
+	Append string
 }
 
 // SettingSource represents a filesystem settings source.
