@@ -241,6 +241,22 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, "--permission-prompt-tool", "stdio")
 	}
 
+	// Declare who answers prompts. Sent even alongside --permission-prompt-tool:
+	// "none" is what tells the CLI to stop short of the tool, so suppressing
+	// the flag here would leave the callback wired up and the session waiting.
+	if t.options.PermissionPrompts != "" {
+		switch t.options.PermissionPrompts {
+		case PermissionPromptsHost, PermissionPromptsNone:
+			args = append(args, "--permission-prompts",
+				string(t.options.PermissionPrompts))
+		default:
+			return fmt.Errorf(
+				"invalid permission prompts %q: expected %q or %q",
+				t.options.PermissionPrompts, PermissionPromptsHost,
+				PermissionPromptsNone)
+		}
+	}
+
 	// Note: --verbose is already added above (required for stream-json).
 
 	// Add settings sources for Skills
