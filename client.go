@@ -1196,6 +1196,40 @@ func (s *Stream) ApplyFlagSettings(
 	return err
 }
 
+// SettingsSource names the settings file Stream.UpdateSettings writes to. It
+// is a single-member type today; a named type keeps widening it additive.
+type SettingsSource string
+
+// SettingsSourceLocal is the project's local settings file — the only scope the
+// CLI accepts today, chosen so a host UI's writes land exactly where /config's
+// do.
+const SettingsSourceLocal SettingsSource = "localSettings"
+
+// UpdateSettings writes settings to a settings file on disk, the durable
+// counterpart to ApplyFlagSettings' in-memory flag layer. The CLI persists the
+// merge to the named file rather than holding it for the session.
+//
+// The CLI enforces a narrow contract: only outputStyle is writable today, its
+// value must be a string, and deletion is unsupported (a key cannot be cleared
+// this way). It refuses remote transports and any session whose
+// --setting-sources excludes source. Violations surface as an error response.
+//
+// Only available in streaming input mode.
+func (s *Stream) UpdateSettings(
+	ctx context.Context, source SettingsSource,
+	settings map[string]interface{},
+) error {
+	if settings == nil {
+		settings = map[string]interface{}{}
+	}
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype:        "update_settings",
+		SettingsSource: string(source),
+		Settings:       &settings,
+	})
+	return err
+}
+
 // StopTask asks the CLI to stop a running task.
 func (s *Stream) StopTask(ctx context.Context, taskID string) error {
 	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
