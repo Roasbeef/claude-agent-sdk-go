@@ -3149,6 +3149,61 @@ func TestIntegrationUserMessageUUIDCorrelation(t *testing.T) {
 	}
 }
 
+// TestIntegrationUserMessageUUIDs sends a turn with a client uuid and, when the
+// CLI populates the v0.3.263 user_message_uuids list on the result, asserts it
+// contains the singular user_message_uuid. CLI 2.1.222 echoes only the singular
+// field, so the list is absent and the test skips after proving the send ran;
+// tracked in INTEGRATION-FOLLOWUPS.md.
+func TestIntegrationUserMessageUUIDs(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	const sendUUID = "550e8400-e29b-41d4-a716-4466554413cd"
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, client.protocol.SendMessage(ctx, UserMessage{
+		Type:      "user",
+		UUID:      sendUUID,
+		SessionID: stream.sessionID,
+		Message: APIUserMessage{
+			Role:    "user",
+			Content: []UserContentBlock{{Type: "text", Text: "Say OK."}},
+		},
+	}))
+
+	var result ResultMessage
+	for msg := range stream.Messages() {
+		if m, ok := msg.(ResultMessage); ok {
+			result = m
+			break
+		}
+	}
+
+	require.Equal(t, sendUUID, result.UserMessageUUID,
+		"the result must echo the send's client uuid")
+
+	if len(result.UserMessageUUIDs) == 0 {
+		t.Skip("not triggerable from CLI: this CLI build echoes the singular " +
+			"user_message_uuid only, not the user_message_uuids list")
+	}
+	assert.Contains(t, result.UserMessageUUIDs, sendUUID,
+		"the list must always contain the singular uuid")
+}
+
 // TestIntegrationQueuedTurnCount queues a second send behind the first and
 // asserts the first result reports the backlog, so a host draining a queue can
 // tell "the run is done" from "more is inbound" (TS SDK v0.3.251).
