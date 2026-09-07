@@ -200,6 +200,17 @@ type Options struct {
 	// Plugins loads custom plugins from local paths.
 	Plugins []PluginConfig
 
+	// PluginDelivery selects how Plugins reach the Claude Code process. Empty
+	// means PluginDeliveryArgv.
+	//
+	// This exists because the command line is a bounded resource:
+	// PluginDeliveryArgv spends one --plugin-dir flag per plugin, and Windows
+	// refuses to start a process whose command line exceeds 32,767 characters.
+	// PluginDeliveryInitialize moves the list to stdin instead, so the command
+	// line stops growing with the plugin count. Loading is otherwise identical
+	// (sdk.d.ts v0.3.263 L1889).
+	PluginDelivery PluginDelivery
+
 	// OutputFormat defines structured output format for agent results.
 	OutputFormat *OutputFormat
 
@@ -1461,6 +1472,35 @@ type SandboxIgnoreViolations struct {
 // PluginTypeLocal is the only supported PluginConfig.Type: a plugin loaded
 // from a directory on this machine.
 const PluginTypeLocal = "local"
+
+// PluginDelivery selects how Options.Plugins reach the Claude Code process.
+type PluginDelivery string
+
+const (
+	// PluginDeliveryArgv passes one --plugin-dir flag per plugin. It is the
+	// default and works with any Claude Code version, at the cost of a command
+	// line that grows with the plugin count.
+	PluginDeliveryArgv PluginDelivery = "argv"
+
+	// PluginDeliveryInitialize sends the list over stdin in the initialize
+	// request and launches Claude Code with --await-initialize.
+	//
+	// Requires Claude Code 2.1.261 or newer; an older binary does not
+	// recognize --await-initialize and exits at startup with an unknown-option
+	// error. That failure is why PluginDeliveryArgv remains the default.
+	// InitializeResult.PluginsApplied reports whether the listed plugins are
+	// in fact loaded.
+	PluginDeliveryInitialize PluginDelivery = "initialize"
+)
+
+// usesInitializePluginDelivery reports whether the plugin list travels in the
+// initialize request rather than on the command line. Both the launch flag and
+// the request field derive from this, so they cannot disagree: a CLI told to
+// wait for a plugin list must receive one, and a list sent to a CLI that was
+// not told to wait would load nothing.
+func (o *Options) usesInitializePluginDelivery() bool {
+	return o.PluginDelivery == PluginDeliveryInitialize && len(o.Plugins) > 0
+}
 
 // PluginConfig configures a plugin to load.
 type PluginConfig struct {
@@ -3654,6 +3694,15 @@ func WithExcludeDynamicSystemPromptSections(enable bool) Option {
 func WithPlugins(plugins []PluginConfig) Option {
 	return func(o *Options) {
 		o.Plugins = plugins
+	}
+}
+
+// WithPluginDelivery selects how Plugins reach the Claude Code process. See
+// Options.PluginDelivery; PluginDeliveryInitialize requires Claude Code
+// 2.1.261 or newer.
+func WithPluginDelivery(delivery PluginDelivery) Option {
+	return func(o *Options) {
+		o.PluginDelivery = delivery
 	}
 }
 

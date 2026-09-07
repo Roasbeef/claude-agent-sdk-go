@@ -362,23 +362,49 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, "--add-dir", dir)
 	}
 
-	// Load each configured plugin. A plugin that skips MCP discovery selects a
-	// different flag rather than passing an argument, so the two cannot be
-	// merged. An unsupported type is refused rather than skipped: dropping a
-	// plugin the caller asked for, silently, is how this option came to do
-	// nothing at all.
+	// Validate every plugin regardless of how the list is delivered. An
+	// unsupported type is refused rather than skipped: dropping a plugin the
+	// caller asked for, silently, is how this option came to do nothing at
+	// all.
 	for _, plugin := range t.options.Plugins {
 		if plugin.Type != PluginTypeLocal {
 			return fmt.Errorf(
 				"unsupported plugin type %q for path %q: only %q is supported",
 				plugin.Type, plugin.Path, PluginTypeLocal)
 		}
+	}
 
-		flag := "--plugin-dir"
-		if plugin.SkipMcpDiscovery {
-			flag = "--plugin-dir-no-mcp"
+	switch t.options.PluginDelivery {
+	case "", PluginDeliveryArgv:
+	case PluginDeliveryInitialize:
+	default:
+		return fmt.Errorf(
+			"invalid plugin delivery %q: expected %q or %q",
+			t.options.PluginDelivery, PluginDeliveryArgv,
+			PluginDeliveryInitialize)
+	}
+
+	// The two deliveries are exclusive. --await-initialize makes the CLI wait
+	// for the initialize request before doing any plugin work, so the flags
+	// are not merely redundant alongside it — they would load the plugins a
+	// second time, at a point the request was meant to own.
+	//
+	// An empty list stays on the argv path even under
+	// PluginDeliveryInitialize: there is nothing to keep off the command line,
+	// and --await-initialize would otherwise impose a version floor for no
+	// benefit.
+	if t.options.usesInitializePluginDelivery() {
+		args = append(args, "--await-initialize")
+	} else {
+		// A plugin that skips MCP discovery selects a different flag rather
+		// than passing an argument, so the two cannot be merged.
+		for _, plugin := range t.options.Plugins {
+			flag := "--plugin-dir"
+			if plugin.SkipMcpDiscovery {
+				flag = "--plugin-dir-no-mcp"
+			}
+			args = append(args, flag, plugin.Path)
 		}
-		args = append(args, flag, plugin.Path)
 	}
 
 	// Add include-partial-messages flag for streaming deltas.

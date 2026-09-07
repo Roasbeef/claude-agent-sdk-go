@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -3520,4 +3521,153 @@ func TestIntegrationPluginDirRejectsUnsupportedType(t *testing.T) {
 	require.Error(t, err, "the connect must fail rather than start a session "+
 		"that silently lacks the plugin")
 	assert.Contains(t, err.Error(), "unsupported plugin type")
+}
+
+// skipIfCLIOlderThan skips when the installed CLI predates the given version.
+// Written as a gate rather than an unconditional skip so the test starts
+// running on its own once the environment's CLI catches up.
+func skipIfCLIOlderThan(t *testing.T, minVersion string) {
+	t.Helper()
+
+	path, err := DiscoverCLIPath(&Options{})
+	if err != nil {
+		t.Skip("claude CLI not found in PATH")
+	}
+
+	out, err := exec.Command(path, "--version").Output()
+	if err != nil {
+		t.Skipf("could not read CLI version: %v", err)
+	}
+
+	// "2.1.222 (Claude Code)" — the version is the leading token.
+	fields := strings.Fields(string(out))
+	if len(fields) == 0 {
+		t.Skipf("could not parse CLI version from %q", string(out))
+	}
+	got, want := fields[0], minVersion
+
+	if compareDottedVersions(got, want) < 0 {
+		t.Skipf("CLI %s predates %s", got, want)
+	}
+}
+
+// compareDottedVersions compares two dotted numeric versions, returning -1, 0
+// or 1. A non-numeric or missing component sorts as 0.
+func compareDottedVersions(a, b string) int {
+	aParts := strings.Split(a, ".")
+	bParts := strings.Split(b, ".")
+
+	for i := 0; i < len(aParts) || i < len(bParts); i++ {
+		var av, bv int
+		if i < len(aParts) {
+			av, _ = strconv.Atoi(aParts[i])
+		}
+		if i < len(bParts) {
+			bv, _ = strconv.Atoi(bParts[i])
+		}
+		switch {
+		case av < bv:
+			return -1
+		case av > bv:
+			return 1
+		}
+	}
+	return 0
+}
+
+// awaitInitializeMinCLI is the first Claude Code release that understands
+// --await-initialize. An older binary exits at startup with an unknown-option
+// error (sdk.d.ts v0.3.263 L1885).
+const awaitInitializeMinCLI = "2.1.261"
+
+// TestIntegrationPluginDeliveryInitialize asserts that a plugin delivered over
+// the initialize request loads, and that the CLI confirms it via
+// plugins_applied. Both halves matter: the plugin list is the only thing
+// keeping the command line bounded, and plugins_applied is the only signal
+// that the CLI honored it rather than starting without them.
+func TestIntegrationPluginDeliveryInitialize(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, awaitInitializeMinCLI)
+
+	const pluginName = "daedalus-probe"
+	pluginDir := writeProbePlugin(t, pluginName)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithPlugins([]PluginConfig{{
+			Type: PluginTypeLocal,
+			Path: pluginDir,
+		}}),
+		WithPluginDelivery(PluginDeliveryInitialize),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	// A re-sent initialize naming the launch set also reads true, so this is a
+	// legitimate way to read the verdict on the plugins delivered at startup.
+	resp, err := stream.Reinitialize(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, resp)
+	require.NotNil(t, resp.PluginsApplied,
+		"a request that listed plugins must get a verdict on them")
+	assert.True(t, *resp.PluginsApplied,
+		"the CLI did not load the plugins sent over initialize")
+
+	var loaded []string
+	var gotResult bool
+	for msg := range client.Query(ctx, "Say OK.") {
+		switch m := msg.(type) {
+		case SystemMessage:
+			for _, p := range m.Plugins {
+				loaded = append(loaded, p.Name)
+			}
+		case ResultMessage:
+			assert.False(t, m.IsError, "session failed: %s", m.Result)
+			gotResult = true
+		}
+		if gotResult {
+			break
+		}
+	}
+
+	require.True(t, gotResult, "no result message")
+	assert.Contains(t, loaded, pluginName,
+		"plugin never loaded; init listed %v", loaded)
+}
+
+// The version gate is the only thing standing between this suite and silently
+// never exercising initialize delivery again, so the comparison itself is
+// worth pinning.
+func TestCompareDottedVersions(t *testing.T) {
+	tests := []struct {
+		a, b string
+		want int
+	}{
+		{"2.1.222", "2.1.261", -1},
+		{"2.1.261", "2.1.261", 0},
+		{"2.1.262", "2.1.261", 1},
+		{"2.2.0", "2.1.261", 1},
+		{"3.0.0", "2.9.9", 1},
+		// Numeric, not lexicographic: "222" < "261" but "99" > "100" would be
+		// the wrong answer under a string compare.
+		{"2.1.99", "2.1.100", -1},
+		// A missing component reads as zero rather than as "unknown".
+		{"2.1", "2.1.0", 0},
+		{"2.1", "2.1.1", -1},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.a+"_vs_"+tc.b, func(t *testing.T) {
+			assert.Equal(t, tc.want, compareDottedVersions(tc.a, tc.b))
+		})
+	}
 }

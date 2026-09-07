@@ -291,6 +291,52 @@ func TestProtocolInitializeOptions(t *testing.T) {
 			unexpected: []string{"excludeDynamicSections"},
 		},
 		{
+			name: "plugins wired through under initialize delivery",
+			configure: func(opts *Options) {
+				WithPluginDelivery(PluginDeliveryInitialize)(opts)
+				WithPlugins([]PluginConfig{
+					{Type: PluginTypeLocal, Path: "/plugins/lint"},
+					{
+						Type:             PluginTypeLocal,
+						Path:             "/plugins/deploy",
+						SkipMcpDiscovery: true,
+					},
+				})(opts)
+			},
+			expected: map[string]interface{}{
+				"plugins": []interface{}{
+					map[string]interface{}{
+						"type": "local",
+						"path": "/plugins/lint",
+					},
+					map[string]interface{}{
+						"type":             "local",
+						"path":             "/plugins/deploy",
+						"skipMcpDiscovery": true,
+					},
+				},
+			},
+		},
+		{
+			// Under argv delivery the flags already carried the plugins. Sending
+			// the list too would claim a delivery that did not happen — the CLI
+			// ignores the field without --await-initialize.
+			name: "plugins omitted under argv delivery",
+			configure: func(opts *Options) {
+				WithPlugins([]PluginConfig{
+					{Type: PluginTypeLocal, Path: "/plugins/lint"},
+				})(opts)
+			},
+			unexpected: []string{"plugins"},
+		},
+		{
+			name: "empty plugin list omitted under initialize delivery",
+			configure: func(opts *Options) {
+				WithPluginDelivery(PluginDeliveryInitialize)(opts)
+			},
+			unexpected: []string{"plugins"},
+		},
+		{
 			name: "agents wired through",
 			configure: func(opts *Options) {
 				WithAgents(map[string]AgentDefinition{
