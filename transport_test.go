@@ -2203,3 +2203,112 @@ func TestSubprocessTransportPermissionModeArguments(t *testing.T) {
 		})
 	}
 }
+
+// TestSubprocessTransportPlugins tests that each configured plugin reaches the
+// CLI, and that skipping MCP discovery selects the no-mcp flag rather than
+// passing an argument.
+func TestSubprocessTransportPlugins(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	opts := &Options{
+		Plugins: []PluginConfig{
+			{Type: PluginTypeLocal, Path: "/plugins/lint"},
+			{
+				Type:             PluginTypeLocal,
+				Path:             "/plugins/deploy",
+				SkipMcpDiscovery: true,
+			},
+		},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	err := transport.Connect(ctx)
+	require.NoError(t, err)
+	defer transport.Close()
+
+	assert.True(t, runner.started)
+	assert.Subset(t, runner.StartArgs,
+		[]string{"--plugin-dir", "/plugins/lint"})
+	assert.Subset(t, runner.StartArgs,
+		[]string{"--plugin-dir-no-mcp", "/plugins/deploy"})
+
+	// The two flags are alternatives; a no-mcp plugin must not also produce a
+	// plain --plugin-dir for the same path.
+	for i, arg := range runner.StartArgs {
+		if arg == "--plugin-dir" && i+1 < len(runner.StartArgs) {
+			assert.NotEqual(t, "/plugins/deploy", runner.StartArgs[i+1],
+				"no-mcp plugin leaked a plain --plugin-dir: %v",
+				runner.StartArgs)
+		}
+	}
+}
+
+// Plugin order is meaningful — a later plugin can shadow an earlier one — so
+// the flags must come out in the order they were configured.
+func TestSubprocessTransportPluginsPreserveOrder(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	opts := &Options{
+		Plugins: []PluginConfig{
+			{Type: PluginTypeLocal, Path: "/plugins/a"},
+			{Type: PluginTypeLocal, Path: "/plugins/b"},
+			{Type: PluginTypeLocal, Path: "/plugins/c"},
+		},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+
+	ctx := context.Background()
+	require.NoError(t, transport.Connect(ctx))
+	defer transport.Close()
+
+	var paths []string
+	for i, arg := range runner.StartArgs {
+		if arg == "--plugin-dir" && i+1 < len(runner.StartArgs) {
+			paths = append(paths, runner.StartArgs[i+1])
+		}
+	}
+	assert.Equal(t, []string{"/plugins/a", "/plugins/b", "/plugins/c"}, paths)
+}
+
+// An unsupported type fails the connect rather than loading nothing quietly.
+func TestSubprocessTransportPluginsRejectUnsupportedType(t *testing.T) {
+	for _, pluginType := range []string{"", "remote", "url"} {
+		t.Run(pluginType, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+
+			opts := &Options{
+				Plugins: []PluginConfig{
+					{Type: pluginType, Path: "/plugins/x"},
+				},
+			}
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+
+			err := transport.Connect(context.Background())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unsupported plugin type")
+			assert.False(t, runner.started,
+				"the CLI must not start with a plugin it cannot load")
+		})
+	}
+}
+
+// TestSubprocessTransportPluginsEmpty tests that no plugin flag is present when
+// none are configured.
+func TestSubprocessTransportPluginsEmpty(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	transport := NewSubprocessTransportWithRunner(runner, &Options{})
+
+	ctx := context.Background()
+	require.NoError(t, transport.Connect(ctx))
+	defer transport.Close()
+
+	for _, arg := range runner.StartArgs {
+		assert.NotEqual(t, "--plugin-dir", arg)
+		assert.NotEqual(t, "--plugin-dir-no-mcp", arg)
+	}
+}

@@ -3429,3 +3429,95 @@ func TestIntegrationSettingsModelPickerPricing(t *testing.T) {
 	assert.True(t, gotResult,
 		"a stalled managed-settings handshake shows up as no result at all")
 }
+
+// writeProbePlugin lays down the smallest plugin directory the CLI will load
+// and returns its path.
+func writeProbePlugin(t *testing.T, name string) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	manifestDir := filepath.Join(dir, ".claude-plugin")
+	require.NoError(t, os.MkdirAll(manifestDir, 0o755))
+
+	manifest := fmt.Sprintf(
+		`{"name":%q,"description":"integration probe","version":"0.0.1"}`,
+		name)
+	require.NoError(t, os.WriteFile(
+		filepath.Join(manifestDir, "plugin.json"), []byte(manifest), 0o644))
+
+	return dir
+}
+
+// TestIntegrationPluginDirArgv asserts that a configured plugin actually
+// reaches the CLI. Options.Plugins was inert before this — the transport built
+// no --plugin-dir flag for it — so asserting the session merely starts would
+// pass just as well against the broken behavior. The init message's plugin
+// list is the evidence that the CLI loaded it.
+func TestIntegrationPluginDirArgv(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	const pluginName = "daedalus-probe"
+	pluginDir := writeProbePlugin(t, pluginName)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithPlugins([]PluginConfig{{
+			Type: PluginTypeLocal,
+			Path: pluginDir,
+		}}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var loaded []string
+	var gotResult bool
+	for msg := range client.Query(ctx, "Say OK.") {
+		switch m := msg.(type) {
+		case SystemMessage:
+			for _, p := range m.Plugins {
+				loaded = append(loaded, p.Name)
+			}
+		case ResultMessage:
+			assert.False(t, m.IsError, "session failed: %s", m.Result)
+			gotResult = true
+		}
+		if gotResult {
+			break
+		}
+	}
+
+	require.True(t, gotResult, "no result message")
+	assert.Contains(t, loaded, pluginName,
+		"the configured plugin never reached the CLI; init listed %v", loaded)
+}
+
+// A plugin the SDK cannot express as a flag must fail the connect outright
+// rather than starting a session that silently lacks it.
+func TestIntegrationPluginDirRejectsUnsupportedType(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithPlugins([]PluginConfig{{
+			Type: "remote",
+			Path: writeProbePlugin(t, "daedalus-probe"),
+		}}),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	err = client.Connect(ctx)
+	require.Error(t, err, "the connect must fail rather than start a session "+
+		"that silently lacks the plugin")
+	assert.Contains(t, err.Error(), "unsupported plugin type")
+}

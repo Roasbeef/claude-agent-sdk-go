@@ -362,6 +362,25 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, "--add-dir", dir)
 	}
 
+	// Load each configured plugin. A plugin that skips MCP discovery selects a
+	// different flag rather than passing an argument, so the two cannot be
+	// merged. An unsupported type is refused rather than skipped: dropping a
+	// plugin the caller asked for, silently, is how this option came to do
+	// nothing at all.
+	for _, plugin := range t.options.Plugins {
+		if plugin.Type != PluginTypeLocal {
+			return fmt.Errorf(
+				"unsupported plugin type %q for path %q: only %q is supported",
+				plugin.Type, plugin.Path, PluginTypeLocal)
+		}
+
+		flag := "--plugin-dir"
+		if plugin.SkipMcpDiscovery {
+			flag = "--plugin-dir-no-mcp"
+		}
+		args = append(args, flag, plugin.Path)
+	}
+
 	// Add include-partial-messages flag for streaming deltas.
 	if t.options.IncludePartialMessages {
 		args = append(args, "--include-partial-messages")
