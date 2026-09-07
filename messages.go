@@ -716,6 +716,8 @@ type SDKControlRequestBody struct {
 	Enabled           *bool                       `json:"enabled,omitempty"`             // For mcp_toggle (pointer so explicit false serializes)
 	Servers           *map[string]MCPServerConfig `json:"servers,omitempty"`             // For mcp_set_servers (pointer so nil/empty round-trips as {})
 	Message           map[string]interface{}      `json:"message,omitempty"`             // For mcp_message (JSONRPC)
+	Detail            string                      `json:"detail,omitempty"`              // For get_context_usage ("summary"|"full")
+	SkipBehaviors     bool                        `json:"skip_behaviors,omitempty"`      // For get_usage
 }
 
 // SDKHookCallbackMatcher defines hook callback matching configuration.

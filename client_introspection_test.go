@@ -575,3 +575,71 @@ func TestAccountInfoAPIProviderGatewayUnmarshal(t *testing.T) {
 	assert.Equal(t, APIProviderGateway, acct.APIProvider)
 	assert.Equal(t, "oauth", acct.APIKeySource)
 }
+
+func TestStreamGetContextUsageDetailWireShape(t *testing.T) {
+	t.Run("summary sends detail", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.GetContextUsage(ctx, GetContextUsageOptions{
+				Detail: ContextUsageDetailSummary,
+			})
+			return err
+		})
+		require.NoError(t, err)
+
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1","request":{"subtype":"get_context_usage","detail":"summary"}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+	})
+
+	t.Run("no opts omits detail", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.GetContextUsage(ctx)
+			return err
+		})
+		require.NoError(t, err)
+
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1","request":{"subtype":"get_context_usage"}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+	})
+}
+
+func TestStreamGetUsageSkipBehaviorsWireShape(t *testing.T) {
+	t.Run("skip_behaviors true is sent", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.GetUsageExperimental(ctx, GetUsageOptions{
+				SkipBehaviors: true,
+			})
+			return err
+		})
+		require.NoError(t, err)
+
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1","request":{"subtype":"get_usage","skip_behaviors":true}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+	})
+
+	t.Run("false omits the key", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.GetUsageExperimental(ctx)
+			return err
+		})
+		require.NoError(t, err)
+
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1","request":{"subtype":"get_usage"}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+	})
+}
