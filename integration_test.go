@@ -1913,6 +1913,51 @@ func TestIntegrationStreamFileAndRuntime(t *testing.T) {
 		}))
 	})
 
+	t.Run("update_settings", func(t *testing.T) {
+		// The update_settings control subtype lands in Claude Code 2.1.261;
+		// older binaries reject it as an unsupported subtype.
+		skipIfCLIOlderThan(t, "2.1.261")
+
+		// Own cwd so the write target is known and readable. outputStyle is
+		// the only key the CLI writes today; assert it lands on disk rather
+		// than trusting a bare no-error, which would pass even if the write
+		// path silently drifted.
+		tempDir := t.TempDir()
+		opts := append(isolatedClientOptions(t),
+			WithCwd(tempDir),
+			WithSystemPrompt("You are a helpful assistant."),
+		)
+		client, err := NewClient(opts...)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, client.Close()) })
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		stream, err := client.Stream(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, stream.Close()) })
+
+		require.NoError(t, stream.UpdateSettings(ctx, SettingsSourceLocal,
+			map[string]interface{}{"outputStyle": "explanatory"}))
+
+		// The CLI writes local settings under the cwd's .claude dir. Find the
+		// file it touched and confirm our value is in it.
+		var wrote bool
+		_ = filepath.Walk(tempDir, func(p string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() || !strings.HasSuffix(p, ".json") {
+				return nil
+			}
+			if b, rerr := os.ReadFile(p); rerr == nil &&
+				strings.Contains(string(b), "explanatory") {
+				wrote = true
+			}
+			return nil
+		})
+		assert.True(t, wrote,
+			"update_settings did not persist outputStyle under %s", tempDir)
+	})
+
 	t.Run("submit_feedback", func(t *testing.T) {
 		stream, _ := newFileStream(t)
 

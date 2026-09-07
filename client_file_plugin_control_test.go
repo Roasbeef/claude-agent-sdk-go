@@ -471,6 +471,37 @@ func TestStreamApplyFlagSettingsNil(t *testing.T) {
 	)
 }
 
+func TestStreamUpdateSettingsWritesSourceAndSettings(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		return stream.UpdateSettings(ctx, SettingsSourceLocal,
+			map[string]interface{}{"outputStyle": "explanatory"})
+	})
+	require.NoError(t, err)
+
+	assert.JSONEq(t,
+		`{"type":"control_request","request_id":"req_1","request":{"subtype":"update_settings","source":"localSettings","settings":{"outputStyle":"explanatory"}}}`,
+		rawWrittenSDKControlRequest(t, transport),
+	)
+}
+
+// TestStreamUpdateSettingsNil sends an empty settings object rather than
+// omitting the key, matching ApplyFlagSettings; source is always present.
+func TestStreamUpdateSettingsNil(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		return stream.UpdateSettings(ctx, SettingsSourceLocal, nil)
+	})
+	require.NoError(t, err)
+
+	assert.JSONEq(t,
+		`{"type":"control_request","request_id":"req_1","request":{"subtype":"update_settings","source":"localSettings","settings":{}}}`,
+		rawWrittenSDKControlRequest(t, transport),
+	)
+}
+
 // TestStreamApplyFlagSettingsNullValue asserts that a nil interface{} value for
 // a top-level key marshals to JSON null on the wire - the v0.3.150 contract
 // for clearing a key from the flag layer.
