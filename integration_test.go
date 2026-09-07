@@ -3046,6 +3046,56 @@ func TestIntegrationSdkMcpServerTimeout(t *testing.T) {
 			"tool's own %s sleep", toolTimeoutMs, toolSleep)
 }
 
+// TestIntegrationModelUsageThinkingTokens drives a turn that should provoke
+// thinking and, when the CLI reports the v0.3.263 thinkingTokens field,
+// asserts the containment upstream states: the tally is part of outputTokens,
+// not additional to it. CLI 2.1.222 reports no entry with the field, so the
+// test skips after proving usage came back; tracked in INTEGRATION-FOLLOWUPS.md.
+func TestIntegrationModelUsageThinkingTokens(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	var result *ResultMessage
+	for msg := range client.Query(ctx,
+		"Think step by step about why 17 is prime, then answer.") {
+		if m, ok := msg.(ResultMessage); ok {
+			result = &m
+			break
+		}
+	}
+	require.NotNil(t, result, "expected a result message")
+	require.NotEmpty(t, result.ModelUsage, "expected per-model usage")
+
+	var saw bool
+	for model, usage := range result.ModelUsage {
+		if usage.ThinkingTokens == nil {
+			continue
+		}
+		saw = true
+		t.Logf("%s: thinking=%d output=%d", model,
+			*usage.ThinkingTokens, usage.OutputTokens)
+
+		assert.LessOrEqual(t, *usage.ThinkingTokens, usage.OutputTokens,
+			"thinking tokens are counted inside output tokens")
+	}
+
+	if !saw {
+		t.Skip("not triggerable from CLI: this CLI build reports no " +
+			"thinkingTokens on any modelUsage entry")
+	}
+}
+
 // TestIntegrationModelUsageCostBasis asserts the pricing-provenance fields on
 // ModelUsage — costBasis is new in TS SDK v0.3.251, canonicalModel and provider
 // predate it and were never modeled here.

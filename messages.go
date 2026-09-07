@@ -2061,8 +2061,17 @@ type PermissionDenial struct {
 
 // ModelUsage tracks usage statistics per model.
 type ModelUsage struct {
-	InputTokens              int     `json:"inputTokens"`              // Prompt tokens
-	OutputTokens             int     `json:"outputTokens"`             // Completion tokens
+	InputTokens  int `json:"inputTokens"`  // Prompt tokens
+	OutputTokens int `json:"outputTokens"` // Completion tokens
+
+	// ThinkingTokens is the thinking portion of OutputTokens — already
+	// counted there, so adding the two double-counts. It tallies only the
+	// turns that ran on a CLI recording the field: nil when none did, which
+	// is why it is a pointer rather than a zero. A session resumed across
+	// CLI versions therefore carries a partial tally, so it is unsafe as a
+	// denominator against OutputTokens (sdk.d.ts v0.3.263 L1313).
+	ThinkingTokens *int `json:"thinkingTokens,omitempty"`
+
 	CacheReadInputTokens     int     `json:"cacheReadInputTokens"`     // Cache read tokens
 	CacheCreationInputTokens int     `json:"cacheCreationInputTokens"` // Cache creation tokens
 	WebSearchRequests        int     `json:"webSearchRequests"`        // Web search count
