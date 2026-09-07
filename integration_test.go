@@ -3369,3 +3369,63 @@ func TestIntegrationSettingsParityV0_3_251(t *testing.T) {
 	assert.True(t, gotResult,
 		"a stalled managed-settings handshake shows up as no result at all")
 }
+
+// TestIntegrationSettingsModelPickerPricing pushes a curated picker and a
+// contracted price table through the managed tier and completes a turn. Both
+// blocks are nested objects, and an unrecognized member of a managed-settings
+// union stalls the handshake outright rather than being ignored, so a completed
+// turn is evidence the CLI understood the shapes — including behavesAs, which
+// v0.3.263 added inside the picker rows.
+func TestIntegrationSettingsModelPickerPricing(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	replace := false
+	multiplier := 0.85
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithManagedSettings(Settings{
+			ModelPicker: &SettingsModelPicker{
+				Options: []SettingsModelPickerOption{{
+					Model:       "opus",
+					Label:       "Deep work",
+					Description: "Architecture and hard bugs",
+					BehavesAs:   "claude-opus-4-8",
+				}},
+				ReplaceBuiltInOptions: &replace,
+			},
+			ModelPricing: &SettingsModelPricing{
+				Multiplier: &multiplier,
+				Overrides: map[string]SettingsModelPricingRates{
+					"claude-sonnet-4-6": {
+						Input:      3,
+						Output:     15,
+						CacheRead:  0.3,
+						CacheWrite: 3.75,
+					},
+				},
+			},
+		}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var gotResult bool
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(ResultMessage); ok {
+			assert.False(t, m.IsError,
+				"a curated picker and price table must not fail the session: %s",
+				m.Result)
+			gotResult = true
+			break
+		}
+	}
+	assert.True(t, gotResult,
+		"a stalled managed-settings handshake shows up as no result at all")
+}
