@@ -2406,3 +2406,86 @@ func TestSubprocessTransportPluginDeliveryRejectsInvalid(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid plugin delivery")
 	assert.False(t, runner.started)
 }
+
+func TestSubprocessTransportPermissionPrompts(t *testing.T) {
+	tests := []struct {
+		name     string
+		prompts  PermissionPrompts
+		expected []string
+		absent   bool
+	}{
+		{
+			name:     "none",
+			prompts:  PermissionPromptsNone,
+			expected: []string{"--permission-prompts", "none"},
+		},
+		{
+			name:     "host",
+			prompts:  PermissionPromptsHost,
+			expected: []string{"--permission-prompts", "host"},
+		},
+		{
+			// Host is the CLI's own default, so an unset option must not
+			// start pinning it.
+			name:    "unset omits the flag",
+			prompts: "",
+			absent:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+
+			transport := NewSubprocessTransportWithRunner(runner, &Options{
+				PermissionPrompts: tc.prompts,
+			})
+
+			require.NoError(t, transport.Connect(context.Background()))
+			defer transport.Close()
+
+			if tc.absent {
+				assert.NotContains(t, runner.StartArgs, "--permission-prompts")
+				return
+			}
+			assert.Subset(t, runner.StartArgs, tc.expected)
+		})
+	}
+}
+
+// "none" is precisely what tells the CLI to stop short of the prompt tool, so
+// it must still be sent when a callback is registered. Dropping it would leave
+// the callback wired up and the session waiting on an answer nobody will give.
+func TestSubprocessTransportPermissionPromptsNoneWithCallback(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	transport := NewSubprocessTransportWithRunner(runner, &Options{
+		PermissionPrompts: PermissionPromptsNone,
+		CanUseTool: func(
+			ctx context.Context, req ToolPermissionRequest,
+		) PermissionResult {
+			return PermissionAllow{}
+		},
+	})
+
+	require.NoError(t, transport.Connect(context.Background()))
+	defer transport.Close()
+
+	assert.Subset(t, runner.StartArgs,
+		[]string{"--permission-prompts", "none"})
+	assert.Subset(t, runner.StartArgs,
+		[]string{"--permission-prompt-tool", "stdio"})
+}
+
+func TestSubprocessTransportPermissionPromptsRejectsInvalid(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+
+	transport := NewSubprocessTransportWithRunner(runner, &Options{
+		PermissionPrompts: PermissionPrompts("sometimes"),
+	})
+
+	err := transport.Connect(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid permission prompts")
+	assert.False(t, runner.started)
+}

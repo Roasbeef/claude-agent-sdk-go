@@ -73,6 +73,21 @@ type Options struct {
 	// Return PermissionAllow to proceed or PermissionDeny to block.
 	CanUseTool CanUseToolFunc
 
+	// PermissionPrompts says who answers permission prompts. Empty means
+	// PermissionPromptsHost.
+	//
+	// PermissionPromptsNone does not loosen anything: the permission mode
+	// (including auto mode's classifier), the rules and the hooks all still
+	// decide as they would otherwise. It removes only the fallback — a call
+	// that would have prompted is denied at once, and Claude is told the
+	// session has no approval surface rather than being left to wait.
+	//
+	// It overrides CanUseTool rather than conflicting with it: the callback is
+	// never invoked under PermissionPromptsNone. Setting both is legitimate
+	// for a host that installs a callback globally and suppresses prompting
+	// for one unattended session (sdk.d.ts v0.3.263 L1836).
+	PermissionPrompts PermissionPrompts
+
 	// OnElicitation handles MCP server requests for user input.
 	OnElicitation OnElicitationFunc
 
@@ -1744,6 +1759,15 @@ func WithCanUseTool(fn CanUseToolFunc) Option {
 	}
 }
 
+// WithPermissionPrompts sets who answers permission prompts.
+// PermissionPromptsNone denies anything that would prompt and never invokes
+// Options.CanUseTool. See Options.PermissionPrompts.
+func WithPermissionPrompts(prompts PermissionPrompts) Option {
+	return func(o *Options) {
+		o.PermissionPrompts = prompts
+	}
+}
+
 // WithOnElicitation registers a callback that handles MCP elicitation requests.
 //
 // If unset, the SDK auto-declines all elicitation requests.
@@ -1964,6 +1988,28 @@ const (
 
 	// PermissionModeDontAsk runs without asking for permission prompts.
 	PermissionModeDontAsk PermissionMode = "dontAsk"
+)
+
+// PermissionPrompts says who answers permission prompts for a session.
+//
+// This is orthogonal to PermissionMode, which is easy to miss because
+// PermissionModeDontAsk sounds like the same thing. The mode participates in
+// the decision — dontAsk denies whatever is not pre-approved. PermissionPrompts
+// instead describes whether an approval surface exists at all, and applies
+// whichever mode is in force.
+type PermissionPrompts string
+
+const (
+	// PermissionPromptsHost answers prompts in this process, through
+	// Options.CanUseTool or a named permission prompt tool. It is the default.
+	PermissionPromptsHost PermissionPrompts = "host"
+
+	// PermissionPromptsNone leaves nobody to ask. Modes, rules and hooks still
+	// decide; only the prompt fallback is gone, so a call that would have
+	// prompted is denied immediately and Claude is told the session has no
+	// approval surface rather than being left waiting on an answer that cannot
+	// come.
+	PermissionPromptsNone PermissionPrompts = "none"
 )
 
 // CanUseToolFunc is a callback invoked before tool execution.

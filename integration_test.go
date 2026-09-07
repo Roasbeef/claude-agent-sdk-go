@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -3575,6 +3576,30 @@ func compareDottedVersions(a, b string) int {
 	return 0
 }
 
+// skipIfCLILacksFlag skips when the installed CLI does not recognize a flag.
+//
+// The probe passes a deliberately invalid value, which makes both outcomes
+// fail during option parsing — before any API call — and lets the error text
+// tell them apart: an unrecognized flag reports "unknown option", while a
+// recognized one complains about the argument. Cheaper and more precise than
+// letting the real test hang until its context expires.
+func skipIfCLILacksFlag(t *testing.T, flag string) {
+	t.Helper()
+
+	path, err := DiscoverCLIPath(&Options{})
+	if err != nil {
+		t.Skip("claude CLI not found in PATH")
+	}
+
+	cmd := exec.Command(path, flag, "__probe__", "-p", "x")
+	cmd.Stdin = strings.NewReader("")
+	out, _ := cmd.CombinedOutput()
+
+	if strings.Contains(string(out), "unknown option '"+flag+"'") {
+		t.Skipf("CLI does not support %s", flag)
+	}
+}
+
 // awaitInitializeMinCLI is the first Claude Code release that understands
 // --await-initialize. An older binary exits at startup with an unknown-option
 // error (sdk.d.ts v0.3.263 L1885).
@@ -3670,4 +3695,55 @@ func TestCompareDottedVersions(t *testing.T) {
 			assert.Equal(t, tc.want, compareDottedVersions(tc.a, tc.b))
 		})
 	}
+}
+
+// TestIntegrationPermissionPromptsNone asserts that a session declared to have
+// no approval surface denies a call that would otherwise prompt, without ever
+// invoking the callback.
+//
+// A tool that is not pre-approved is the only way to reach the prompt path, so
+// the test asks for a Bash command under the default permission mode and
+// expects a denial rather than a hang.
+func TestIntegrationPermissionPromptsNone(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLILacksFlag(t, "--permission-prompts")
+
+	var callbackInvocations atomic.Int32
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithAllowedTools([]string{"Bash"}),
+		WithPermissionPrompts(PermissionPromptsNone),
+		WithCanUseTool(func(
+			ctx context.Context, req ToolPermissionRequest,
+		) PermissionResult {
+			callbackInvocations.Add(1)
+			return PermissionAllow{}
+		}),
+		WithMaxTurns(2),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var result ResultMessage
+	var gotResult bool
+	for msg := range client.Query(ctx,
+		"Run the shell command `echo hello` using the Bash tool.") {
+		if m, ok := msg.(ResultMessage); ok {
+			result = m
+			gotResult = true
+			break
+		}
+	}
+
+	require.True(t, gotResult, "no result message")
+	assert.Zero(t, callbackInvocations.Load(),
+		"the callback must never run when the session has no approval surface")
+	assert.NotEmpty(t, result.PermissionDenials,
+		"a tool call that would have prompted must be denied outright, not "+
+			"silently allowed; result: %s", result.Result)
 }
