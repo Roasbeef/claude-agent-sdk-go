@@ -170,6 +170,12 @@ type SDKControlReloadSkillsResponse struct {
 	Skills []SlashCommand `json:"skills"`
 }
 
+// SDKControlReloadOutputStylesResponse reports the output style names after a
+// reload — built-in and custom, in the order the initialize response lists them.
+type SDKControlReloadOutputStylesResponse struct {
+	AvailableOutputStyles []string `json:"available_output_styles"`
+}
+
 // PluginInfo describes a plugin loaded by the CLI.
 type PluginInfo struct {
 	Name string `json:"name"`
