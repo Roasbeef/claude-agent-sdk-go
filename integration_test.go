@@ -2085,6 +2085,19 @@ func TestIntegrationBackgroundTasks(t *testing.T) {
 	assert.True(t, gotResult, "expected final result")
 }
 
+// TestIntegrationMcpResourceLinks is a slot for the resource_links field on a
+// task_notification. It only populates for a backgrounded mcp_task whose final
+// result carries resource_link content blocks — which needs an MCP server that
+// returns files by reference plus the task being backgrounded, a fixture the
+// standard integration run cannot stand up. The parse path is covered by the
+// unit test; tracked in INTEGRATION-FOLLOWUPS.md.
+func TestIntegrationMcpResourceLinks(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	t.Skip("not triggerable from CLI: resource_links needs a backgrounded " +
+		"mcp_task returning resource_link blocks; parse covered by unit test")
+}
+
 // TestIntegrationSettingsOptions is a slot for the PR 22 settings option
 // surface. The transport unit tests assert exact --settings and
 // --managed-settings argv emission; a live assertion needs a CLI-supported

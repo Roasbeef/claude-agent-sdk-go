@@ -3260,6 +3260,59 @@ func TestParseMessageTaskNotification(t *testing.T) {
 			},
 		},
 		{
+			name: "mcp_task with resource_links",
+			input: `{
+				"type": "system",
+				"subtype": "task_notification",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0TJ",
+				"tool_use_id": "toolu_01J8Z8Y2X3K4M5N6P7Q8R9S0TK",
+				"status": "completed",
+				"output_file": "/tmp/claude-task-output.md",
+				"summary": "Export finished",
+				"resource_links": [
+					{
+						"uri": "file:///tmp/report.pdf",
+						"name": "report.pdf",
+						"title": "Q3 Report",
+						"description": "Quarterly numbers",
+						"mimeType": "application/pdf",
+						"size": 20481,
+						"annotations": {"audience": ["user"]}
+					},
+					{
+						"uri": "file:///tmp/empty.txt",
+						"name": "empty.txt",
+						"size": 0
+					}
+				],
+				"uuid": "550e8400-e29b-41d4-a716-446655440021",
+				"session_id": "sess_task_123"
+			}`,
+			wantStatus: TaskNotificationStatusCompleted,
+			check: func(t *testing.T, taskMsg TaskNotificationMessage) {
+				t.Helper()
+				require.Len(t, taskMsg.ResourceLinks, 2)
+
+				first := taskMsg.ResourceLinks[0]
+				assert.Equal(t, "file:///tmp/report.pdf", first.URI)
+				assert.Equal(t, "report.pdf", first.Name)
+				assert.Equal(t, "Q3 Report", first.Title)
+				assert.Equal(t, "Quarterly numbers", first.Description)
+				assert.Equal(t, "application/pdf", first.MimeType)
+				require.NotNil(t, first.Size)
+				assert.Equal(t, 20481, *first.Size)
+				assert.Equal(t, []interface{}{"user"},
+					first.Annotations["audience"])
+
+				// A zero-byte link must stay distinguishable from an absent
+				// size, which is why Size is a pointer.
+				second := taskMsg.ResourceLinks[1]
+				require.NotNil(t, second.Size)
+				assert.Equal(t, 0, *second.Size)
+				assert.Empty(t, second.Title)
+			},
+		},
+		{
 			name: "failed without usage",
 			input: `{
 				"type": "system",
@@ -3277,6 +3330,7 @@ func TestParseMessageTaskNotification(t *testing.T) {
 				assert.Empty(t, taskMsg.ToolUseID)
 				assert.Nil(t, taskMsg.Usage)
 				assert.Nil(t, taskMsg.SkipTranscript)
+				assert.Nil(t, taskMsg.ResourceLinks)
 			},
 		},
 		{

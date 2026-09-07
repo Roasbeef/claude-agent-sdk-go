@@ -1409,6 +1409,17 @@ type TaskNotificationMessage struct {
 	OutputFile string                 `json:"output_file"`           // Output file path
 	Summary    string                 `json:"summary"`               // Task summary
 	Usage      *TaskUsage             `json:"usage,omitempty"`       // Resource consumption
+	// ResourceLinks carries the resource_link content blocks of a
+	// backgrounded MCP task's final result — the files it returned by
+	// reference. A backgrounded task's tool_result is placeholder text and
+	// its real result arrives here, so this is where a host learns which
+	// files the call produced; join to the originating call via ToolUseID.
+	//
+	// Same caps as the inline tool result: at most 50 links, 64 KiB
+	// serialized. Absent when the result had none or the task is not an
+	// mcp_task, and never populated from the server's _meta (sdk.d.ts
+	// v0.3.263 L5225).
+	ResourceLinks []SDKMcpResourceLink `json:"resource_links,omitempty"`
 	// SkipTranscript asks consumers to hide this task from the inline
 	// transcript; it may still appear in a tasks panel. See Ambient, which
 	// covers every SkipTranscript task and more.
@@ -1425,6 +1436,20 @@ type TaskNotificationMessage struct {
 	Ambient   *bool  `json:"ambient,omitempty"`
 	UUID      string `json:"uuid"`       // Unique message ID
 	SessionID string `json:"session_id"` // Session identifier
+}
+
+// SDKMcpResourceLink is a file an MCP tool returned by reference rather than
+// inline — the resource_link content block shape. Size is a pointer so a link
+// that reports a zero-byte file is distinguishable from one that omits the
+// field (sdk.d.ts v0.3.263 L4629).
+type SDKMcpResourceLink struct {
+	URI         string                 `json:"uri"`
+	Name        string                 `json:"name"`
+	Title       string                 `json:"title,omitempty"`
+	Description string                 `json:"description,omitempty"`
+	MimeType    string                 `json:"mimeType,omitempty"`
+	Size        *int                   `json:"size,omitempty"`
+	Annotations map[string]interface{} `json:"annotations,omitempty"`
 }
 
 // MessageType implements Message.
