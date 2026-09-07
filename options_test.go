@@ -2270,3 +2270,125 @@ func TestSettingsSpinnerTipsOverrideFileOnly(t *testing.T) {
 	require.NoError(t, err)
 	assert.JSONEq(t, `{"tipsFile": "~/.claude/tips.json"}`, string(data))
 }
+
+func TestSettingsModelPickerRoundTrip(t *testing.T) {
+	replace := true
+
+	settings := Settings{
+		ModelPicker: &SettingsModelPicker{
+			Options: []SettingsModelPickerOption{
+				{
+					Model:       "opus",
+					Label:       "Deep work",
+					Description: "Architecture and hard bugs",
+				},
+				{
+					Model:     "vendor/some-unreleased-model",
+					Label:     "Preview",
+					BehavesAs: "claude-opus-4-8",
+				},
+			},
+			ReplaceBuiltInOptions: &replace,
+		},
+	}
+
+	data, err := json.Marshal(settings)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	picker, ok := got["modelPicker"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, true, picker["replaceBuiltInOptions"])
+
+	rows, ok := picker["options"].([]interface{})
+	require.True(t, ok)
+	require.Len(t, rows, 2)
+
+	// The first row carries no behavesAs, so it must not appear at all: an
+	// empty string there would name a model the CLI cannot resolve.
+	first, ok := rows[0].(map[string]interface{})
+	require.True(t, ok)
+	assert.NotContains(t, first, "behavesAs")
+
+	second, ok := rows[1].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "claude-opus-4-8", second["behavesAs"])
+	assert.NotContains(t, second, "description")
+
+	var back Settings
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, settings, back)
+}
+
+// options is required upstream, so a picker with no rows still has to emit the
+// key rather than dropping it and reading as "no picker configured".
+func TestSettingsModelPickerEmptyOptionsEmitted(t *testing.T) {
+	data, err := json.Marshal(SettingsModelPicker{})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"options": null}`, string(data))
+}
+
+func TestSettingsModelPricingRoundTrip(t *testing.T) {
+	multiplier := 0.85
+
+	settings := Settings{
+		ModelPricing: &SettingsModelPricing{
+			Multiplier: &multiplier,
+			Overrides: map[string]SettingsModelPricingRates{
+				"claude-sonnet-4-6": {
+					Input:      3,
+					Output:     15,
+					CacheRead:  0.3,
+					CacheWrite: 3.75,
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(settings)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	pricing, ok := got["modelPricing"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, 0.85, pricing["multiplier"])
+
+	overrides, ok := pricing["overrides"].(map[string]interface{})
+	require.True(t, ok)
+	row, ok := overrides["claude-sonnet-4-6"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, float64(3), row["input"])
+	assert.Equal(t, float64(15), row["output"])
+	assert.Equal(t, 0.3, row["cacheRead"])
+	assert.Equal(t, 3.75, row["cacheWrite"])
+
+	var back Settings
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, settings, back)
+}
+
+// A free model prices at zero across the board. Because the four rates are
+// required upstream, they must survive the round trip rather than being elided
+// as Go zero values and leaving the CLI to read the row as incomplete.
+func TestSettingsModelPricingZeroRatesSurvive(t *testing.T) {
+	data, err := json.Marshal(SettingsModelPricingRates{})
+	require.NoError(t, err)
+	assert.JSONEq(t,
+		`{"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}`,
+		string(data))
+}
+
+func TestSettingsModelPickerPricingOmitEmpty(t *testing.T) {
+	data, err := json.Marshal(Settings{})
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.NotContains(t, got, "modelPicker")
+	assert.NotContains(t, got, "modelPricing")
+}

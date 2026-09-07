@@ -376,19 +376,38 @@ type Settings struct {
 	// plugins load like ones installed locally, except that a locally
 	// installed plugin of the same name wins, and they re-sync at each launch
 	// rather than on a timer (sdk.d.ts v0.3.251 L5607).
-	SyncClaudeAiPlugins        *bool                            `json:"syncClaudeAiPlugins,omitempty"`
-	SkillListingMaxDescChars   *int                             `json:"skillListingMaxDescChars,omitempty"`
-	SkillListingBudgetFraction *float64                         `json:"skillListingBudgetFraction,omitempty"`
-	WSLInheritsWindowsSettings *bool                            `json:"wslInheritsWindowsSettings,omitempty"`
-	Env                        map[string]string                `json:"env,omitempty"`
-	Attribution                *SettingsAttribution             `json:"attribution,omitempty"`
-	IncludeCoAuthoredBy        *bool                            `json:"includeCoAuthoredBy,omitempty"`
-	IncludeGitInstructions     *bool                            `json:"includeGitInstructions,omitempty"`
-	Permissions                *SettingsPermissions             `json:"permissions,omitempty"`
-	Model                      string                           `json:"model,omitempty"`
-	FallbackModel              []string                         `json:"fallbackModel,omitempty"`
-	AvailableModels            []string                         `json:"availableModels,omitempty"`
-	ModelOverrides             map[string]string                `json:"modelOverrides,omitempty"`
+	SyncClaudeAiPlugins        *bool                `json:"syncClaudeAiPlugins,omitempty"`
+	SkillListingMaxDescChars   *int                 `json:"skillListingMaxDescChars,omitempty"`
+	SkillListingBudgetFraction *float64             `json:"skillListingBudgetFraction,omitempty"`
+	WSLInheritsWindowsSettings *bool                `json:"wslInheritsWindowsSettings,omitempty"`
+	Env                        map[string]string    `json:"env,omitempty"`
+	Attribution                *SettingsAttribution `json:"attribution,omitempty"`
+	IncludeCoAuthoredBy        *bool                `json:"includeCoAuthoredBy,omitempty"`
+	IncludeGitInstructions     *bool                `json:"includeGitInstructions,omitempty"`
+	Permissions                *SettingsPermissions `json:"permissions,omitempty"`
+	Model                      string               `json:"model,omitempty"`
+	FallbackModel              []string             `json:"fallbackModel,omitempty"`
+	AvailableModels            []string             `json:"availableModels,omitempty"`
+	ModelOverrides             map[string]string    `json:"modelOverrides,omitempty"`
+	// ModelPicker curates the /model picker with an ordered list of rows,
+	// independent of the built-in lineup and of Claude Code releases.
+	// AvailableModels still filters these rows. Honored from managed,
+	// --settings/SDK and user settings only — never from a project checkout —
+	// and the highest-precedence source that defines it wins outright, with no
+	// merging across sources (sdk.d.ts v0.3.263 L5921).
+	ModelPicker *SettingsModelPicker `json:"modelPicker,omitempty"`
+	// ModelPricing prices usage at the organization's contracted rates rather
+	// than list price, moving every spend figure Claude Code reports — /cost,
+	// the status line, ResultMessage.TotalCostUSD, --max-budget-usd and the
+	// OpenTelemetry cost metric. They stay USD estimates, not an invoice, and
+	// the per-Mtok labels in /model stay at list price.
+	//
+	// This is what drives ModelUsage.CostBasis to ModelCostBasisManaged, and
+	// the model-switch hooks' pricing field to "configured". Honored only from
+	// managed settings, or — when no managed source sets it — from a host
+	// application that manages the model provider; ignored in user, project,
+	// local and --settings sources (sdk.d.ts v0.3.263 L5951).
+	ModelPricing               *SettingsModelPricing            `json:"modelPricing,omitempty"`
 	EnableAllProjectMCPServers *bool                            `json:"enableAllProjectMcpServers,omitempty"`
 	EnabledMCPJSONServers      []string                         `json:"enabledMcpjsonServers,omitempty"`
 	DisabledMCPJSONServers     []string                         `json:"disabledMcpjsonServers,omitempty"`
@@ -875,6 +894,72 @@ type SettingsModel struct {
 	// EffortLevel is the persisted effort level for this model. Unlike the
 	// init message's applied effort, "max" is not a member here.
 	EffortLevel EffortLevel `json:"effortLevel,omitempty"`
+}
+
+// SettingsModelPicker curates the rows shown in the /model picker.
+type SettingsModelPicker struct {
+	// Options are the picker rows, in the order they are shown.
+	Options []SettingsModelPickerOption `json:"options"`
+
+	// ReplaceBuiltInOptions shows only the Default row and Options, hiding the
+	// built-in lineup, gateway-discovered models and
+	// ANTHROPIC_CUSTOM_MODEL_OPTION. When false or unset, Options are appended
+	// after the built-in lineup.
+	ReplaceBuiltInOptions *bool `json:"replaceBuiltInOptions,omitempty"`
+}
+
+// SettingsModelPickerOption is one row of a curated /model picker.
+type SettingsModelPickerOption struct {
+	// Model is the model to select, taken verbatim — an alias ("opus"), an
+	// Anthropic model ID, or a provider-format ID for Vertex, Bedrock or a
+	// gateway. Accepts the same values as --model.
+	Model string `json:"model"`
+
+	// Label is the row title. Defaults to the model name.
+	Label string `json:"label,omitempty"`
+
+	// Description is the row subtitle. Defaults to a generic description.
+	Description string `json:"description,omitempty"`
+
+	// BehavesAs names a model this Claude Code version does know (e.g.
+	// "claude-opus-4-8") whose client-side handling — prompt profile,
+	// capability and effort defaults — should apply to a model it does not.
+	// It changes neither the row's label nor the model ID sent. Without it a
+	// row for an unknown model is not offered at all until Claude Code is
+	// updated, which is what makes this the difference between a new model
+	// being selectable today and only after a release (sdk.d.ts v0.3.263
+	// L5941).
+	BehavesAs string `json:"behavesAs,omitempty"`
+}
+
+// SettingsModelPricing prices usage at an organization's contracted rates.
+type SettingsModelPricing struct {
+	// Multiplier scales every computed cost, overridden or not — 0.85 charges
+	// 85% of the price. Must fall in (0, 1].
+	Multiplier *float64 `json:"multiplier,omitempty"`
+
+	// Overrides maps a model ID to its rates. A key Claude Code itself uses
+	// for a built-in model — the plain ID such as "claude-sonnet-4-6", or its
+	// first-party, Bedrock, Vertex or Foundry ID — covers every dated and
+	// provider form of that model. Any other key matches that one model ID
+	// case-insensitively, and such an exact match beats a built-in row. An
+	// invalid row is reported and skipped without disturbing the rest.
+	Overrides map[string]SettingsModelPricingRates `json:"overrides,omitempty"`
+}
+
+// SettingsModelPricingRates is one model's USD-per-million-token rates.
+//
+// All four are required within a row and each must fall in [0, 10000], so they
+// are plain values rather than pointers: a partially filled row is invalid
+// upstream and would be skipped whole.
+type SettingsModelPricingRates struct {
+	Input     float64 `json:"input"`
+	Output    float64 `json:"output"`
+	CacheRead float64 `json:"cacheRead"`
+
+	// CacheWrite prices both 5-minute and 1-hour cache writes, so a Settings
+	// author cannot price Settings.PromptCacheTTL's two tiers apart.
+	CacheWrite float64 `json:"cacheWrite"`
 }
 
 // SettingsSpellcheck configures prompt-input spell checking. It does nothing
