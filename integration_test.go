@@ -3320,3 +3320,52 @@ func TestIntegrationSessionStartResumeCost(t *testing.T) {
 			"resume-cost fields on the SessionStart hook input")
 	}
 }
+
+// TestIntegrationSettingsParityV0_3_251 pushes the v0.3.251 Settings additions
+// through the managed tier and completes a turn. An unrecognized member of a
+// managed-settings union stalls the handshake outright rather than being
+// ignored, so a completed turn is real evidence the CLI understood the shape —
+// including the reshaped spinnerTipsOverride block.
+func TestIntegrationSettingsParityV0_3_251(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	desktopRetention := 14
+	syncPlugins := false
+	excludeDefault := false
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithManagedSettings(Settings{
+			DesktopSessionCleanupPeriodDays: &desktopRetention,
+			SyncClaudeAiPlugins:             &syncPlugins,
+			ManagedSourcesBehavior:          "merge",
+			PromptCacheTTL:                  CacheTTL1h,
+			SubagentPromptCacheTTL:          CacheTTL5m,
+			SpinnerTipsOverride: &SettingsSpinnerTipsOverride{
+				ExcludeDefault: &excludeDefault,
+				Tips:           []string{"run make lint before pushing"},
+				Label:          "Ops",
+			},
+		}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var gotResult bool
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(ResultMessage); ok {
+			assert.False(t, m.IsError,
+				"the v0.3.251 settings must not fail the session: %s", m.Result)
+			gotResult = true
+			break
+		}
+	}
+	assert.True(t, gotResult,
+		"a stalled managed-settings handshake shows up as no result at all")
+}
