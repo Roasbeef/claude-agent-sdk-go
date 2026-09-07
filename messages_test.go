@@ -983,6 +983,67 @@ func TestResultMessageTimingFieldsOmitempty(t *testing.T) {
 	assert.NotContains(t, got, "time_to_request_from_spawn_ms")
 	assert.NotContains(t, got, "warm_spare_claimed")
 	assert.NotContains(t, got, "time_origin_ms")
+	assert.NotContains(t, got, "first_content_frame_ms")
+	assert.NotContains(t, got, "first_stream_post_ms")
+	assert.NotContains(t, got, "first_stream_post_ack_ms")
+	assert.NotContains(t, got, "first_stream_post_wall_ms")
+}
+
+// TestParseResultMessageFirstFrameTimings covers the v0.3.263 first-frame
+// timings. They ride the success result only, alongside RequestSentWallMs, and
+// are pointers so a genuine 0ms reading stays distinguishable from a producer
+// that never reported one.
+func TestParseResultMessageFirstFrameTimings(t *testing.T) {
+	input := []byte(`{
+		"type": "result",
+		"status": "success",
+		"subtype": "success",
+		"result": "done",
+		"time_origin_ms": 1763856000000,
+		"first_content_frame_ms": 0,
+		"first_stream_post_ms": 91,
+		"first_stream_post_ack_ms": 118,
+		"first_stream_post_wall_ms": 1763856000091
+	}`)
+
+	msg, err := ParseMessage(input)
+	require.NoError(t, err)
+
+	resultMsg, ok := msg.(ResultMessage)
+	require.True(t, ok)
+
+	require.NotNil(t, resultMsg.FirstContentFrameMs)
+	assert.Equal(t, int64(0), *resultMsg.FirstContentFrameMs)
+	require.NotNil(t, resultMsg.FirstStreamPostMs)
+	assert.Equal(t, int64(91), *resultMsg.FirstStreamPostMs)
+	require.NotNil(t, resultMsg.FirstStreamPostAckMs)
+	assert.Equal(t, int64(118), *resultMsg.FirstStreamPostAckMs)
+
+	// The wall variant is an absolute epoch stamp, not an offset, so it does
+	// not shrink to the same scale as the three relative readings.
+	require.NotNil(t, resultMsg.FirstStreamPostWallMs)
+	assert.Equal(t, int64(1763856000091), *resultMsg.FirstStreamPostWallMs)
+}
+
+// TestParseResultMessageFirstFrameTimingsAbsent pins the error-result shape:
+// upstream declares these on the success variant only, and Go models both as
+// one struct, so a caller must be able to tell absent from zero.
+func TestParseResultMessageFirstFrameTimingsAbsent(t *testing.T) {
+	input := []byte(`{
+		"type": "result",
+		"subtype": "error_during_execution",
+		"is_error": true
+	}`)
+
+	msg, err := ParseMessage(input)
+	require.NoError(t, err)
+
+	resultMsg, ok := msg.(ResultMessage)
+	require.True(t, ok)
+	assert.Nil(t, resultMsg.FirstContentFrameMs)
+	assert.Nil(t, resultMsg.FirstStreamPostMs)
+	assert.Nil(t, resultMsg.FirstStreamPostAckMs)
+	assert.Nil(t, resultMsg.FirstStreamPostWallMs)
 }
 
 func TestResultMessageTimingFieldsExplicitFalse(t *testing.T) {
