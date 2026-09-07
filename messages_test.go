@@ -4989,6 +4989,78 @@ func TestModelUsagePricingProvenanceRoundTrip(t *testing.T) {
 	assert.Equal(t, usage, decoded)
 }
 
+// TestModelUsageThinkingTokens pins the two things a caller can get wrong
+// about the v0.3.263 field: it is contained in OutputTokens rather than
+// additional to it, and absent is not zero.
+func TestModelUsageThinkingTokens(t *testing.T) {
+	t.Run("counted inside outputTokens", func(t *testing.T) {
+		var decoded ModelUsage
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"inputTokens": 100,
+			"outputTokens": 500,
+			"thinkingTokens": 320,
+			"cacheReadInputTokens": 0,
+			"cacheCreationInputTokens": 0,
+			"webSearchRequests": 0,
+			"costUSD": 0.02,
+			"contextWindow": 200000,
+			"maxOutputTokens": 32000
+		}`), &decoded))
+
+		require.NotNil(t, decoded.ThinkingTokens)
+		assert.Equal(t, 320, *decoded.ThinkingTokens)
+
+		// The thinking tally is a subset of the output tally, never a
+		// sibling to be summed with it.
+		assert.LessOrEqual(t, *decoded.ThinkingTokens, decoded.OutputTokens)
+	})
+
+	t.Run("absent when no turn recorded it", func(t *testing.T) {
+		var decoded ModelUsage
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"inputTokens": 100,
+			"outputTokens": 500,
+			"cacheReadInputTokens": 0,
+			"cacheCreationInputTokens": 0,
+			"webSearchRequests": 0,
+			"costUSD": 0.02,
+			"contextWindow": 200000,
+			"maxOutputTokens": 32000
+		}`), &decoded))
+
+		// Nil, not zero: a model that recorded no thinking tokens and a CLI
+		// that never reported them are different claims.
+		assert.Nil(t, decoded.ThinkingTokens)
+	})
+
+	t.Run("zero is not absent", func(t *testing.T) {
+		var decoded ModelUsage
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"inputTokens": 100,
+			"outputTokens": 500,
+			"thinkingTokens": 0,
+			"cacheReadInputTokens": 0,
+			"cacheCreationInputTokens": 0,
+			"webSearchRequests": 0,
+			"costUSD": 0.02,
+			"contextWindow": 200000,
+			"maxOutputTokens": 32000
+		}`), &decoded))
+
+		require.NotNil(t, decoded.ThinkingTokens)
+		assert.Equal(t, 0, *decoded.ThinkingTokens)
+	})
+
+	t.Run("omitted from the wire when nil", func(t *testing.T) {
+		data, err := json.Marshal(ModelUsage{InputTokens: 1, OutputTokens: 2})
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "thinkingTokens")
+	})
+}
+
 // A CLI that predates the field, or one that has not yet priced a request for
 // the model, sends neither key. Both decode empty, and callers are told to
 // read that as list pricing.
