@@ -1958,6 +1958,24 @@ func TestIntegrationStreamFileAndRuntime(t *testing.T) {
 			"update_settings did not persist outputStyle under %s", tempDir)
 	})
 
+	t.Run("reload_output_styles", func(t *testing.T) {
+		// The reload_output_styles control subtype lands in Claude Code
+		// 2.1.261; older binaries reject it as an unsupported subtype.
+		skipIfCLIOlderThan(t, "2.1.261")
+
+		stream, _ := newFileStream(t)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		resp, err := stream.ReloadOutputStyles(ctx)
+		require.NoError(t, err)
+		require.NotNil(t, resp)
+		// Built-ins are always present, so the refreshed list is never empty.
+		assert.NotEmpty(t, resp.AvailableOutputStyles,
+			"reload must return at least the built-in output styles")
+	})
+
 	t.Run("submit_feedback", func(t *testing.T) {
 		stream, _ := newFileStream(t)
 

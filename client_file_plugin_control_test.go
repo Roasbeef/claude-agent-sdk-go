@@ -440,6 +440,44 @@ func TestStreamReloadSkillsCancelledContext(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
+func TestStreamReloadOutputStylesRoundTrip(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(
+		successSDKControlResponseWithPayload(map[string]interface{}{
+			"available_output_styles": []interface{}{
+				"default", "explanatory", "learning", "my-custom",
+			},
+		}),
+	)
+
+	var got *SDKControlReloadOutputStylesResponse
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		var err error
+		got, err = stream.ReloadOutputStyles(ctx)
+		return err
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.Equal(t,
+		[]string{"default", "explanatory", "learning", "my-custom"},
+		got.AvailableOutputStyles)
+
+	assert.JSONEq(t,
+		`{"type":"control_request","request_id":"req_1","request":{"subtype":"reload_output_styles"}}`,
+		rawWrittenSDKControlRequest(t, transport),
+	)
+}
+
+func TestStreamReloadOutputStylesErrorResponse(t *testing.T) {
+	stream, _, _ := newStreamControlTest(controlErrorResponse("reload output styles failed"))
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		_, err := stream.ReloadOutputStyles(ctx)
+		return err
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reload output styles failed")
+}
+
 func TestStreamApplyFlagSettingsNonEmpty(t *testing.T) {
 	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
 

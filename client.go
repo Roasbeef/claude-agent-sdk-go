@@ -1171,6 +1171,32 @@ func (s *Stream) ReloadSkills(
 	return &out, nil
 }
 
+// ReloadOutputStyles asks the running CLI to rescan its output-style
+// directories and returns the refreshed names, built-in and custom.
+//
+// The reload also drops the shared markdown-file scan cache, so agents, skills
+// and routines re-read their directories on next use — a wider effect than the
+// name suggests. Only available in streaming input mode.
+func (s *Stream) ReloadOutputStyles(
+	ctx context.Context,
+) (*SDKControlReloadOutputStylesResponse, error) {
+	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "reload_output_styles",
+	})
+	if err != nil {
+		return nil, err
+	}
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return nil, fmt.Errorf("reload_output_styles: marshal: %w", err)
+	}
+	var out SDKControlReloadOutputStylesResponse
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return nil, fmt.Errorf("reload_output_styles: unmarshal: %w", err)
+	}
+	return &out, nil
+}
+
 // ApplyFlagSettings merges the provided settings into the flag settings layer,
 // updating the active configuration. Top-level keys are shallow-merged by the
 // CLI across successive calls and fall back to lower-precedence sources when
