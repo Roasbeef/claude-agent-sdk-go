@@ -660,6 +660,7 @@ type SDKControlRequestBody struct {
 	JSONSchema             map[string]interface{}              `json:"jsonSchema,omitempty"`             // For initialize
 	SystemPrompt           string                              `json:"systemPrompt,omitempty"`           // For initialize
 	AppendSystemPrompt     string                              `json:"appendSystemPrompt,omitempty"`     // For initialize
+	SystemPromptSnapshot   *bool                               `json:"systemPromptSnapshot,omitempty"`   // For initialize
 	PlanModeInstructions   string                              `json:"planModeInstructions,omitempty"`   // For initialize
 	ExcludeDynamicSections *bool                               `json:"excludeDynamicSections,omitempty"` // For initialize
 	Agents                 map[string]interface{}              `json:"agents,omitempty"`                 // For initialize

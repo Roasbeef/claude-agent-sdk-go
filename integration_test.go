@@ -3847,3 +3847,56 @@ func TestIntegrationSystemPromptPresetAppend(t *testing.T) {
 		"the preset append never reached the model; reply was %q",
 		reply.String())
 }
+
+// TestIntegrationSystemPromptSnapshot asserts the CLI accepts a snapshotted
+// system prompt in the initialize handshake and still runs the turn. The
+// snapshot's real effect — a prompt cached once and replayed verbatim across
+// requests — is not observable from a single query, so this guards the wire
+// contract instead: an unknown field in the initialize request stalls the
+// handshake for the full timeout, and pairing snapshot with a preset append
+// confirms the append still lands while snapshotting is on.
+func TestIntegrationSystemPromptSnapshot(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	const marker = "QUASAR3"
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPromptPreset("claude_code", fmt.Sprintf(
+			"The deployment codeword for this session is %s. "+
+				"When asked for the deployment codeword, reply with it.",
+			marker)),
+		WithSystemPromptSnapshot(true),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var reply strings.Builder
+	var gotResult bool
+	for msg := range client.Query(ctx, "What is the deployment codeword?") {
+		switch m := msg.(type) {
+		case AssistantMessage:
+			for _, block := range m.Message.Content {
+				if block.Type == "text" {
+					reply.WriteString(block.Text)
+				}
+			}
+		case ResultMessage:
+			assert.False(t, m.IsError, "session failed: %s", m.Result)
+			gotResult = true
+		}
+		if gotResult {
+			break
+		}
+	}
+
+	require.True(t, gotResult, "no result message")
+	assert.Contains(t, reply.String(), marker,
+		"snapshotting broke the preset append or stalled the handshake; "+
+			"reply was %q", reply.String())
+}
