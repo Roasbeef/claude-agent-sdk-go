@@ -2392,3 +2392,85 @@ func TestSettingsModelPickerPricingOmitEmpty(t *testing.T) {
 	assert.NotContains(t, got, "modelPicker")
 	assert.NotContains(t, got, "modelPricing")
 }
+
+func TestSettingsParityV0_3_263(t *testing.T) {
+	blockOutsideReads := true
+	bashChars := 64000
+	taskChars := 8000
+
+	settings := Settings{
+		Permissions: &SettingsPermissions{
+			BlockReadsOutsideWorkingDirectories: &blockOutsideReads,
+		},
+		BashOutputMaxChars: &bashChars,
+		TaskOutputMaxChars: &taskChars,
+		TimeFormat:         SettingsTimeFormat24HourUTC,
+		TimeZone:           "Europe/Dublin",
+		ManagedMCPServers: map[string]map[string]interface{}{
+			"corp-docs": {
+				"type": "http",
+				"url":  "https://mcp.example.com/docs",
+			},
+		},
+	}
+
+	data, err := json.Marshal(settings)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	perms, ok := got["permissions"].(map[string]interface{})
+	require.True(t, ok)
+	// Nested in the permissions block, not top-level — the one placement
+	// this field is easy to get wrong.
+	assert.Equal(t, true, perms["blockReadsOutsideWorkingDirectories"])
+	assert.NotContains(t, got, "blockReadsOutsideWorkingDirectories")
+
+	assert.Equal(t, float64(64000), got["bashOutputMaxChars"])
+	assert.Equal(t, float64(8000), got["taskOutputMaxChars"])
+	assert.Equal(t, "24-hour-utc", got["timeFormat"])
+	assert.Equal(t, "Europe/Dublin", got["timeZone"])
+
+	servers, ok := got["managedMcpServers"].(map[string]interface{})
+	require.True(t, ok)
+	entry, ok := servers["corp-docs"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "http", entry["type"])
+
+	var back Settings
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, settings, back)
+}
+
+// TimeFormat is a union of four presets with plain string, so a strftime
+// pattern has to survive the round trip. A closed enum could not carry one.
+func TestSettingsTimeFormatAcceptsStrftimePattern(t *testing.T) {
+	data, err := json.Marshal(Settings{
+		TimeFormat: SettingsTimeFormat("%Y-%m-%d %H:%M"),
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"timeFormat": "%Y-%m-%d %H:%M"}`, string(data))
+
+	var back Settings
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, SettingsTimeFormat("%Y-%m-%d %H:%M"), back.TimeFormat)
+}
+
+func TestSettingsParityV0_3_263OmitEmpty(t *testing.T) {
+	data, err := json.Marshal(Settings{})
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	for _, key := range []string{
+		"bashOutputMaxChars",
+		"taskOutputMaxChars",
+		"timeFormat",
+		"timeZone",
+		"managedMcpServers",
+	} {
+		assert.NotContains(t, got, key)
+	}
+}
