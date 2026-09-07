@@ -2393,6 +2393,106 @@ exec "$real_cli" "$@"
 		assert.Equal(t, "gateway", got.ForceLoginMethod)
 		assert.Equal(t, want.ForceLoginGatewayURL, got.ForceLoginGatewayURL)
 	})
+
+	// The v0.3.263 adds. These are consumed inside the CLI rather than echoed
+	// back to the SDK, so what is assertable is that they survive the managed
+	// tier intact — including the nesting of the permissions-block member,
+	// which is the placement easy to get wrong.
+	t.Run("v0_3_263_settings", func(t *testing.T) {
+		blockOutsideReads := true
+		bashChars := 64000
+		taskChars := 8000
+
+		want := Settings{
+			Permissions: &SettingsPermissions{
+				BlockReadsOutsideWorkingDirectories: &blockOutsideReads,
+			},
+			BashOutputMaxChars: &bashChars,
+			TaskOutputMaxChars: &taskChars,
+			TimeFormat:         SettingsTimeFormat24HourUTC,
+			TimeZone:           "Europe/Dublin",
+			ManagedMCPServers: map[string]map[string]interface{}{
+				"corp-docs": {
+					"type": "http",
+					"url":  "https://mcp.example.com/docs",
+				},
+			},
+		}
+
+		argv := runWithArgvCapture(t, WithManagedSettings(want))
+		var got Settings
+		require.NoError(t, json.Unmarshal([]byte(argValue(t, argv, "--managed-settings")), &got))
+
+		require.NotNil(t, got.Permissions)
+		require.NotNil(t, got.Permissions.BlockReadsOutsideWorkingDirectories)
+		assert.True(t, *got.Permissions.BlockReadsOutsideWorkingDirectories)
+
+		require.NotNil(t, got.BashOutputMaxChars)
+		assert.Equal(t, bashChars, *got.BashOutputMaxChars)
+		require.NotNil(t, got.TaskOutputMaxChars)
+		assert.Equal(t, taskChars, *got.TaskOutputMaxChars)
+
+		assert.Equal(t, SettingsTimeFormat24HourUTC, got.TimeFormat)
+		assert.Equal(t, "Europe/Dublin", got.TimeZone)
+
+		require.Contains(t, got.ManagedMCPServers, "corp-docs")
+		assert.Equal(t, "http", got.ManagedMCPServers["corp-docs"]["type"])
+	})
+
+	// A strftime pattern is why TimeFormat is an open string type rather than
+	// an enum, so the pattern has to survive the same path the presets do.
+	t.Run("v0_3_263_time_format_pattern", func(t *testing.T) {
+		want := Settings{TimeFormat: SettingsTimeFormat("%Y-%m-%d %H:%M")}
+
+		argv := runWithArgvCapture(t, WithManagedSettings(want))
+		var got Settings
+		require.NoError(t, json.Unmarshal([]byte(argValue(t, argv, "--managed-settings")), &got))
+
+		assert.Equal(t, want.TimeFormat, got.TimeFormat)
+	})
+}
+
+// TestIntegrationSettingsV0_3_263RealCLI checks the bare CLI actually starts on
+// the v0.3.263 settings rather than stalling the managed-settings handshake,
+// which is how an unrecognized nested member fails — it looks like a hang and
+// costs the full timeout rather than erroring.
+func TestIntegrationSettingsV0_3_263RealCLI(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	blockOutsideReads := true
+	bashChars := 64000
+	taskChars := 8000
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+		WithManagedSettings(Settings{
+			Permissions: &SettingsPermissions{
+				BlockReadsOutsideWorkingDirectories: &blockOutsideReads,
+			},
+			BashOutputMaxChars: &bashChars,
+			TaskOutputMaxChars: &taskChars,
+			TimeFormat:         SettingsTimeFormat24HourUTC,
+			TimeZone:           "Europe/Dublin",
+		}),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var result *ResultMessage
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(ResultMessage); ok {
+			result = &m
+			break
+		}
+	}
+	require.NotNil(t, result, "the CLI must start and complete a turn on these settings")
+	assert.False(t, result.IsError, "settings must not fault the run")
 }
 
 func TestIntegrationSettingsManagedOrgFields(t *testing.T) {

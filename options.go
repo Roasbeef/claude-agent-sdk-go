@@ -477,6 +477,21 @@ type Settings struct {
 	DisableAllHooks            *bool                            `json:"disableAllHooks,omitempty"`
 	DisableSkillShellExecution *bool                            `json:"disableSkillShellExecution,omitempty"`
 	DefaultShell               string                           `json:"defaultShell,omitempty"`
+	// BashOutputMaxChars caps how many characters of a successful Bash or
+	// PowerShell command's output Claude receives inline (default 30000,
+	// clamped to 4000-128000). Output past the cap is written to a file and
+	// Claude receives a short preview plus the path. Setting this also
+	// replaces BASH_MAX_OUTPUT_LENGTH, which on its own only sizes the
+	// read-back window (sdk.d.ts v0.3.263 L6298).
+	BashOutputMaxChars *int `json:"bashOutputMaxChars,omitempty"`
+	// TaskOutputMaxChars caps how many characters of a background task's
+	// output the TaskOutput tool hands Claude inline (default 32000, same
+	// 4000-128000 clamp). Longer output is cut to its most recent
+	// characters plus the path of the full output file — except for a shell
+	// command still running, which returns its first characters instead.
+	// Setting this also replaces TASK_MAX_OUTPUT_LENGTH (sdk.d.ts v0.3.263
+	// L6302).
+	TaskOutputMaxChars *int `json:"taskOutputMaxChars,omitempty"`
 	// RespondToBashCommands controls whether Claude responds after an
 	// input-box ! bash command runs. Set to false to add the command output to
 	// context without a response. Default true. Mirrors sdk.d.ts v0.3.195 L5032.
@@ -620,20 +635,32 @@ type Settings struct {
 	// RequiredMinimumVersion prevents startup below the managed minimum version. Honored only from managed (policy) settings. Mirrors sdk.d.ts v0.3.168 L5488.
 	RequiredMinimumVersion string `json:"requiredMinimumVersion,omitempty"`
 	// RequiredMaximumVersion prevents startup above the managed maximum version. Honored only from managed (policy) settings. Mirrors sdk.d.ts v0.3.168 L5492.
-	RequiredMaximumVersion            string                  `json:"requiredMaximumVersion,omitempty"`
-	PlansDirectory                    string                  `json:"plansDirectory,omitempty"`
-	TUI                               string                  `json:"tui,omitempty"`
-	Voice                             *SettingsVoice          `json:"voice,omitempty"`
-	ChannelsEnabled                   *bool                   `json:"channelsEnabled,omitempty"`
-	AllowedChannelPlugins             []SettingsChannelPlugin `json:"allowedChannelPlugins,omitempty"`
-	PrefersReducedMotion              *bool                   `json:"prefersReducedMotion,omitempty"`
-	AutoMemoryEnabled                 *bool                   `json:"autoMemoryEnabled,omitempty"`
-	AutoMemoryDirectory               string                  `json:"autoMemoryDirectory,omitempty"`
-	AutoDreamEnabled                  *bool                   `json:"autoDreamEnabled,omitempty"`
-	ShowThinkingSummaries             *bool                   `json:"showThinkingSummaries,omitempty"`
-	SkipDangerousModePermissionPrompt *bool                   `json:"skipDangerousModePermissionPrompt,omitempty"`
-	DisableAutoMode                   string                  `json:"disableAutoMode,omitempty"`
-	SSHConfigs                        []SettingsSSHConfig     `json:"sshConfigs,omitempty"`
+	RequiredMaximumVersion string                  `json:"requiredMaximumVersion,omitempty"`
+	PlansDirectory         string                  `json:"plansDirectory,omitempty"`
+	TUI                    string                  `json:"tui,omitempty"`
+	Voice                  *SettingsVoice          `json:"voice,omitempty"`
+	ChannelsEnabled        *bool                   `json:"channelsEnabled,omitempty"`
+	AllowedChannelPlugins  []SettingsChannelPlugin `json:"allowedChannelPlugins,omitempty"`
+	PrefersReducedMotion   *bool                   `json:"prefersReducedMotion,omitempty"`
+	// TimeFormat is the clock format for times shown in the UI. It is a
+	// preset or a strftime pattern, not a closed enum: any value containing
+	// "%" is taken as a pattern (other unrecognized values read as
+	// TimeFormatAuto), so modeling it as an enum would make patterns
+	// unrepresentable. A pattern replaces the time everywhere and message
+	// timestamps then show only the pattern, so include %Y-%m-%d if the date
+	// matters (sdk.d.ts v0.3.263 L8076).
+	TimeFormat SettingsTimeFormat `json:"timeFormat,omitempty"`
+	// TimeZone is the IANA time zone for times shown in the UI, e.g. "UTC"
+	// or "Europe/Dublin". Defaults to the system time zone, which an
+	// unknown name also falls back to (sdk.d.ts v0.3.263 L8080).
+	TimeZone                          string              `json:"timeZone,omitempty"`
+	AutoMemoryEnabled                 *bool               `json:"autoMemoryEnabled,omitempty"`
+	AutoMemoryDirectory               string              `json:"autoMemoryDirectory,omitempty"`
+	AutoDreamEnabled                  *bool               `json:"autoDreamEnabled,omitempty"`
+	ShowThinkingSummaries             *bool               `json:"showThinkingSummaries,omitempty"`
+	SkipDangerousModePermissionPrompt *bool               `json:"skipDangerousModePermissionPrompt,omitempty"`
+	DisableAutoMode                   string              `json:"disableAutoMode,omitempty"`
+	SSHConfigs                        []SettingsSSHConfig `json:"sshConfigs,omitempty"`
 	// ClaudeMD is CLAUDE.md-style instructions injected as organization-managed memory. Honored only from managed / policy settings. Mirrors sdk.d.ts v0.3.150 L5343.
 	ClaudeMD           string   `json:"claudeMd,omitempty"`
 	ClaudeMDExcludes   []string `json:"claudeMdExcludes,omitempty"`
@@ -701,6 +728,20 @@ type Settings struct {
 	WorkflowKeywordTriggerEnabled *bool `json:"workflowKeywordTriggerEnabled,omitempty"`
 	// AllowAllClaudeAiMcps lets claude.ai cloud MCP connectors load alongside managed-mcp.json. Mirrors sdk.d.ts v0.3.150 L4411.
 	AllowAllClaudeAiMcps *bool `json:"allowAllClaudeAiMcps,omitempty"`
+	// ManagedMCPServers are MCP servers the organization provides to every
+	// user, keyed by server name, each value carrying the .mcp.json entry
+	// shape. Only "http" and "sse" servers are accepted: nothing that names
+	// a program to run, and no ${VAR} references. Honored from managed
+	// settings only — users cannot remove them, and unlike servers users add
+	// they need no AllowedMCPServers entry, though DeniedMCPServers still
+	// applies. Not read in Claude Desktop's Code tab on a third-party
+	// deployment or in Cowork sessions, where Claude Desktop supplies and
+	// locks the session's MCP servers itself.
+	//
+	// The value stays an untyped object because upstream types it that way;
+	// narrowing it here would reject entry shapes the CLI accepts
+	// (sdk.d.ts v0.3.263 L5991).
+	ManagedMCPServers map[string]map[string]interface{} `json:"managedMcpServers,omitempty"`
 	// ParentSettingsBehavior controls whether the SDK parent tier layers under the admin tier. Mirrors sdk.d.ts v0.3.150 L5019.
 	ParentSettingsBehavior string `json:"parentSettingsBehavior,omitempty"`
 	// ManagedSourcesBehavior controls how the managed settings sources
@@ -710,12 +751,15 @@ type Settings struct {
 	// fixed precedence: scalars take the highest source's value and arrays
 	// union.
 	//
-	// Three groups opt out of the union. The restriction allowlists
+	// Several groups opt out of the union. The restriction allowlists
 	// (fallbackModel, allowedMcpServers, availableModels,
 	// strictKnownMarketplaces, allowedChannelPlugins) are owned whole by the
-	// highest source that sets one, and the auth pins (forceLoginOrgUUID,
-	// forceLoginMethod, forceLoginGatewayUrl) come from the highest source
-	// only — merging either would let a lower source widen a restriction.
+	// highest source that sets one, as are sandbox.credentials.awsPairs and
+	// sandbox.ripgrep; the auth pins (forceLoginOrgUUID, forceLoginMethod,
+	// forceLoginGatewayUrl) come from the highest source only — merging any
+	// of these would let a lower source widen a restriction.
+	// ManagedMCPServers unions by server name, but a name set by two sources
+	// takes the higher source's entry whole rather than merging the two.
 	//
 	// Honored only from the highest-priority source present. Enable it only
 	// when every lower source is admin-controlled, since under "merge" they
@@ -806,13 +850,19 @@ type SettingsAttribution struct {
 }
 
 type SettingsPermissions struct {
-	Allow                        []string               `json:"allow,omitempty"`
-	Deny                         []string               `json:"deny,omitempty"`
-	Ask                          []string               `json:"ask,omitempty"`
-	DefaultMode                  PermissionMode         `json:"defaultMode,omitempty"`
-	DisableBypassPermissionsMode string                 `json:"disableBypassPermissionsMode,omitempty"`
-	AdditionalDirectories        []string               `json:"additionalDirectories,omitempty"`
-	Extra                        map[string]interface{} `json:"-"`
+	Allow                        []string       `json:"allow,omitempty"`
+	Deny                         []string       `json:"deny,omitempty"`
+	Ask                          []string       `json:"ask,omitempty"`
+	DefaultMode                  PermissionMode `json:"defaultMode,omitempty"`
+	DisableBypassPermissionsMode string         `json:"disableBypassPermissionsMode,omitempty"`
+	AdditionalDirectories        []string       `json:"additionalDirectories,omitempty"`
+	// BlockReadsOutsideWorkingDirectories refuses file-tool reads (Read,
+	// Grep, Glob, LSP) outside the working directories in every permission
+	// mode. True in any settings source wins, so a lower source cannot
+	// relax it. Also set when the user answers "block" to the one-time
+	// auto-mode prompt for such a read (sdk.d.ts v0.3.263 L5889).
+	BlockReadsOutsideWorkingDirectories *bool                  `json:"blockReadsOutsideWorkingDirectories,omitempty"`
+	Extra                               map[string]interface{} `json:"-"`
 }
 
 func (p SettingsPermissions) MarshalJSON() ([]byte, error) {
@@ -833,6 +883,19 @@ func (p SettingsPermissions) MarshalJSON() ([]byte, error) {
 	}
 	return json.Marshal(obj)
 }
+
+// SettingsTimeFormat is the clock format for UI times. Upstream types it as
+// the four presets unioned with plain string, so it is deliberately an open
+// string type: the constants below name the presets, but any strftime pattern
+// containing "%" is equally valid and a closed enum could not express one.
+type SettingsTimeFormat string
+
+const (
+	SettingsTimeFormatAuto      SettingsTimeFormat = "auto"
+	SettingsTimeFormat12Hour    SettingsTimeFormat = "12-hour"
+	SettingsTimeFormat24Hour    SettingsTimeFormat = "24-hour"
+	SettingsTimeFormat24HourUTC SettingsTimeFormat = "24-hour-utc"
+)
 
 type SettingsSkillOverride string
 
