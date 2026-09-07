@@ -436,6 +436,46 @@ func TestProtocolInitializeOptions(t *testing.T) {
 			unexpected: []string{"systemPrompt", "appendSystemPrompt"},
 		},
 		{
+			name: "snapshot true wired through",
+			configure: func(opts *Options) {
+				WithSystemPromptSnapshot(true)(opts)
+			},
+			expected: map[string]interface{}{
+				"systemPromptSnapshot": true,
+			},
+		},
+		{
+			// False is not the default — it means "never record", where
+			// omitting means "record only a bare preset". So it has to survive
+			// as an explicit false rather than being elided.
+			name: "snapshot false is explicit",
+			configure: func(opts *Options) {
+				WithSystemPromptSnapshot(false)(opts)
+			},
+			expected: map[string]interface{}{
+				"systemPromptSnapshot": false,
+			},
+		},
+		{
+			name:       "unset snapshot omits the key",
+			configure:  func(opts *Options) {},
+			unexpected: []string{"systemPromptSnapshot"},
+		},
+		{
+			// The recommended pairing: extend the preset and record the result
+			// so the append does not re-render on every launch.
+			name: "snapshot rides alongside a preset append",
+			configure: func(opts *Options) {
+				WithSystemPromptPreset("claude_code", "Be brief.")(opts)
+				WithSystemPromptSnapshot(true)(opts)
+			},
+			expected: map[string]interface{}{
+				"appendSystemPrompt":   "Be brief.",
+				"systemPromptSnapshot": true,
+			},
+			unexpected: []string{"systemPrompt"},
+		},
+		{
 			// A custom prompt replaces the preset rather than extending it.
 			name: "custom prompt sends no append",
 			configure: func(opts *Options) {
