@@ -175,6 +175,7 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 			MCPServers:             p.options.MCPServers,
 			SystemPrompt:           systemPrompt,
 			AppendSystemPrompt:     appendSystemPrompt,
+			SystemPromptSnapshot:   p.options.SystemPromptSnapshot,
 			PlanModeInstructions:   p.options.PlanModeInstructions,
 			ExcludeDynamicSections: excludeDynamicSections,
 			Agents:                 agents,
