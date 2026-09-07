@@ -5170,3 +5170,97 @@ func TestAmbientTaskMarker(t *testing.T) {
 		}
 	})
 }
+
+// TestParseMessageUserMessageUUIDs covers the v0.3.263 user_message_uuids list
+// across every message that carries it, plus the singular user_message_uuid
+// added to thinking_tokens. The list always contains the singular and can be
+// longer on a result (queued messages folded in between tool rounds).
+func TestParseMessageUserMessageUUIDs(t *testing.T) {
+	t.Run("assistant first reply frame", func(t *testing.T) {
+		input := `{
+			"type": "assistant",
+			"message": {"role":"assistant","content":[{"type":"text","text":"hi"}]},
+			"user_message_uuid": "u-2",
+			"user_message_uuids": ["u-1", "u-2"],
+			"uuid": "550e8400-e29b-41d4-a716-446655440401",
+			"session_id": "sess_uuids"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		am, ok := msg.(AssistantMessage)
+		require.True(t, ok)
+		assert.Equal(t, "u-2", am.UserMessageUUID)
+		assert.Equal(t, []string{"u-1", "u-2"}, am.UserMessageUUIDs)
+	})
+
+	t.Run("partial assistant stream event", func(t *testing.T) {
+		input := `{
+			"type": "stream_event",
+			"event": {"type":"text_delta","delta":"hi"},
+			"user_message_uuid": "u-2",
+			"user_message_uuids": ["u-1", "u-2"],
+			"uuid": "550e8400-e29b-41d4-a716-446655440402",
+			"session_id": "sess_uuids"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		pm, ok := msg.(PartialAssistantMessage)
+		require.True(t, ok)
+		assert.Equal(t, "u-2", pm.UserMessageUUID)
+		assert.Equal(t, []string{"u-1", "u-2"}, pm.UserMessageUUIDs)
+	})
+
+	t.Run("result folds queued messages so the list is longer", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "success",
+			"result": "done",
+			"user_message_uuid": "u-2",
+			"user_message_uuids": ["u-1", "u-2", "u-queued-3"],
+			"uuid": "550e8400-e29b-41d4-a716-446655440403",
+			"session_id": "sess_uuids"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.Equal(t, "u-2", rm.UserMessageUUID)
+		assert.Equal(t, []string{"u-1", "u-2", "u-queued-3"}, rm.UserMessageUUIDs)
+		assert.Contains(t, rm.UserMessageUUIDs, rm.UserMessageUUID,
+			"the list must always contain the singular")
+	})
+
+	t.Run("thinking_tokens carries only the singular", func(t *testing.T) {
+		input := `{
+			"type": "system",
+			"subtype": "thinking_tokens",
+			"estimated_tokens": 128,
+			"estimated_tokens_delta": 16,
+			"user_message_uuid": "u-2",
+			"uuid": "550e8400-e29b-41d4-a716-446655440404",
+			"session_id": "sess_uuids"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		tm, ok := msg.(ThinkingTokensMessage)
+		require.True(t, ok)
+		assert.Equal(t, "u-2", tm.UserMessageUUID)
+	})
+
+	t.Run("older producer omits the list", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "success",
+			"result": "done",
+			"user_message_uuid": "u-2",
+			"uuid": "550e8400-e29b-41d4-a716-446655440405",
+			"session_id": "sess_uuids"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.Equal(t, "u-2", rm.UserMessageUUID)
+		assert.Nil(t, rm.UserMessageUUIDs, "fall back to the singular field")
+	})
+}

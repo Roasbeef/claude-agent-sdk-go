@@ -108,6 +108,16 @@ type AssistantMessage struct {
 	// (ParentToolUseID set), synthetic and scheduled turns, turns the caller
 	// sent no uuid for, and older producers (sdk.d.ts v0.3.251 L3211).
 	UserMessageUUID string `json:"user_message_uuid,omitempty"`
+	// UserMessageUUIDs lists the client uuids of every user message whose
+	// prompt this turn has consumed so far, in consumption order. When the
+	// host merges a batch of sends made close together into one turn, that
+	// turn's UserMessageUUID names only the LAST member; this list names them
+	// all, so any sender in the batch can bind the reply by finding its own
+	// uuid anywhere in it. Always contains UserMessageUUID and holds at most
+	// 64 entries. Present exactly when UserMessageUUID is, on the same first
+	// reply frame; absent from older producers, where you fall back to the
+	// singular field (sdk.d.ts v0.3.263 L3336).
+	UserMessageUUIDs []string `json:"user_message_uuids,omitempty"`
 
 	// Supersedes lists wire UUIDs of previously-delivered messages that this
 	// message replaces (refusal-fallback supersede). The list can include
@@ -363,13 +373,24 @@ type ResultMessage struct {
 	// Empty on synthetic and scheduled turns, on turns the caller sent no
 	// uuid for, on session-scoped failures with no single triggering send
 	// (a crashed worker's zeroed result), and from older producers.
-	UserMessageUUID          string `json:"user_message_uuid,omitempty"`
-	RequestSentWallMs        *int64 `json:"request_sent_wall_ms,omitempty"`          // Wall-clock time the request was sent, ms since epoch (success only; sdk.d.ts v0.3.220 L4301)
-	TimeToRequestFromSpawnMs *int64 `json:"time_to_request_from_spawn_ms,omitempty"` // Time to request from spawn in milliseconds
-	WarmSpareClaimed         *bool  `json:"warm_spare_claimed,omitempty"`            // Whether a warm spare was claimed
-	TimeOriginMs             *int64 `json:"time_origin_ms,omitempty"`                // Wall-clock origin for the above timings, in milliseconds (success only)
-	IsError                  bool   `json:"is_error,omitempty"`                      // Whether this is an error result
-	NumTurns                 int    `json:"num_turns,omitempty"`                     // Number of conversation turns
+	UserMessageUUID string `json:"user_message_uuid,omitempty"`
+	// UserMessageUUIDs lists the client uuids of every user message this turn
+	// consumed, in consumption order: a merged prompt batch (whose singular
+	// UserMessageUUID is the LAST member's), then any queued user message
+	// folded into the running turn between tool rounds once taken off the
+	// queue. Because of that folding it can be longer than the list on a
+	// reply frame. Always contains UserMessageUUID and holds at most 64
+	// entries. Echoed when a headless turn ran; absent on delivery-failure
+	// and zeroed results and from older producers, where you fall back to the
+	// singular field. Carried on both result variants, like the singular field
+	// (sdk.d.ts v0.3.263 L4991 error, L5014 success).
+	UserMessageUUIDs         []string `json:"user_message_uuids,omitempty"`
+	RequestSentWallMs        *int64   `json:"request_sent_wall_ms,omitempty"`          // Wall-clock time the request was sent, ms since epoch (success only; sdk.d.ts v0.3.220 L4301)
+	TimeToRequestFromSpawnMs *int64   `json:"time_to_request_from_spawn_ms,omitempty"` // Time to request from spawn in milliseconds
+	WarmSpareClaimed         *bool    `json:"warm_spare_claimed,omitempty"`            // Whether a warm spare was claimed
+	TimeOriginMs             *int64   `json:"time_origin_ms,omitempty"`                // Wall-clock origin for the above timings, in milliseconds (success only)
+	IsError                  bool     `json:"is_error,omitempty"`                      // Whether this is an error result
+	NumTurns                 int      `json:"num_turns,omitempty"`                     // Number of conversation turns
 
 	// TotalCostUSD is the cumulative estimated cost in USD for this query()
 	// call, covering the same calls as ModelUsage and sharing its lifecycle:
@@ -1202,6 +1223,14 @@ type PartialAssistantMessage struct {
 	// leaves it empty, as do synthetic and scheduled turns, turns the caller
 	// sent no uuid for, and older producers (sdk.d.ts v0.3.251 L4653).
 	UserMessageUUID string `json:"user_message_uuid,omitempty"`
+	// UserMessageUUIDs lists the client uuids of every user message whose
+	// prompt this turn has consumed so far, in consumption order — every
+	// member of a batch the host merged into this turn, not just the last one
+	// that UserMessageUUID names. Always contains UserMessageUUID and holds at
+	// most 64 entries. Present exactly when UserMessageUUID is, on the same
+	// first non-ping stream event; absent from older producers, where you fall
+	// back to the singular field (sdk.d.ts v0.3.263 L4843).
+	UserMessageUUIDs []string `json:"user_message_uuids,omitempty"`
 }
 
 // MessageType implements Message.
@@ -1824,8 +1853,15 @@ type ThinkingTokensMessage struct {
 	Subtype              string `json:"subtype"`                // "thinking_tokens"
 	EstimatedTokens      int64  `json:"estimated_tokens"`       // Running total for the thinking block
 	EstimatedTokensDelta int64  `json:"estimated_tokens_delta"` // Increment carried by this frame
-	UUID                 string `json:"uuid"`                   // Unique message ID
-	SessionID            string `json:"session_id"`             // Session identifier
+	// UserMessageUUID is the client uuid of the user message that triggered
+	// this turn, stamped on every thinking_tokens frame of a headless turn so
+	// a consumer can attribute thinking progress to its send before any reply
+	// frame arrives. Absent on synthetic and scheduled (meta) turns, on turns
+	// the caller sent no uuid for, on Remote Control (interactive terminal)
+	// sessions, and from older producers (sdk.d.ts v0.3.263 L5327).
+	UserMessageUUID string `json:"user_message_uuid,omitempty"`
+	UUID            string `json:"uuid"`       // Unique message ID
+	SessionID       string `json:"session_id"` // Session identifier
 }
 
 // MessageType implements Message.
