@@ -645,7 +645,7 @@ type Settings struct {
 	// TimeFormat is the clock format for times shown in the UI. It is a
 	// preset or a strftime pattern, not a closed enum: any value containing
 	// "%" is taken as a pattern (other unrecognized values read as
-	// TimeFormatAuto), so modelling it as an enum would make patterns
+	// TimeFormatAuto), so modeling it as an enum would make patterns
 	// unrepresentable. A pattern replaces the time everywhere and message
 	// timestamps then show only the pattern, so include %Y-%m-%d if the date
 	// matters (sdk.d.ts v0.3.263 L8076).
