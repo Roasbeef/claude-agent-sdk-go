@@ -46,6 +46,22 @@ type APIUserMessage struct {
 type UserContentBlock struct {
 	Type string `json:"type"`           // "text" or other types
 	Text string `json:"text,omitempty"` // Text content
+
+	// CPN VENDOR PATCH TOOLRESULT-FIDELITY (review finding CC-20). A "user" line
+	// from the CLI can carry a tool_result content block echoing a tool's output:
+	// {"type":"tool_result","tool_use_id":"…","content":…,"is_error":true}. The
+	// upstream struct modeled only Type+Text, so ParseMessage decoded — and any
+	// re-marshal (the agent-runner session host forwards each SDK message by
+	// re-serializing it) SILENTLY DROPPED content/is_error/tool_use_id. The
+	// driver's ClaudeToolResultEvent then surfaced empty Content and
+	// IsError=false. These fields (all omitempty, so text blocks and the
+	// send-side that only sets Type/Text marshal byte-identically) make the
+	// decode→re-marshal round trip lossless. Content is json.RawMessage because a
+	// tool_result content is either a JSON string or an array of blocks; verbatim
+	// bytes preserve both without a lossy typed decode.
+	ToolUseID string          `json:"tool_use_id,omitempty"` // tool_result -> originating tool_use
+	Content   json.RawMessage `json:"content,omitempty"`     // tool_result content (verbatim)
+	IsError   bool            `json:"is_error,omitempty"`    // tool_result error flag
 }
 
 // UserMessageReplay represents a replayed user message during session resume.
