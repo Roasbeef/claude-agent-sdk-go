@@ -251,6 +251,12 @@ func (c *Client) Query(ctx context.Context, prompt string) iter.Seq[Message] {
 				if _, ok := msg.(ResultMessage); ok {
 					return
 				}
+
+				// Stop on goal-met status: the CLI has decided the goal
+				// condition is satisfied and will terminate the session.
+				if goal, ok := msg.(GoalStatusMessage); ok && goal.Met {
+					return
+				}
 			}
 		}
 	}
