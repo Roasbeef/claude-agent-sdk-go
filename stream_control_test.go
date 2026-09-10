@@ -111,7 +111,7 @@ func newStreamControlTest(
 	stream := &Stream{
 		client:  client,
 		ctx:     context.Background(),
-		sendCh:  make(chan string),
+		sendCh:  make(chan []UserContentBlock),
 		closeCh: make(chan struct{}),
 	}
 	return stream, transport, protocol
