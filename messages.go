@@ -826,7 +826,7 @@ type SDKControlResponse struct {
 // same session can stay answerable without appearing here and without a
 // control_cancel_request; a session_state of "requires_action" on the same
 // reply signals one the CLI is holding, though not every inherited prompt is
-// signalled. See sdk.d.ts v0.3.270 L306-L333.
+// signaled. See sdk.d.ts v0.3.270 L306-L333.
 type SDKControlResponseBody struct {
 	Subtype                   string                 `json:"subtype"`                                // "success" or "error"
 	RequestID                 string                 `json:"request_id"`                             // Correlates to request
