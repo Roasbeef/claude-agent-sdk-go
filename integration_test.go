@@ -4405,3 +4405,73 @@ func TestIntegrationReloadPluginsHoldOnCacheImpact(t *testing.T) {
 		"a session with no plugins has no tool-list change to hold on")
 	assert.Nil(t, got.CacheImpact, "nothing was held, so nothing to preview")
 }
+
+// TestIntegrationListPermissionRules exercises the v0.3.270
+// list_permission_rules control request against the live CLI.
+//
+// The session is launched with an --allowedTools rule, which the CLI reports
+// with source "cliArg" and session editability, so the assertion has something
+// concrete to find rather than depending on the machine's settings files.
+// CLIs predating the subtype reject it; the test skips in that case so the
+// slot activates once the binary catches up.
+func TestIntegrationListPermissionRules(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithAllowedTools([]string{"Bash(git status:*)"}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	state, err := stream.ListPermissionRules(ctx)
+	if err != nil {
+		t.Skipf("CLI does not support list_permission_rules: %v", err)
+	}
+	require.NotNil(t, state)
+
+	assert.NotEmpty(t, state.OriginalCwd, "the session always has an original cwd")
+
+	knownBehavior := map[PermissionRuleBehavior]bool{
+		PermissionRuleBehaviorAllow: true,
+		PermissionRuleBehaviorDeny:  true,
+		PermissionRuleBehaviorAsk:   true,
+	}
+	knownEditability := map[PermissionRuleEditability]bool{
+		PermissionRuleEditabilityPersistent: true,
+		PermissionRuleEditabilitySession:    true,
+		PermissionRuleEditabilityReadonly:   true,
+	}
+
+	var sawFlagRule bool
+	for _, rule := range state.Rules {
+		assert.True(t, knownBehavior[rule.Behavior],
+			"unknown behavior %q on rule %q", rule.Behavior, rule.Rule)
+		assert.True(t, knownEditability[rule.Editability],
+			"unknown editability %q on rule %q", rule.Editability, rule.Rule)
+		assert.NotEmpty(t, rule.Source, "every rule carries its provenance")
+		assert.NotEmpty(t, rule.Rule)
+
+		if rule.NotInEffect {
+			assert.Equal(t, PermissionRuleEditabilityReadonly, rule.Editability,
+				"a not-in-effect row must be readonly")
+		}
+		if rule.Rule == "Bash(git status:*)" {
+			sawFlagRule = true
+			assert.Equal(t, PermissionRuleBehaviorAllow, rule.Behavior)
+		}
+	}
+
+	assert.True(t, sawFlagRule,
+		"the --allowedTools rule this session launched with should be listed")
+}

@@ -513,3 +513,131 @@ type ContextUsageAPIUsage struct {
 	CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
 	CacheReadInputTokens     int `json:"cache_read_input_tokens"`
 }
+
+// SDKSettingsParseError describes a settings file the CLI skipped because it
+// failed to parse or validate. A file listed here contributed nothing to the
+// session — its rules are neither in effect nor reported anywhere else
+// (sdk.d.ts v0.3.270 L5450).
+type SDKSettingsParseError struct {
+	// File is the path to the settings file that failed. Absent when the CLI
+	// could not attribute the error to a specific file.
+	File string `json:"file,omitempty"`
+	// Path is the dot-notation path to the offending field, or the empty
+	// string for a whole-file error.
+	Path    string `json:"path"`
+	Message string `json:"message"`
+}
+
+// SDKControlListPermissionRulesResponse is the success payload of
+// list_permission_rules.
+type SDKControlListPermissionRulesResponse struct {
+	State SDKControlPermissionRulesState `json:"state"`
+}
+
+// SDKControlPermissionRulesState is the session's live permission rules and
+// workspace directories — the same data /permissions lists in the terminal
+// (sdk.d.ts v0.3.270 L4324).
+type SDKControlPermissionRulesState struct {
+	Rules                []PermissionRuleEntry          `json:"rules"`
+	WorkspaceDirectories []PermissionWorkspaceDirectory `json:"workspaceDirectories"`
+	// OriginalCwd is the session's original working directory.
+	OriginalCwd string `json:"originalCwd"`
+	// ManagedOnly is true when enterprise managed settings pin
+	// allowManagedPermissionRulesOnly: the session applies policy rules only,
+	// and rules from other settings files are still listed but carry
+	// NotInEffect.
+	ManagedOnly bool `json:"managedOnly"`
+	// Errors lists settings files skipped by the merge. When non-empty, those
+	// files' rules are not in the session and not in Rules above.
+	Errors []SDKSettingsParseError `json:"errors,omitempty"`
+}
+
+// PermissionRuleEntry is one permission rule with its provenance and where it
+// lives (sdk.d.ts v0.3.270 L5148).
+type PermissionRuleEntry struct {
+	Behavior PermissionRuleBehavior `json:"behavior"`
+	Source   PermissionRuleSource   `json:"source"`
+	// Rule is the stored rule string VERBATIM, exactly as the session holds
+	// it. Two stored spellings that parse identically each get their own
+	// entry rather than being deduplicated. It can carry invisible or control
+	// characters by design, so escape it before display.
+	Rule string `json:"rule"`
+	// Description is the CLI's plain-language reading of the rule. Nil where
+	// the terminal shows no subtitle either.
+	Description *PermissionRuleDescription `json:"description,omitempty"`
+	Editability PermissionRuleEditability  `json:"editability"`
+	// NotInEffect is true when enterprise managed settings pin
+	// allowManagedPermissionRulesOnly and this rule, read from a non-policy
+	// settings file, is ignored by the session. Such rows are always
+	// PermissionRuleEditabilityReadonly.
+	NotInEffect bool `json:"notInEffect,omitempty"`
+}
+
+// PermissionRuleDescription is the CLI's plain-language reading of a rule
+// (e.g. "Any Bash command starting with npm run"), split so a host can render
+// the rule-derived fragment the way the terminal does — emphasized.
+//
+// Prefix and Suffix are fixed words. Emphasis is rule content, so it needs the
+// same display hygiene as PermissionRuleEntry.Rule: escape invisible
+// characters before rendering (sdk.d.ts v0.3.270 L5143).
+type PermissionRuleDescription struct {
+	Prefix   string `json:"prefix"`
+	Emphasis string `json:"emphasis,omitempty"`
+	Suffix   string `json:"suffix,omitempty"`
+}
+
+// PermissionWorkspaceDirectory is one additional working directory in the
+// permission scope (sdk.d.ts v0.3.270 L5190).
+type PermissionWorkspaceDirectory struct {
+	Path string `json:"path"`
+	// Source is where the directory grant came from: a settings source (e.g.
+	// "localSettings"), "cliArg" (--add-dir), or "session" (/add-dir, IDE
+	// workspace folders).
+	Source string `json:"source"`
+}
+
+// PermissionRuleBehavior is what a permission rule does when it matches.
+type PermissionRuleBehavior string
+
+const (
+	PermissionRuleBehaviorAllow PermissionRuleBehavior = "allow"
+	PermissionRuleBehaviorDeny  PermissionRuleBehavior = "deny"
+	PermissionRuleBehaviorAsk   PermissionRuleBehavior = "ask"
+)
+
+// PermissionRuleSource is where a permission rule came from. It mirrors the
+// CLI's PermissionRuleSource union; upstream keeps a parity test against it,
+// so treat this as closed rather than open.
+type PermissionRuleSource string
+
+const (
+	PermissionRuleSourceUserSettings    PermissionRuleSource = "userSettings"
+	PermissionRuleSourceProjectSettings PermissionRuleSource = "projectSettings"
+	PermissionRuleSourceLocalSettings   PermissionRuleSource = "localSettings"
+	PermissionRuleSourceFlagSettings    PermissionRuleSource = "flagSettings"
+	PermissionRuleSourcePolicySettings  PermissionRuleSource = "policySettings"
+	PermissionRuleSourceCLIArg          PermissionRuleSource = "cliArg"
+	PermissionRuleSourceCommand         PermissionRuleSource = "command"
+	PermissionRuleSourceSession         PermissionRuleSource = "session"
+	PermissionRuleSourceToolsNarrowing  PermissionRuleSource = "toolsNarrowing"
+	PermissionRuleSourceMcpServerPolicy PermissionRuleSource = "mcpServerPolicy"
+	PermissionRuleSourceHostCredential  PermissionRuleSource = "hostCredential" //nolint:gosec // G101: wire enum value, not a credential
+)
+
+// PermissionRuleEditability is where a permission rule lives, and so what
+// changing it would take. Informational only — list_permission_rules never
+// changes rules.
+type PermissionRuleEditability string
+
+const (
+	// PermissionRuleEditabilityPersistent covers user, project and local
+	// settings: the rule is saved in a settings file.
+	PermissionRuleEditabilityPersistent PermissionRuleEditability = "persistent"
+	// PermissionRuleEditabilitySession covers cliArg and session sources: the
+	// rule is in memory only, for the rest of this session.
+	PermissionRuleEditabilitySession PermissionRuleEditability = "session"
+	// PermissionRuleEditabilityReadonly covers policy, flag and command
+	// sources and every other source — the set the terminal's /permissions
+	// treats as read-only.
+	PermissionRuleEditabilityReadonly PermissionRuleEditability = "readonly"
+)

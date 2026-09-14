@@ -687,3 +687,206 @@ func TestContextUsageCategoryKind(t *testing.T) {
 		assert.Empty(t, out.Categories[0].Kind)
 	})
 }
+
+// TestStreamListPermissionRules covers the v0.3.270 list_permission_rules
+// control request: the wire shape it sends, and the state it parses back.
+func TestStreamListPermissionRules(t *testing.T) {
+	t.Run("request wire shape", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"state": map[string]interface{}{
+					"rules":                []interface{}{},
+					"workspaceDirectories": []interface{}{},
+					"originalCwd":          "/repo",
+					"managedOnly":          false,
+				},
+			}),
+		)
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.ListPermissionRules(ctx)
+			return err
+		})
+		require.NoError(t, err)
+
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1","request":{"subtype":"list_permission_rules"}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+	})
+
+	t.Run("parses rules, directories and provenance", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"state": map[string]interface{}{
+					"rules": []interface{}{
+						map[string]interface{}{
+							"behavior": "allow",
+							"source":   "userSettings",
+							"rule":     "Bash(npm run:*)",
+							"description": map[string]interface{}{
+								"prefix":   "Any Bash command starting with",
+								"emphasis": "npm run",
+							},
+							"editability": "persistent",
+						},
+						map[string]interface{}{
+							"behavior":    "deny",
+							"source":      "policySettings",
+							"rule":        "Read(//etc/**)",
+							"editability": "readonly",
+						},
+						map[string]interface{}{
+							"behavior":    "ask",
+							"source":      "cliArg",
+							"rule":        "WebFetch",
+							"editability": "session",
+						},
+					},
+					"workspaceDirectories": []interface{}{
+						map[string]interface{}{"path": "/repo", "source": "cliArg"},
+						map[string]interface{}{"path": "/scratch", "source": "session"},
+					},
+					"originalCwd": "/repo",
+					"managedOnly": false,
+				},
+			}),
+		)
+
+		var got *SDKControlPermissionRulesState
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			var err error
+			got, err = stream.ListPermissionRules(ctx)
+			return err
+		})
+		require.NoError(t, err)
+		require.Len(t, got.Rules, 3)
+
+		assert.Equal(t, PermissionRuleBehaviorAllow, got.Rules[0].Behavior)
+		assert.Equal(t, PermissionRuleSourceUserSettings, got.Rules[0].Source)
+		assert.Equal(t, "Bash(npm run:*)", got.Rules[0].Rule)
+		assert.Equal(t, PermissionRuleEditabilityPersistent, got.Rules[0].Editability)
+		require.NotNil(t, got.Rules[0].Description)
+		assert.Equal(t, "Any Bash command starting with", got.Rules[0].Description.Prefix)
+		assert.Equal(t, "npm run", got.Rules[0].Description.Emphasis)
+		assert.Empty(t, got.Rules[0].Description.Suffix)
+
+		assert.Equal(t, PermissionRuleBehaviorDeny, got.Rules[1].Behavior)
+		assert.Equal(t, PermissionRuleEditabilityReadonly, got.Rules[1].Editability)
+		assert.Nil(t, got.Rules[1].Description,
+			"no subtitle in the terminal means no description on the wire")
+
+		assert.Equal(t, PermissionRuleBehaviorAsk, got.Rules[2].Behavior)
+		assert.Equal(t, PermissionRuleEditabilitySession, got.Rules[2].Editability)
+
+		require.Len(t, got.WorkspaceDirectories, 2)
+		assert.Equal(t, "/scratch", got.WorkspaceDirectories[1].Path)
+		assert.Equal(t, "session", got.WorkspaceDirectories[1].Source)
+		assert.Equal(t, "/repo", got.OriginalCwd)
+	})
+
+	t.Run("rules are verbatim, not normalized", func(t *testing.T) {
+		// Two spellings that parse identically each get their own entry, and
+		// a rule may carry invisible characters by design. Both are why a
+		// host must escape at display rather than trust the string.
+		hidden := "Bash(rm\u200b -rf)"
+		stream, _, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"state": map[string]interface{}{
+					"rules": []interface{}{
+						map[string]interface{}{
+							"behavior": "allow", "source": "userSettings",
+							"rule": "Bash(ls)", "editability": "persistent",
+						},
+						map[string]interface{}{
+							"behavior": "allow", "source": "projectSettings",
+							"rule": "Bash(ls:*)", "editability": "persistent",
+						},
+						map[string]interface{}{
+							"behavior": "deny", "source": "session",
+							"rule": hidden, "editability": "session",
+						},
+					},
+					"workspaceDirectories": []interface{}{},
+					"originalCwd":          "/repo",
+					"managedOnly":          false,
+				},
+			}),
+		)
+
+		var got *SDKControlPermissionRulesState
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			var err error
+			got, err = stream.ListPermissionRules(ctx)
+			return err
+		})
+		require.NoError(t, err)
+		require.Len(t, got.Rules, 3)
+		assert.Equal(t, "Bash(ls)", got.Rules[0].Rule)
+		assert.Equal(t, "Bash(ls:*)", got.Rules[1].Rule,
+			"identically-parsing spellings are separate entries, not deduplicated")
+		assert.Equal(t, hidden, got.Rules[2].Rule,
+			"invisible characters survive the round trip untouched")
+	})
+
+	t.Run("managed-only marks other sources not in effect", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"state": map[string]interface{}{
+					"rules": []interface{}{
+						map[string]interface{}{
+							"behavior": "allow", "source": "policySettings",
+							"rule": "Bash(git status)", "editability": "readonly",
+						},
+						map[string]interface{}{
+							"behavior": "allow", "source": "userSettings",
+							"rule": "Bash(curl:*)", "editability": "readonly",
+							"notInEffect": true,
+						},
+					},
+					"workspaceDirectories": []interface{}{},
+					"originalCwd":          "/repo",
+					"managedOnly":          true,
+					"errors": []interface{}{
+						map[string]interface{}{
+							"file":    "/repo/.claude/settings.json",
+							"path":    "permissions.allow",
+							"message": "expected array",
+						},
+					},
+				},
+			}),
+		)
+
+		var got *SDKControlPermissionRulesState
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			var err error
+			got, err = stream.ListPermissionRules(ctx)
+			return err
+		})
+		require.NoError(t, err)
+		assert.True(t, got.ManagedOnly)
+		require.Len(t, got.Rules, 2)
+		assert.False(t, got.Rules[0].NotInEffect, "the policy rule is the one that applies")
+		assert.True(t, got.Rules[1].NotInEffect)
+		assert.Equal(t, PermissionRuleEditabilityReadonly, got.Rules[1].Editability,
+			"a not-in-effect row is always readonly")
+
+		require.Len(t, got.Errors, 1)
+		assert.Equal(t, "/repo/.claude/settings.json", got.Errors[0].File)
+		assert.Equal(t, "permissions.allow", got.Errors[0].Path)
+		assert.Equal(t, "expected array", got.Errors[0].Message)
+	})
+
+	t.Run("error", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(
+			controlErrorResponse("unknown subtype list_permission_rules"))
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.ListPermissionRules(ctx)
+			return err
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unknown subtype")
+	})
+}
