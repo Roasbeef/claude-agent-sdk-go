@@ -4297,6 +4297,73 @@ func TestIntegrationRateLimitLimitScope(t *testing.T) {
 	t.Skip("not triggerable from CLI: limitScope requires an exhausted service/channel/group-pool budget; tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+// TestIntegrationContextUsageCategoryKind exercises the v0.3.270 kind
+// discriminator on get_context_usage rows against the live CLI. The doc is
+// explicit that consumers must classify on kind rather than on the row's
+// English name, so the assertion is that a real report classifies its rows
+// into the known set — not that any particular name appears.
+//
+// A CLI predating the field returns rows with an empty kind; the test skips
+// in that case so the slot activates once the binary catches up.
+func TestIntegrationContextUsageCategoryKind(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx, "Say hi."))
+	for msg := range stream.Messages() {
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+
+	usage, err := stream.GetContextUsage(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+	require.NotEmpty(t, usage.Categories)
+
+	known := map[ContextUsageCategoryKind]bool{
+		ContextUsageUsed:     true,
+		ContextUsageFree:     true,
+		ContextUsageBuffer:   true,
+		ContextUsageDeferred: true,
+	}
+
+	var classified int
+	for _, cat := range usage.Categories {
+		if cat.Kind == "" {
+			continue
+		}
+		assert.True(t, known[cat.Kind],
+			"unknown category kind %q on row %q", cat.Kind, cat.Name)
+		classified++
+
+		// The old IsDeferred signal and the new Kind must not disagree.
+		if cat.IsDeferred {
+			assert.Equal(t, ContextUsageDeferred, cat.Kind,
+				"row %q is deferred but kind says otherwise", cat.Name)
+		}
+	}
+
+	if classified == 0 {
+		t.Skip("CLI predates get_context_usage categories[].kind")
+	}
+}
+
 // TestIntegrationReloadPluginsHoldOnCacheImpact exercises the v0.3.270
 // hold_on_cache_impact option against the live CLI.
 //
