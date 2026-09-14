@@ -643,3 +643,47 @@ func TestStreamGetUsageSkipBehaviorsWireShape(t *testing.T) {
 		)
 	})
 }
+
+// TestContextUsageCategoryKind covers the v0.3.270 kind discriminator on
+// get_context_usage rows. The doc is explicit that consumers must classify on
+// it rather than on the English name, which the CLI is free to reword.
+func TestContextUsageCategoryKind(t *testing.T) {
+	t.Run("every row kind parses", func(t *testing.T) {
+		raw := `{
+			"categories": [
+				{"name": "Messages", "tokens": 12000, "color": "blue", "kind": "used"},
+				{"name": "Free space", "tokens": 80000, "color": "gray", "kind": "free"},
+				{"name": "Autocompact buffer", "tokens": 8000, "color": "amber", "kind": "buffer"},
+				{"name": "MCP tools (deferred)", "tokens": 4000, "color": "dim",
+				 "isDeferred": true, "kind": "deferred"}
+			],
+			"totalTokens": 104000,
+			"maxTokens": 200000,
+			"rawMaxTokens": 200000,
+			"percentage": 52
+		}`
+		var out SDKControlGetContextUsageResponse
+		require.NoError(t, json.Unmarshal([]byte(raw), &out))
+		require.Len(t, out.Categories, 4)
+
+		assert.Equal(t, ContextUsageUsed, out.Categories[0].Kind)
+		assert.Equal(t, ContextUsageFree, out.Categories[1].Kind)
+		assert.Equal(t, ContextUsageBuffer, out.Categories[2].Kind)
+		assert.Equal(t, ContextUsageDeferred, out.Categories[3].Kind)
+
+		// The deferred row is the one place the old IsDeferred signal and
+		// the new Kind overlap; they must agree.
+		assert.True(t, out.Categories[3].IsDeferred)
+	})
+
+	t.Run("older CLI omits kind", func(t *testing.T) {
+		raw := `{
+			"categories": [{"name": "Messages", "tokens": 1, "color": "blue"}],
+			"totalTokens": 1, "maxTokens": 2, "rawMaxTokens": 2, "percentage": 50
+		}`
+		var out SDKControlGetContextUsageResponse
+		require.NoError(t, json.Unmarshal([]byte(raw), &out))
+		require.Len(t, out.Categories, 1)
+		assert.Empty(t, out.Categories[0].Kind)
+	})
+}

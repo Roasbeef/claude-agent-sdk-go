@@ -359,11 +359,20 @@ type UsageAttributionEntry struct {
 	Pct  float64 `json:"pct"` // Share of weighted local usage, 0-100.
 }
 
+// ContextUsageCategory is one row of the get_context_usage report.
 type ContextUsageCategory struct {
+	// Name is the row's English label. Do not classify on it — the CLI is
+	// free to reword these, and Kind is what carries the meaning.
 	Name       string `json:"name"`
 	Tokens     int    `json:"tokens"`
 	Color      string `json:"color"`
 	IsDeferred bool   `json:"isDeferred,omitempty"`
+
+	// Kind is what the row is, the same classification the /context result's
+	// context_usage rows carry (see AssistantContextUsageCategory.Kind).
+	// Required on the wire as of sdk.d.ts v0.3.270 L3675; empty only from a
+	// CLI that predates it, where IsDeferred is the sole usable signal.
+	Kind ContextUsageCategoryKind `json:"kind,omitempty"`
 }
 
 type ContextUsageGridCell struct {
