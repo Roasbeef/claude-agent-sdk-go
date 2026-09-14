@@ -1256,6 +1256,36 @@ func (s *Stream) UpdateSettings(
 	return err
 }
 
+// ListPermissionRules returns the session's live permission rules and
+// workspace directories — the same data /permissions lists in the terminal:
+// rules from settings files plus session-only approvals, slash-command grants
+// and --allowedTools flag rules, each with its source.
+//
+// Read-only; this never changes a rule. The rule strings come back verbatim
+// and may carry invisible or control characters by design, so escape them
+// before display (see PermissionRuleEntry.Rule).
+//
+// Only available in streaming input mode.
+func (s *Stream) ListPermissionRules(
+	ctx context.Context,
+) (*SDKControlPermissionRulesState, error) {
+	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "list_permission_rules",
+	})
+	if err != nil {
+		return nil, err
+	}
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return nil, fmt.Errorf("list_permission_rules: marshal: %w", err)
+	}
+	var out SDKControlListPermissionRulesResponse
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return nil, fmt.Errorf("list_permission_rules: unmarshal: %w", err)
+	}
+	return &out.State, nil
+}
+
 // StopTask asks the CLI to stop a running task.
 func (s *Stream) StopTask(ctx context.Context, taskID string) error {
 	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
