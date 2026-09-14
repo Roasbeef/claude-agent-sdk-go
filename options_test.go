@@ -2474,3 +2474,68 @@ func TestSettingsParityV0_3_263OmitEmpty(t *testing.T) {
 		assert.NotContains(t, got, key)
 	}
 }
+
+func TestSettingsParityV0_3_270(t *testing.T) {
+	bashEditDiff := false
+
+	settings := Settings{
+		BashEditDiffEnabled:     &bashEditDiff,
+		PrependPlugins:          []string{"sec-default@builtin", "audit@corp"},
+		AppendPlugins:           []string{"telemetry@corp"},
+		GatewayInternalNetworks: []string{"203.0.113.0/24"},
+		MaxEffortLevel:          EffortHigh,
+		ModelSettings: map[string]SettingsModel{
+			"claude-opus-4-7": {MaxEffortLevel: EffortMax},
+		},
+	}
+
+	data, err := json.Marshal(settings)
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.Equal(t, false, got["bashEditDiffEnabled"])
+	assert.Equal(t,
+		[]interface{}{"sec-default@builtin", "audit@corp"},
+		got["prependPlugins"])
+	assert.Equal(t, []interface{}{"telemetry@corp"}, got["appendPlugins"])
+	assert.Equal(t, []interface{}{"203.0.113.0/24"}, got["gatewayInternalNetworks"])
+	assert.Equal(t, "high", got["maxEffortLevel"])
+
+	models, ok := got["modelSettings"].(map[string]interface{})
+	require.True(t, ok)
+	opus, ok := models["claude-opus-4-7"].(map[string]interface{})
+	require.True(t, ok)
+	// "max" IS a member of the per-model cap, unlike the applied EffortLevel —
+	// it is how a model is exempted from the top-level cap.
+	assert.Equal(t, "max", opus["maxEffortLevel"])
+
+	var back Settings
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, settings, back)
+}
+
+func TestSettingsParityV0_3_270OmitEmpty(t *testing.T) {
+	data, err := json.Marshal(Settings{})
+	require.NoError(t, err)
+
+	var got map[string]interface{}
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	for _, key := range []string{
+		"bashEditDiffEnabled",
+		"prependPlugins",
+		"appendPlugins",
+		"gatewayInternalNetworks",
+		"maxEffortLevel",
+	} {
+		assert.NotContains(t, got, key)
+	}
+
+	modelData, err := json.Marshal(SettingsModel{})
+	require.NoError(t, err)
+	var gotModel map[string]interface{}
+	require.NoError(t, json.Unmarshal(modelData, &gotModel))
+	assert.NotContains(t, gotModel, "maxEffortLevel")
+}
