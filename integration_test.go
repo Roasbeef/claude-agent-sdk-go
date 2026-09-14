@@ -4262,3 +4262,14 @@ func TestIntegrationSystemPromptSnapshot(t *testing.T) {
 		"snapshotting broke the preset append or stalled the handshake; "+
 			"reply was %q", reply.String())
 }
+
+func TestIntegrationRateLimitLimitScope(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// limitScope only appears on a denial driven by a spend limit that is not
+	// the member's own cap — a service, channel or pooled-group budget. The
+	// integration account has none of those exhausted, and exhausting one on
+	// purpose is not something a test run should do.
+	t.Skip("not triggerable from CLI: limitScope requires an exhausted service/channel/group-pool budget; tracked in INTEGRATION-FOLLOWUPS.md")
+}

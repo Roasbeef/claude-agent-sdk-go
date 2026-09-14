@@ -914,6 +914,22 @@ const (
 	RateLimitStatusRejected       RateLimitStatus = "rejected"
 )
 
+// RateLimitScope names which spend limit blocked a request, when the limit
+// that bit was not the member's own cap (sdk.d.ts v0.3.270 L5270).
+type RateLimitScope string
+
+const (
+	// RateLimitScopeService means a service-wide spend limit blocked it.
+	RateLimitScopeService RateLimitScope = "service"
+	// RateLimitScopeChannel means a per-channel spend limit blocked it.
+	RateLimitScopeChannel RateLimitScope = "channel"
+	// RateLimitScopeGroupPool means a pooled group budget shared by the
+	// member's team is used up. Without this the denial is indistinguishable
+	// from the member exhausting their own monthly cap, which is the wrong
+	// thing to tell the user.
+	RateLimitScopeGroupPool RateLimitScope = "group_pool"
+)
+
 // TerminalReason explains why a result message reached a terminal state.
 type TerminalReason string
 
@@ -1016,6 +1032,15 @@ type RateLimitInfo struct {
 	IsUsingOverage        *bool                           `json:"isUsingOverage,omitempty"`
 	OverageInUse          *bool                           `json:"overageInUse,omitempty"`
 	SurpassedThreshold    *float64                        `json:"surpassedThreshold,omitempty"`
+	// LimitScope names which spend limit blocked the request when it is not
+	// the member's own cap. RateLimitScopeGroupPool in particular means a
+	// pooled group budget shared by the member's team is used up — a denial
+	// that otherwise looks identical to hitting one's own monthly cap, so a
+	// host telling the user what to do about it has to branch on this.
+	//
+	// Empty on a plain member denial and from older CLIs (sdk.d.ts v0.3.270
+	// L5270).
+	LimitScope RateLimitScope `json:"limitScope,omitempty"`
 	// ErrorCode signals a credit-exhaustion condition; the only defined value
 	// is "credits_required". Open string for forward compatibility.
 	ErrorCode string `json:"errorCode,omitempty"`
