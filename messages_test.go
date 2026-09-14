@@ -5520,3 +5520,93 @@ func TestParseMessageResumeReason(t *testing.T) {
 		assert.Empty(t, rm.ResumeReason)
 	})
 }
+
+// TestParseMessageResultIndex covers the v0.3.270 result_index delivery
+// sequence and the local_command sibling, both on the result frame.
+func TestParseMessageResultIndex(t *testing.T) {
+	t.Run("index zero is a real value", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "success",
+			"result": "done",
+			"result_index": 0,
+			"uuid": "550e8400-e29b-41d4-a716-446655440601",
+			"session_id": "sess_index"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		require.NotNil(t, rm.ResultIndex, "zero must survive as a value, not collapse to absent")
+		assert.Equal(t, 0, *rm.ResultIndex)
+	})
+
+	t.Run("a gap means a result was lost", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "success",
+			"result": "done",
+			"num_turns": 1,
+			"result_index": 4,
+			"uuid": "550e8400-e29b-41d4-a716-446655440602",
+			"session_id": "sess_index"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		require.NotNil(t, rm.ResultIndex)
+		assert.Equal(t, 4, *rm.ResultIndex)
+		assert.Equal(t, 1, rm.NumTurns,
+			"result_index counts results in the run, num_turns model round-trips in the turn")
+	})
+
+	t.Run("error result carries it too", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "error_during_execution",
+			"is_error": true,
+			"result_index": 2,
+			"uuid": "550e8400-e29b-41d4-a716-446655440603",
+			"session_id": "sess_index"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		require.NotNil(t, rm.ResultIndex)
+		assert.Equal(t, 2, *rm.ResultIndex)
+	})
+
+	t.Run("local_command rides a success result", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "success",
+			"result": "done",
+			"local_command": "/context",
+			"uuid": "550e8400-e29b-41d4-a716-446655440604",
+			"session_id": "sess_index"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.Equal(t, "/context", rm.LocalCommand)
+	})
+
+	t.Run("older producer omits both", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "success",
+			"result": "done",
+			"uuid": "550e8400-e29b-41d4-a716-446655440605",
+			"session_id": "sess_index"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.Nil(t, rm.ResultIndex, "absent is not index zero")
+		assert.Empty(t, rm.LocalCommand)
+	})
+}
