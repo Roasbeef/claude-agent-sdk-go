@@ -5435,6 +5435,183 @@ func TestParseMessageUserMessageUUIDs(t *testing.T) {
 	})
 }
 
+// TestParseMessageResumeReason covers the v0.3.270 resume_reason sibling,
+// which rides the same frames as user_message_uuid on the automatic re-run of
+// a turn a worker restart interrupted.
+func TestParseMessageResumeReason(t *testing.T) {
+	t.Run("assistant carries the host's own reason", func(t *testing.T) {
+		input := `{
+			"type": "assistant",
+			"message": {"role":"assistant","content":[{"type":"text","text":"hi"}]},
+			"user_message_uuid": "u-interrupted",
+			"resume_reason": "host_draining",
+			"uuid": "550e8400-e29b-41d4-a716-446655440501",
+			"session_id": "sess_resume"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		am, ok := msg.(AssistantMessage)
+		require.True(t, ok)
+		assert.Equal(t, ResumeReasonHostDraining, am.ResumeReason)
+		assert.Equal(t, "u-interrupted", am.UserMessageUUID,
+			"the re-run names the interrupted turn's own last user prompt")
+	})
+
+	t.Run("stream event carries it too", func(t *testing.T) {
+		input := `{
+			"type": "stream_event",
+			"event": {"type":"text_delta","delta":"hi"},
+			"resume_reason": "container_recreated",
+			"uuid": "550e8400-e29b-41d4-a716-446655440502",
+			"session_id": "sess_resume"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		pm, ok := msg.(PartialAssistantMessage)
+		require.True(t, ok)
+		assert.Equal(t, ResumeReasonContainerRecreated, pm.ResumeReason)
+	})
+
+	t.Run("result falls back to interrupted_turn without an echo", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "success",
+			"result": "done",
+			"resume_reason": "interrupted_turn",
+			"uuid": "550e8400-e29b-41d4-a716-446655440503",
+			"session_id": "sess_resume"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.Equal(t, ResumeReasonInterruptedTurn, rm.ResumeReason)
+		assert.Empty(t, rm.UserMessageUUID,
+			"a re-run whose opener could not be vouched still carries the reason")
+	})
+
+	t.Run("error result carries it", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "error_during_execution",
+			"is_error": true,
+			"resume_reason": "checkpoint_restore",
+			"uuid": "550e8400-e29b-41d4-a716-446655440504",
+			"session_id": "sess_resume"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.Equal(t, ResumeReasonCheckpointRestore, rm.ResumeReason)
+	})
+
+	t.Run("an ordinary turn leaves it empty", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "success",
+			"result": "done",
+			"uuid": "550e8400-e29b-41d4-a716-446655440505",
+			"session_id": "sess_resume"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.Empty(t, rm.ResumeReason)
+	})
+}
+
+// TestParseMessageResultIndex covers the v0.3.270 result_index delivery
+// sequence and the local_command sibling, both on the result frame.
+func TestParseMessageResultIndex(t *testing.T) {
+	t.Run("index zero is a real value", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "success",
+			"result": "done",
+			"result_index": 0,
+			"uuid": "550e8400-e29b-41d4-a716-446655440601",
+			"session_id": "sess_index"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		require.NotNil(t, rm.ResultIndex, "zero must survive as a value, not collapse to absent")
+		assert.Equal(t, 0, *rm.ResultIndex)
+	})
+
+	t.Run("a gap means a result was lost", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "success",
+			"result": "done",
+			"num_turns": 1,
+			"result_index": 4,
+			"uuid": "550e8400-e29b-41d4-a716-446655440602",
+			"session_id": "sess_index"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		require.NotNil(t, rm.ResultIndex)
+		assert.Equal(t, 4, *rm.ResultIndex)
+		assert.Equal(t, 1, rm.NumTurns,
+			"result_index counts results in the run, num_turns model round-trips in the turn")
+	})
+
+	t.Run("error result carries it too", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "error_during_execution",
+			"is_error": true,
+			"result_index": 2,
+			"uuid": "550e8400-e29b-41d4-a716-446655440603",
+			"session_id": "sess_index"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		require.NotNil(t, rm.ResultIndex)
+		assert.Equal(t, 2, *rm.ResultIndex)
+	})
+
+	t.Run("local_command rides a success result", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "success",
+			"result": "done",
+			"local_command": "/context",
+			"uuid": "550e8400-e29b-41d4-a716-446655440604",
+			"session_id": "sess_index"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.Equal(t, "/context", rm.LocalCommand)
+	})
+
+	t.Run("older producer omits both", func(t *testing.T) {
+		input := `{
+			"type": "result",
+			"subtype": "success",
+			"result": "done",
+			"uuid": "550e8400-e29b-41d4-a716-446655440605",
+			"session_id": "sess_index"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rm, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.Nil(t, rm.ResultIndex, "absent is not index zero")
+		assert.Empty(t, rm.LocalCommand)
+	})
+}
+
 // TestRateLimitInfoLimitScope covers the v0.3.270 limitScope field, which
 // distinguishes a pooled-group-budget denial from the member exhausting their
 // own cap — the two are otherwise identical on the wire.
