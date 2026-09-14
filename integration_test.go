@@ -4285,3 +4285,14 @@ func TestIntegrationResultIndex(t *testing.T) {
 	// number yet, so a live assertion could only re-assert the absent state.
 	t.Skip("not triggerable from CLI: runner CLI omits result_index and local_command; tracked in INTEGRATION-FOLLOWUPS.md")
 }
+
+func TestIntegrationRateLimitLimitScope(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// limitScope only appears on a denial driven by a spend limit that is not
+	// the member's own cap — a service, channel or pooled-group budget. The
+	// integration account has none of those exhausted, and exhausting one on
+	// purpose is not something a test run should do.
+	t.Skip("not triggerable from CLI: limitScope requires an exhausted service/channel/group-pool budget; tracked in INTEGRATION-FOLLOWUPS.md")
+}

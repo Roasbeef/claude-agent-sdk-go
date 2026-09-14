@@ -3003,15 +3003,23 @@ const (
 	AssistantMessageErrorOAuthOrgNotAllowed   AssistantMessageError = "oauth_org_not_allowed"
 	// AssistantMessageErrorAccountOnHold marks a turn refused because the
 	// account is on hold (sdk.d.ts v0.3.241 L159).
-	AssistantMessageErrorAccountOnHold   AssistantMessageError = "account_on_hold"
-	AssistantMessageErrorBillingError    AssistantMessageError = "billing_error"
-	AssistantMessageErrorRateLimit       AssistantMessageError = "rate_limit"
-	AssistantMessageErrorOverloaded      AssistantMessageError = "overloaded"
-	AssistantMessageErrorInvalidRequest  AssistantMessageError = "invalid_request"
-	AssistantMessageErrorModelNotFound   AssistantMessageError = "model_not_found"
-	AssistantMessageErrorServerError     AssistantMessageError = "server_error"
-	AssistantMessageErrorUnknown         AssistantMessageError = "unknown"
-	AssistantMessageErrorMaxOutputTokens AssistantMessageError = "max_output_tokens"
+	AssistantMessageErrorAccountOnHold AssistantMessageError = "account_on_hold"
+	// AssistantMessageErrorVerificationRequired marks a turn refused because
+	// the account still has verification outstanding (sdk.d.ts v0.3.270
+	// L3411).
+	AssistantMessageErrorVerificationRequired AssistantMessageError = "verification_required"
+	AssistantMessageErrorBillingError         AssistantMessageError = "billing_error"
+	AssistantMessageErrorRateLimit            AssistantMessageError = "rate_limit"
+	AssistantMessageErrorOverloaded           AssistantMessageError = "overloaded"
+	AssistantMessageErrorInvalidRequest       AssistantMessageError = "invalid_request"
+	AssistantMessageErrorModelNotFound        AssistantMessageError = "model_not_found"
+	AssistantMessageErrorServerError          AssistantMessageError = "server_error"
+	AssistantMessageErrorUnknown              AssistantMessageError = "unknown"
+	AssistantMessageErrorMaxOutputTokens      AssistantMessageError = "max_output_tokens"
+	// AssistantMessageErrorCloudCredentialError marks a turn that failed
+	// because the cloud provider credential could not be used (sdk.d.ts
+	// v0.3.270 L3411).
+	AssistantMessageErrorCloudCredentialError AssistantMessageError = "cloud_credential_error" //nolint:gosec // G101: wire enum value, not a credential
 )
 
 // Known values for the resume_reason field carried on AssistantMessage,

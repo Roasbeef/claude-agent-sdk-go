@@ -1362,6 +1362,7 @@ func TestRateLimitEventMessageRoundTripAndParse(t *testing.T) {
 			"isUsingOverage",
 			"overageInUse",
 			"surpassedThreshold",
+			"limitScope",
 		} {
 			assert.NotContains(t, info, key)
 		}
@@ -5609,4 +5610,88 @@ func TestParseMessageResultIndex(t *testing.T) {
 		assert.Nil(t, rm.ResultIndex, "absent is not index zero")
 		assert.Empty(t, rm.LocalCommand)
 	})
+}
+
+// TestRateLimitInfoLimitScope covers the v0.3.270 limitScope field, which
+// distinguishes a pooled-group-budget denial from the member exhausting their
+// own cap — the two are otherwise identical on the wire.
+func TestRateLimitInfoLimitScope(t *testing.T) {
+	t.Run("group pool denial", func(t *testing.T) {
+		input := `{
+			"type": "rate_limit_event",
+			"rate_limit_info": {
+				"status": "rejected",
+				"limitScope": "group_pool",
+				"errorCode": "credits_required"
+			},
+			"uuid": "550e8400-e29b-41d4-a716-446655440701",
+			"session_id": "sess_scope"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rl, ok := msg.(RateLimitEventMessage)
+		require.True(t, ok)
+		assert.Equal(t, RateLimitScopeGroupPool, rl.RateLimitInfo.LimitScope)
+		assert.Equal(t, RateLimitErrorCodeCreditsRequired, rl.RateLimitInfo.ErrorCode)
+	})
+
+	t.Run("service and channel scopes", func(t *testing.T) {
+		for _, want := range []RateLimitScope{
+			RateLimitScopeService, RateLimitScopeChannel,
+		} {
+			input := `{
+				"type": "rate_limit_event",
+				"rate_limit_info": {"status": "rejected", "limitScope": "` +
+				string(want) + `"},
+				"uuid": "550e8400-e29b-41d4-a716-446655440702",
+				"session_id": "sess_scope"
+			}`
+			msg, err := ParseMessage([]byte(input))
+			require.NoError(t, err)
+			rl, ok := msg.(RateLimitEventMessage)
+			require.True(t, ok)
+			assert.Equal(t, want, rl.RateLimitInfo.LimitScope)
+		}
+	})
+
+	t.Run("plain member denial leaves it empty", func(t *testing.T) {
+		input := `{
+			"type": "rate_limit_event",
+			"rate_limit_info": {"status": "rejected"},
+			"uuid": "550e8400-e29b-41d4-a716-446655440703",
+			"session_id": "sess_scope"
+		}`
+		msg, err := ParseMessage([]byte(input))
+		require.NoError(t, err)
+		rl, ok := msg.(RateLimitEventMessage)
+		require.True(t, ok)
+		assert.Empty(t, rl.RateLimitInfo.LimitScope)
+	})
+}
+
+// TestAssistantMessageErrorCodes pins the v0.3.270 additions to the assistant
+// error union.
+func TestAssistantMessageErrorCodes(t *testing.T) {
+	for _, tc := range []struct {
+		wire string
+		want AssistantMessageError
+	}{
+		{"verification_required", AssistantMessageErrorVerificationRequired},
+		{"cloud_credential_error", AssistantMessageErrorCloudCredentialError},
+	} {
+		t.Run(tc.wire, func(t *testing.T) {
+			input := `{
+				"type": "assistant",
+				"message": {"role":"assistant","content":[]},
+				"error": "` + tc.wire + `",
+				"uuid": "550e8400-e29b-41d4-a716-446655440704",
+				"session_id": "sess_err"
+			}`
+			msg, err := ParseMessage([]byte(input))
+			require.NoError(t, err)
+			am, ok := msg.(AssistantMessage)
+			require.True(t, ok)
+			assert.Equal(t, tc.want, am.Error)
+		})
+	}
 }
