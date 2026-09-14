@@ -4475,3 +4475,75 @@ func TestIntegrationListPermissionRules(t *testing.T) {
 	assert.True(t, sawFlagRule,
 		"the --allowedTools rule this session launched with should be listed")
 }
+
+// TestIntegrationGetHooksListing exercises the v0.3.270 get_hooks_listing
+// control request against the live CLI.
+//
+// The assertion targets the event catalog rather than the hook rows: the
+// catalog is every hook event the binary knows about, so it is non-empty on
+// any session regardless of what the machine has configured. CLIs predating
+// the subtype reject it; the test skips in that case so the slot activates
+// once the binary catches up.
+func TestIntegrationGetHooksListing(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	listing, err := stream.GetHooksListing(ctx)
+	if err != nil {
+		t.Skipf("CLI does not support get_hooks_listing: %v", err)
+	}
+	require.NotNil(t, listing)
+
+	require.NotEmpty(t, listing.EventCatalog,
+		"the catalog is the binary's own event list, so it is never empty")
+
+	catalog := make(map[string]bool, len(listing.EventCatalog))
+	for _, ev := range listing.EventCatalog {
+		assert.NotEmpty(t, ev.Name)
+		assert.NotEmpty(t, ev.Summary, "every catalog entry carries its /hooks summary")
+		catalog[ev.Name] = true
+	}
+	assert.True(t, catalog["PreToolUse"],
+		"PreToolUse is a core lifecycle event and must be cataloged")
+
+	// Every listed event must exist in the catalog, and every listed hook
+	// must name an event that was listed.
+	listed := make(map[string]bool, len(listing.Events))
+	for _, ev := range listing.Events {
+		assert.True(t, catalog[ev.Name],
+			"listed event %q missing from the catalog", ev.Name)
+		assert.Positive(t, ev.HookCount, "a listed event has at least one hook")
+		listed[ev.Name] = true
+	}
+	for _, h := range listing.Hooks {
+		assert.True(t, listed[h.Event],
+			"hook row on event %q that the events list omits", h.Event)
+		assert.NotEmpty(t, h.Source)
+		assert.NotEmpty(t, h.Type)
+		if h.Editable != nil {
+			assert.NotNil(t, h.Editable.Config,
+				"an editable row must carry the stored config it names")
+		}
+	}
+
+	// An empty listing under managedOnly is not evidence nothing runs.
+	if listing.Policy.ManagedOnly {
+		t.Logf("managed-only session: %d policy hooks run but are withheld "+
+			"from the listing", listing.Policy.PolicyHookCount)
+	}
+}
