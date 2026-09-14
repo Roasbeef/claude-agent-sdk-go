@@ -28,19 +28,22 @@ type Options struct {
 	// flipped flag, or a different append is enough to cause that. A recorded
 	// prompt cannot change until the conversation is compacted.
 	//
-	// The three states are distinct, which is why this is a pointer:
-	//   - nil: only a bare preset is recorded. Setting a custom prompt or an
-	//     append turns recording off, so that text is applied fresh on every
-	//     launch. This is the historical behavior.
-	//   - true: an existing record is sent as-is, and a later launch's
-	//     different prompt or append is ignored until compaction or a new
-	//     session. With no record yet, the prompt is rendered with the append
-	//     included, sent, and recorded for the rest of the conversation.
-	//   - false: never record; render fresh every request.
+	// As of v0.3.270 recording is the default, so the pointer distinguishes
+	// two behaviors, not three:
+	//   - nil or true: the default. The prompt is rendered on the first
+	//     request with the append (or a custom prompt) included, sent, and
+	//     recorded; every later request and resume sends the record as-is —
+	//     even when a later launch passes different text — until compaction.
+	//   - false: never record; render fresh every request. For iterating on
+	//     prompt text, or a host that must change its append within a session.
+	//
+	// Before v0.3.270 an omitted field recorded only a bare preset and left a
+	// custom prompt or append rendering fresh each launch; that is no longer
+	// the default.
 	//
 	// Safe to set before the feature reaches an account: where recording is
 	// not yet enabled, and on Bedrock, Vertex and Foundry today, the field is
-	// accepted and does nothing (sdk.d.ts v0.3.263 L3990).
+	// accepted and does nothing (sdk.d.ts v0.3.270 L4178).
 	SystemPromptSnapshot *bool
 
 	// Model specifies which Claude model to use.
@@ -3822,10 +3825,11 @@ func WithSystemPromptPreset(preset string, append string) Option {
 }
 
 // WithSystemPromptSnapshot records the conversation's system prompt once and
-// reuses it verbatim on every later request and resume. Recommended: true.
+// reuses it verbatim on every later request and resume.
 //
-// Omitting this is not the same as passing false — see
-// Options.SystemPromptSnapshot for the three states.
+// As of v0.3.270 recording is the default, so passing true matches the
+// omitted behavior; pass false to opt out and render fresh every request. See
+// Options.SystemPromptSnapshot.
 func WithSystemPromptSnapshot(snapshot bool) Option {
 	return func(o *Options) {
 		o.SystemPromptSnapshot = &snapshot

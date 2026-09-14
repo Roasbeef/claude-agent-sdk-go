@@ -105,18 +105,26 @@ type AssistantMessage struct {
 	// PartialAssistantMessage.UserMessageUUID), though a turn that produces
 	// no stream events still stamps its first assistant message. Every later
 	// frame of the turn leaves it empty, as do subagent frames
-	// (ParentToolUseID set), synthetic and scheduled turns, turns the caller
-	// sent no uuid for, and older producers (sdk.d.ts v0.3.251 L3211).
+	// (ParentToolUseID set), turns the caller sent no uuid for, and older
+	// producers.
+	//
+	// A synthetic or scheduled (meta) turn normally leaves it empty, but as of
+	// v0.3.270 it re-stamps: each user message folded into the turn mid-run
+	// takes the echo over, and the first reply frame of each kind after that
+	// fold carries the folded message's uuid. A meta turn's own uuid is stamped
+	// only when the host vouches it is the client event's own (sdk.d.ts
+	// v0.3.270 L3352).
 	UserMessageUUID string `json:"user_message_uuid,omitempty"`
 	// UserMessageUUIDs lists the client uuids of every user message whose
 	// prompt this turn has consumed so far, in consumption order. When the
 	// host merges a batch of sends made close together into one turn, that
 	// turn's UserMessageUUID names only the LAST member; this list names them
 	// all, so any sender in the batch can bind the reply by finding its own
-	// uuid anywhere in it. Always contains UserMessageUUID and holds at most
-	// 64 entries. Present exactly when UserMessageUUID is, on the same first
-	// reply frame; absent from older producers, where you fall back to the
-	// singular field (sdk.d.ts v0.3.263 L3336).
+	// uuid anywhere in it. It also picks up any user message folded into the
+	// turn before this frame (the meta-turn case above). Always contains
+	// UserMessageUUID and holds at most 64 entries. Present exactly when
+	// UserMessageUUID is; absent from older producers, where you fall back to
+	// the singular field (sdk.d.ts v0.3.270 L3356).
 	UserMessageUUIDs []string `json:"user_message_uuids,omitempty"`
 
 	// ResumeReason says why this frame's turn is the automatic re-run of a
@@ -378,9 +386,13 @@ type ResultMessage struct {
 	// upstream (sdk.d.ts L4799), where it rides alone because an error turn
 	// has no RequestSentWallMs to report.
 	//
-	// Empty on synthetic and scheduled turns, on turns the caller sent no
-	// uuid for, on session-scoped failures with no single triggering send
-	// (a crashed worker's zeroed result), and from older producers.
+	// A synthetic or scheduled (meta) turn echoes its own uuid only when the
+	// host vouches it is the client event's own; a meta turn that folded
+	// queued user messages in mid-run echoes the LAST of them instead. Empty
+	// on turns that neither had a client uuid nor folded a message in, on
+	// session-scoped failures with no single triggering send (a crashed
+	// worker's zeroed result), and from older producers (sdk.d.ts v0.3.270
+	// L5305).
 	UserMessageUUID string `json:"user_message_uuid,omitempty"`
 	// UserMessageUUIDs lists the client uuids of every user message this turn
 	// consumed, in consumption order: a merged prompt batch (whose singular
@@ -804,8 +816,17 @@ type SDKControlResponse struct {
 // PendingPermissionRequests and PendingUserDialogRequests are emitted on
 // both "success" and "error" subtypes. The TS SDK attaches them to the
 // `initialize` response so a client joining an already-initialized session
-// learns about in-flight permission prompts and user dialogs. See sdk.d.ts
-// (v0.3.177) L298-L320.
+// learns about in-flight permission prompts and user dialogs — the
+// can_use_tool and request_user_dialog requests this CLI process has issued
+// and not yet resolved.
+//
+// As of CLI v2.1.268 both are always present (possibly empty) on a success
+// initialize; an earlier CLI could omit them, so a nil slice means an older
+// CLI, not "nothing pending". A prompt inherited from a previous worker of the
+// same session can stay answerable without appearing here and without a
+// control_cancel_request; a session_state of "requires_action" on the same
+// reply signals one the CLI is holding, though not every inherited prompt is
+// signalled. See sdk.d.ts v0.3.270 L306-L333.
 type SDKControlResponseBody struct {
 	Subtype                   string                 `json:"subtype"`                                // "success" or "error"
 	RequestID                 string                 `json:"request_id"`                             // Correlates to request
