@@ -119,6 +119,14 @@ type AssistantMessage struct {
 	// singular field (sdk.d.ts v0.3.263 L3336).
 	UserMessageUUIDs []string `json:"user_message_uuids,omitempty"`
 
+	// ResumeReason says why this frame's turn is the automatic re-run of a
+	// turn a worker restart interrupted. It rides the same frames as
+	// UserMessageUUID, which on such a re-run names the interrupted turn's own
+	// last user prompt — so a consumer can tell the re-run's first reply from
+	// the interrupted attempt's. Empty on every other turn and from older
+	// producers. See the ResumeReason* constants (sdk.d.ts v0.3.270 L3362).
+	ResumeReason string `json:"resume_reason,omitempty"`
+
 	// Supersedes lists wire UUIDs of previously-delivered messages that this
 	// message replaces (refusal-fallback supersede). The list can include
 	// tombstoned tool_result frames from the refused leg, not only assistant
@@ -384,17 +392,25 @@ type ResultMessage struct {
 	// and zeroed results and from older producers, where you fall back to the
 	// singular field. Carried on both result variants, like the singular field
 	// (sdk.d.ts v0.3.263 L4991 error, L5014 success).
-	UserMessageUUIDs         []string `json:"user_message_uuids,omitempty"`
-	RequestSentWallMs        *int64   `json:"request_sent_wall_ms,omitempty"`          // Wall-clock time the request was sent, ms since epoch (success only; sdk.d.ts v0.3.220 L4301)
-	FirstContentFrameMs      *int64   `json:"first_content_frame_ms,omitempty"`        // Time to the first content frame, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5016)
-	FirstStreamPostMs        *int64   `json:"first_stream_post_ms,omitempty"`          // Time to the first stream post, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5017)
-	FirstStreamPostAckMs     *int64   `json:"first_stream_post_ack_ms,omitempty"`      // Time to that post being acked, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5018)
-	FirstStreamPostWallMs    *int64   `json:"first_stream_post_wall_ms,omitempty"`     // Wall-clock time of the first stream post, ms since epoch (success only; sdk.d.ts v0.3.263 L5019)
-	TimeToRequestFromSpawnMs *int64   `json:"time_to_request_from_spawn_ms,omitempty"` // Time to request from spawn in milliseconds
-	WarmSpareClaimed         *bool    `json:"warm_spare_claimed,omitempty"`            // Whether a warm spare was claimed
-	TimeOriginMs             *int64   `json:"time_origin_ms,omitempty"`                // Wall-clock origin for the above timings, in milliseconds (success only)
-	IsError                  bool     `json:"is_error,omitempty"`                      // Whether this is an error result
-	NumTurns                 int      `json:"num_turns,omitempty"`                     // Number of conversation turns
+	UserMessageUUIDs []string `json:"user_message_uuids,omitempty"`
+	// ResumeReason says why this turn was the automatic re-run of a turn a
+	// worker restart interrupted. Present on a headless re-run's result,
+	// success or error, with or without an echoed UserMessageUUID — a re-run
+	// whose opener could not be vouched still carries the reason. Empty on
+	// every other turn, on the Remote Control bridge's per-turn synthetic
+	// results, and from older producers. See the ResumeReason* constants
+	// (sdk.d.ts v0.3.270 L5315 error, L5343 success).
+	ResumeReason             string `json:"resume_reason,omitempty"`
+	RequestSentWallMs        *int64 `json:"request_sent_wall_ms,omitempty"`          // Wall-clock time the request was sent, ms since epoch (success only; sdk.d.ts v0.3.220 L4301)
+	FirstContentFrameMs      *int64 `json:"first_content_frame_ms,omitempty"`        // Time to the first content frame, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5016)
+	FirstStreamPostMs        *int64 `json:"first_stream_post_ms,omitempty"`          // Time to the first stream post, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5017)
+	FirstStreamPostAckMs     *int64 `json:"first_stream_post_ack_ms,omitempty"`      // Time to that post being acked, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5018)
+	FirstStreamPostWallMs    *int64 `json:"first_stream_post_wall_ms,omitempty"`     // Wall-clock time of the first stream post, ms since epoch (success only; sdk.d.ts v0.3.263 L5019)
+	TimeToRequestFromSpawnMs *int64 `json:"time_to_request_from_spawn_ms,omitempty"` // Time to request from spawn in milliseconds
+	WarmSpareClaimed         *bool  `json:"warm_spare_claimed,omitempty"`            // Whether a warm spare was claimed
+	TimeOriginMs             *int64 `json:"time_origin_ms,omitempty"`                // Wall-clock origin for the above timings, in milliseconds (success only)
+	IsError                  bool   `json:"is_error,omitempty"`                      // Whether this is an error result
+	NumTurns                 int    `json:"num_turns,omitempty"`                     // Number of conversation turns
 
 	// TotalCostUSD is the cumulative estimated cost in USD for this query()
 	// call, covering the same calls as ModelUsage and sharing its lifecycle:
@@ -439,8 +455,26 @@ type ResultMessage struct {
 	StructuredOutput interface{}     `json:"structured_output,omitempty"` // Structured output (if OutputFormat set)
 	StopReason       *string         `json:"stop_reason"`                 // Stop reason, explicitly null when absent
 	TerminalReason   *TerminalReason `json:"terminal_reason,omitempty"`   // Terminal completion reason
-	Origin           *MessageOrigin  `json:"origin,omitempty"`            // Originating actor for this result
-	FastModeState    *FastModeState  `json:"fast_mode_state,omitempty"`   // Fast mode state at completion
+	// ResultIndex is this result's delivery sequence within the run: how many
+	// results the run numbered before it, starting at zero, in the order the
+	// process writes them. A result held back while background work finishes
+	// is numbered when it is finally written, not when its text was produced,
+	// and a result whose write fails still consumes its number — so a gap in
+	// a stream-json sequence means a result was lost.
+	//
+	// Distinct from NumTurns, which counts model round-trips within one turn.
+	// Numbered by the process hosting the run: a local client relaying a
+	// cloud session passes the cloud numbering through and its own locally
+	// built error results carry none. Nil from older producers, which is not
+	// the same as index zero (sdk.d.ts v0.3.270 L5320 error, L5382 success).
+	ResultIndex *int `json:"result_index,omitempty"`
+	// LocalCommand names the local slash command this result answers, when
+	// the turn was one. Success results only. Carried opaquely: sdk.d.ts
+	// v0.3.270 L5344 declares it with no documentation and sdk.mjs never
+	// reads it.
+	LocalCommand  string         `json:"local_command,omitempty"`
+	Origin        *MessageOrigin `json:"origin,omitempty"`          // Originating actor for this result
+	FastModeState *FastModeState `json:"fast_mode_state,omitempty"` // Fast mode state at completion
 	// FastModeDisabledReason explains why fast mode could not serve, when
 	// fast_mode_state is not "on". Absent when nothing blocks it.
 	FastModeDisabledReason *FastModeDisabledReason `json:"fast_mode_disabled_reason,omitempty"`
@@ -914,6 +948,22 @@ const (
 	RateLimitStatusRejected       RateLimitStatus = "rejected"
 )
 
+// RateLimitScope names which spend limit blocked a request, when the limit
+// that bit was not the member's own cap (sdk.d.ts v0.3.270 L5270).
+type RateLimitScope string
+
+const (
+	// RateLimitScopeService means a service-wide spend limit blocked it.
+	RateLimitScopeService RateLimitScope = "service"
+	// RateLimitScopeChannel means a per-channel spend limit blocked it.
+	RateLimitScopeChannel RateLimitScope = "channel"
+	// RateLimitScopeGroupPool means a pooled group budget shared by the
+	// member's team is used up. Without this the denial is indistinguishable
+	// from the member exhausting their own monthly cap, which is the wrong
+	// thing to tell the user.
+	RateLimitScopeGroupPool RateLimitScope = "group_pool"
+)
+
 // TerminalReason explains why a result message reached a terminal state.
 type TerminalReason string
 
@@ -1016,6 +1066,15 @@ type RateLimitInfo struct {
 	IsUsingOverage        *bool                           `json:"isUsingOverage,omitempty"`
 	OverageInUse          *bool                           `json:"overageInUse,omitempty"`
 	SurpassedThreshold    *float64                        `json:"surpassedThreshold,omitempty"`
+	// LimitScope names which spend limit blocked the request when it is not
+	// the member's own cap. RateLimitScopeGroupPool in particular means a
+	// pooled group budget shared by the member's team is used up — a denial
+	// that otherwise looks identical to hitting one's own monthly cap, so a
+	// host telling the user what to do about it has to branch on this.
+	//
+	// Empty on a plain member denial and from older CLIs (sdk.d.ts v0.3.270
+	// L5270).
+	LimitScope RateLimitScope `json:"limitScope,omitempty"`
 	// ErrorCode signals a credit-exhaustion condition; the only defined value
 	// is "credits_required". Open string for forward compatibility.
 	ErrorCode string `json:"errorCode,omitempty"`
@@ -1235,6 +1294,12 @@ type PartialAssistantMessage struct {
 	// first non-ping stream event; absent from older producers, where you fall
 	// back to the singular field (sdk.d.ts v0.3.263 L4843).
 	UserMessageUUIDs []string `json:"user_message_uuids,omitempty"`
+
+	// ResumeReason says why this frame's turn is the automatic re-run of a
+	// turn a worker restart interrupted. It rides the same frames as
+	// UserMessageUUID. Empty on every other turn and from older producers.
+	// See the ResumeReason* constants (sdk.d.ts v0.3.270 L5111).
+	ResumeReason string `json:"resume_reason,omitempty"`
 }
 
 // MessageType implements Message.

@@ -4263,6 +4263,40 @@ func TestIntegrationSystemPromptSnapshot(t *testing.T) {
 			"reply was %q", reply.String())
 }
 
+func TestIntegrationResumeReason(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// resume_reason only rides the frames of a turn the CLI re-ran after a
+	// worker restart interrupted it — the CLAUDE_CODE_RESUME_INTERRUPTED_TURN
+	// path. Reproducing it needs a host that kills a worker mid-turn and
+	// brings it back on the same session, which the subprocess transport does
+	// not do. Verified via unit tests in messages_test.go.
+	t.Skip("not triggerable from CLI: resume_reason requires a worker restart mid-turn; tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
+func TestIntegrationResultIndex(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// Probed against the runner CLI: a single-turn `claude -p` result carries
+	// neither result_index nor local_command. The numbering is emitted by the
+	// process hosting the run, and the in-process engine surface does not
+	// number yet, so a live assertion could only re-assert the absent state.
+	t.Skip("not triggerable from CLI: runner CLI omits result_index and local_command; tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
+func TestIntegrationRateLimitLimitScope(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// limitScope only appears on a denial driven by a spend limit that is not
+	// the member's own cap — a service, channel or pooled-group budget. The
+	// integration account has none of those exhausted, and exhausting one on
+	// purpose is not something a test run should do.
+	t.Skip("not triggerable from CLI: limitScope requires an exhausted service/channel/group-pool budget; tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
 // TestIntegrationContextUsageCategoryKind exercises the v0.3.270 kind
 // discriminator on get_context_usage rows against the live CLI. The doc is
 // explicit that consumers must classify on kind rather than on the row's
