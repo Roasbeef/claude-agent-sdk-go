@@ -641,3 +641,127 @@ const (
 	// treats as read-only.
 	PermissionRuleEditabilityReadonly PermissionRuleEditability = "readonly"
 )
+
+// SDKControlGetHooksListingResponse is the read-only snapshot of the CLI's
+// /hooks menu — settings-file, session and plugin hooks grouped by event and
+// matcher, with display-ready strings and the policy/safe-mode state the menu
+// banners on. A snapshot at request time; re-request when a surface reopens
+// (sdk.d.ts v0.3.270 L3672).
+type SDKControlGetHooksListingResponse struct {
+	// Events are the hook events that have at least one listed hook, in the
+	// /hooks menu's lifecycle order.
+	Events []HooksListingEvent `json:"events"`
+	// Hooks is one row per listed hook: events in lifecycle order, matchers in
+	// the menu's priority order.
+	Hooks []HooksListingHook `json:"hooks"`
+	// EventCatalog is every hook event in lifecycle order — for an add-hook
+	// form — whether or not it currently has hooks.
+	EventCatalog []HooksListingEventCatalogEntry `json:"eventCatalog"`
+	Policy       HooksListingPolicy              `json:"policy"`
+	// SafeMode is present only when the session runs under --safe-mode.
+	SafeMode *HooksListingSafeMode `json:"safeMode,omitempty"`
+	// BareMode is present only under --bare / CLAUDE_CODE_SIMPLE with the hooks
+	// surface gated off: settings-file, flag, policy and plugin hooks never
+	// fire there; session hooks still run.
+	BareMode *HooksListingBareMode `json:"bareMode,omitempty"`
+	// Errors lists settings files skipped by the merge — their hooks are
+	// neither listed above nor running.
+	Errors []SDKSettingsParseError `json:"errors,omitempty"`
+}
+
+// HooksListingEvent summarizes one hook event that has listed hooks.
+type HooksListingEvent struct {
+	Name string `json:"name"`
+	// Summary is the one-line description the /hooks event list shows.
+	Summary string `json:"summary"`
+	// SupportsMatcher is whether hooks on this event can carry a matcher.
+	SupportsMatcher bool `json:"supportsMatcher"`
+	// HookCount is the number of listed hooks on this event.
+	HookCount int `json:"hookCount"`
+}
+
+// HooksListingHook is one row of the /hooks listing. Every display string has
+// control characters revealed; escape again for the host's own surface.
+type HooksListingHook struct {
+	Event string `json:"event"`
+	// Matcher is the matcher with control characters revealed; empty when the
+	// entry has none.
+	Matcher string `json:"matcher"`
+	// Source is the raw source name (userSettings, sessionHook, pluginHook, …).
+	Source string `json:"source"`
+	// SourceLabel is the user-facing source description.
+	SourceLabel string `json:"sourceLabel"`
+	PluginName  string `json:"pluginName,omitempty"`
+	// Type is the hook type (command, prompt, agent, http, mcp_tool, …).
+	Type string `json:"type"`
+	// DisplayText is the list-row label: StatusMessage when set, else the
+	// identity text; one line, control characters revealed.
+	DisplayText string `json:"displayText"`
+	// CommandText is the identity text — the literal command/prompt/URL that
+	// runs, control characters revealed.
+	CommandText string `json:"commandText"`
+	// ContentLabel labels CommandText (Command, Prompt, URL, …).
+	ContentLabel string `json:"contentLabel"`
+	// Condition is the if-condition, revealed, when set.
+	Condition        string `json:"condition,omitempty"`
+	Timeout          int    `json:"timeout,omitempty"`
+	StatusMessage    string `json:"statusMessage,omitempty"`
+	RunsOnce         bool   `json:"runsOnce,omitempty"`
+	RunsInBackground bool   `json:"runsInBackground,omitempty"`
+	// Disabled is true when the session's mode or policy keeps this hook from
+	// running (Policy and SafeMode/BareMode say why); absent on rows that run.
+	Disabled bool `json:"disabled,omitempty"`
+	// Editable carries the entry as stored — for a host's edit form and as the
+	// target it names to `claude edit-hook`. Present only on rows from a
+	// settings file this session reads and may write.
+	Editable *HooksListingEditable `json:"editable,omitempty"`
+}
+
+// HooksListingEditable is a hook entry as stored, with no display escaping —
+// the raw matcher and hook object a host edit form round-trips.
+type HooksListingEditable struct {
+	// Matcher is the raw matcher, empty when the entry has none.
+	Matcher string `json:"matcher"`
+	// Config is the raw stored hook object.
+	Config map[string]any `json:"config"`
+	// HeadersRedacted is true when HTTP header values were blanked; a replace
+	// that sends no headers keeps the stored ones.
+	HeadersRedacted bool `json:"headersRedacted,omitempty"`
+}
+
+// HooksListingEventCatalogEntry is one hook event in an add-hook form.
+type HooksListingEventCatalogEntry struct {
+	Name            string `json:"name"`
+	Summary         string `json:"summary"`
+	SupportsMatcher bool   `json:"supportsMatcher"`
+}
+
+// HooksListingPolicy is the managed-settings state the /hooks menu banners on.
+type HooksListingPolicy struct {
+	// DisabledByPolicy is managed disableAllHooks — nothing runs at all.
+	DisabledByPolicy bool `json:"disabledByPolicy"`
+	// ManagedOnly is managed allowManagedHooksOnly — non-managed hooks are
+	// blocked and managed hooks are intentionally not listed.
+	ManagedOnly bool `json:"managedOnly"`
+	// PluginOnly is managed strictPluginOnlyCustomization locking the surface.
+	PluginOnly bool `json:"pluginOnly"`
+	// AllDisabled is the effective disableAllHooks, whatever source set it.
+	AllDisabled bool `json:"allDisabled"`
+	// PolicyHookCount is hooks configured in managed settings — they run even
+	// under a non-managed disableAllHooks.
+	PolicyHookCount int `json:"policyHookCount"`
+}
+
+// HooksListingSafeMode describes the session's --safe-mode state.
+type HooksListingSafeMode struct {
+	ManagedHooksStillApply bool `json:"managedHooksStillApply"`
+	// ExitHint is how to leave safe mode, per its activation source.
+	ExitHint string `json:"exitHint"`
+}
+
+// HooksListingBareMode describes the session's --bare / CLAUDE_CODE_SIMPLE
+// state.
+type HooksListingBareMode struct {
+	// ExitHint is how to leave bare mode, per its activation source.
+	ExitHint string `json:"exitHint"`
+}

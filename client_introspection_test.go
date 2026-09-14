@@ -890,3 +890,167 @@ func TestStreamListPermissionRules(t *testing.T) {
 		assert.Contains(t, err.Error(), "unknown subtype")
 	})
 }
+
+func TestStreamGetHooksListing(t *testing.T) {
+	t.Run("request wire shape", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"events":       []interface{}{},
+				"hooks":        []interface{}{},
+				"eventCatalog": []interface{}{},
+				"policy": map[string]interface{}{
+					"disabledByPolicy": false,
+					"managedOnly":      false,
+					"pluginOnly":       false,
+					"allDisabled":      false,
+					"policyHookCount":  0,
+				},
+			}),
+		)
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.GetHooksListing(ctx)
+			return err
+		})
+		require.NoError(t, err)
+
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1","request":{"subtype":"get_hooks_listing"}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+	})
+
+	t.Run("parses events, hooks, editable and policy", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"events": []interface{}{
+					map[string]interface{}{
+						"name":            "PreToolUse",
+						"summary":         "before a tool runs",
+						"supportsMatcher": true,
+						"hookCount":       2,
+					},
+				},
+				"hooks": []interface{}{
+					map[string]interface{}{
+						"event":        "PreToolUse",
+						"matcher":      "Bash",
+						"source":       "userSettings",
+						"sourceLabel":  "User settings",
+						"type":         "command",
+						"displayText":  "guard.sh",
+						"commandText":  "./guard.sh",
+						"contentLabel": "Command",
+						"timeout":      30,
+						"editable": map[string]interface{}{
+							"matcher": "Bash",
+							"config": map[string]interface{}{
+								"type":    "command",
+								"command": "./guard.sh",
+							},
+						},
+					},
+					map[string]interface{}{
+						"event":        "PreToolUse",
+						"matcher":      "",
+						"source":       "pluginHook",
+						"sourceLabel":  "Plugin: sec-default",
+						"pluginName":   "sec-default",
+						"type":         "http",
+						"displayText":  "audit endpoint",
+						"commandText":  "https://audit.example/hook",
+						"contentLabel": "URL",
+						"disabled":     true,
+						"editable": map[string]interface{}{
+							"matcher":         "",
+							"config":          map[string]interface{}{"type": "http"},
+							"headersRedacted": true,
+						},
+					},
+				},
+				"eventCatalog": []interface{}{
+					map[string]interface{}{
+						"name":            "PreToolUse",
+						"summary":         "before a tool runs",
+						"supportsMatcher": true,
+					},
+					map[string]interface{}{
+						"name":            "SessionStart",
+						"summary":         "session begins",
+						"supportsMatcher": false,
+					},
+				},
+				"policy": map[string]interface{}{
+					"disabledByPolicy": false,
+					"managedOnly":      true,
+					"pluginOnly":       false,
+					"allDisabled":      false,
+					"policyHookCount":  1,
+				},
+				"safeMode": map[string]interface{}{
+					"managedHooksStillApply": true,
+					"exitHint":               "restart without --safe-mode",
+				},
+				"errors": []interface{}{
+					map[string]interface{}{
+						"file":    "/repo/.claude/settings.json",
+						"path":    "hooks",
+						"message": "expected object",
+					},
+				},
+			}),
+		)
+
+		var got *SDKControlGetHooksListingResponse
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			var err error
+			got, err = stream.GetHooksListing(ctx)
+			return err
+		})
+		require.NoError(t, err)
+
+		require.Len(t, got.Events, 1)
+		assert.Equal(t, "PreToolUse", got.Events[0].Name)
+		assert.True(t, got.Events[0].SupportsMatcher)
+		assert.Equal(t, 2, got.Events[0].HookCount)
+
+		require.Len(t, got.Hooks, 2)
+		assert.Equal(t, "Bash", got.Hooks[0].Matcher)
+		assert.Equal(t, 30, got.Hooks[0].Timeout)
+		assert.False(t, got.Hooks[0].Disabled)
+		require.NotNil(t, got.Hooks[0].Editable)
+		assert.Equal(t, "./guard.sh", got.Hooks[0].Editable.Config["command"])
+		assert.False(t, got.Hooks[0].Editable.HeadersRedacted)
+
+		assert.Equal(t, "sec-default", got.Hooks[1].PluginName)
+		assert.True(t, got.Hooks[1].Disabled,
+			"a hook a policy blocks is listed with disabled set")
+		require.NotNil(t, got.Hooks[1].Editable)
+		assert.True(t, got.Hooks[1].Editable.HeadersRedacted)
+
+		require.Len(t, got.EventCatalog, 2)
+		assert.False(t, got.EventCatalog[1].SupportsMatcher)
+
+		assert.True(t, got.Policy.ManagedOnly)
+		assert.Equal(t, 1, got.Policy.PolicyHookCount)
+
+		require.NotNil(t, got.SafeMode)
+		assert.True(t, got.SafeMode.ManagedHooksStillApply)
+		assert.Nil(t, got.BareMode)
+
+		require.Len(t, got.Errors, 1)
+		assert.Equal(t, "hooks", got.Errors[0].Path)
+	})
+
+	t.Run("error", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(
+			controlErrorResponse("unknown subtype get_hooks_listing"))
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.GetHooksListing(ctx)
+			return err
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unknown subtype")
+	})
+}
