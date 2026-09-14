@@ -4364,6 +4364,48 @@ func TestIntegrationContextUsageCategoryKind(t *testing.T) {
 	}
 }
 
+// TestIntegrationReloadPluginsHoldOnCacheImpact exercises the v0.3.270
+// hold_on_cache_impact option against the live CLI.
+//
+// The session loads no plugins, so applying a reload changes nothing and the
+// check must come back clean — the assertion is that the CLI accepts the
+// option and does not hold. A CLI predating the option ignores the field and
+// answers with held absent, which the test treats as a skip so the slot
+// activates once the binary catches up.
+func TestIntegrationReloadPluginsHoldOnCacheImpact(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	got, err := stream.ReloadPlugins(ctx, ReloadPluginsOptions{
+		HoldOnCacheImpact: true,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+
+	if got.Held == nil {
+		t.Skip("CLI predates reload_plugins hold_on_cache_impact")
+	}
+
+	assert.False(t, *got.Held,
+		"a session with no plugins has no tool-list change to hold on")
+	assert.Nil(t, got.CacheImpact, "nothing was held, so nothing to preview")
+}
+
 // TestIntegrationListPermissionRules exercises the v0.3.270
 // list_permission_rules control request against the live CLI.
 //

@@ -163,7 +163,53 @@ type SDKControlReloadPluginsResponse struct {
 	Plugins    []PluginInfo      `json:"plugins"`
 	McpServers []McpServerStatus `json:"mcpServers"`
 	ErrorCount int               `json:"error_count"`
+
+	// Held reports the outcome of the cache-impact check, and is set only
+	// when ReloadPluginsOptions.HoldOnCacheImpact asked for one and the CLI
+	// ran it.
+	//
+	// True: nothing was applied. The lists above describe the session as it
+	// still is, and CacheImpact says what applying would change. False: the
+	// check found no impact and the reload went through. Nil: the request did
+	// not ask, or the CLI predates the option and applied the reload
+	// unchecked — which is not the same as a check that came back clean
+	// (sdk.d.ts v0.3.270 L4564).
+	Held *bool `json:"held,omitempty"`
+
+	// CacheImpact describes what applying the held reload would change in the
+	// session's tool list. Present only alongside Held == true.
+	CacheImpact *ReloadPluginsCacheImpact `json:"cache_impact,omitempty"`
 }
+
+// ReloadPluginsCacheImpact describes the tool-list change a held plugin reload
+// would make. The server names are plugin-authored and scoped
+// plugin:<plugin>:<server> — render-unsafe, so sanitize before display
+// (sdk.d.ts v0.3.270 L4571).
+type ReloadPluginsCacheImpact struct {
+	MCPServersAdded   []string `json:"mcp_servers_added"`
+	MCPServersRemoved []string `json:"mcp_servers_removed"`
+	// LSPToolChange is whether applying would add or remove the LSP tool.
+	// Nil when it would do neither. The "may-" forms mean the preview could
+	// not fully see the pending plugin set, so the change is possible rather
+	// than certain.
+	LSPToolChange *LSPToolChange `json:"lsp_tool_change"`
+}
+
+// LSPToolChange is how a held plugin reload would affect the LSP tool.
+type LSPToolChange string
+
+const (
+	// LSPToolChangeAdds means applying would add the LSP tool.
+	LSPToolChangeAdds LSPToolChange = "adds"
+	// LSPToolChangeMayAdd means applying might add it — the preview could
+	// not fully see the pending plugin set.
+	LSPToolChangeMayAdd LSPToolChange = "may-add"
+	// LSPToolChangeRemoves means applying would remove the LSP tool.
+	LSPToolChangeRemoves LSPToolChange = "removes"
+	// LSPToolChangeMayRemove means applying might remove it, with the same
+	// caveat as LSPToolChangeMayAdd.
+	LSPToolChangeMayRemove LSPToolChange = "may-remove"
+)
 
 // SDKControlReloadSkillsResponse reports refreshed skill commands.
 type SDKControlReloadSkillsResponse struct {
