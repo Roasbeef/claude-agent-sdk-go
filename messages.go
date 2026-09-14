@@ -749,34 +749,35 @@ type SDKControlRequestBody struct {
 	DefaultToNo             bool            `json:"default_to_no,omitempty"`
 	MatchedAskRule          *MatchedAskRule `json:"matched_ask_rule,omitempty"`
 
-	CallbackID        string                      `json:"callback_id,omitempty"`         // For hook_callback
-	Mode              string                      `json:"mode,omitempty"`                // For set_permission_mode
-	Model             string                      `json:"model,omitempty"`               // For set_model
-	MaxThinkingTokens *int                        `json:"max_thinking_tokens,omitempty"` // For set_max_thinking_tokens
-	ThinkingDisplay   *ThinkingDisplayOverride    `json:"thinking_display,omitempty"`    // For set_max_thinking_tokens
-	Directory         string                      `json:"directory,omitempty"`           // For register_repo_root
-	ReloadClaudeMD    *bool                       `json:"reload_claude_md,omitempty"`    // For register_repo_root
-	ReloadPlugins     *bool                       `json:"reload_plugins,omitempty"`      // For register_repo_root
-	ReloadSkills      *bool                       `json:"reload_skills,omitempty"`       // For register_repo_root
-	UserMessageID     string                      `json:"user_message_id,omitempty"`     // For rewind_files
-	DryRun            *bool                       `json:"dry_run,omitempty"`             // For rewind_files
-	CancelQueued      *bool                       `json:"cancel_queued,omitempty"`       // For interrupt (interrupt_cancel_queued_v1)
-	Path              string                      `json:"path,omitempty"`                // For read_file/seed_read_state
-	MaxBytes          *int                        `json:"max_bytes,omitempty"`           // For read_file
-	Encoding          string                      `json:"encoding,omitempty"`            // For read_file ("utf-8"|"base64")
-	MTime             *int64                      `json:"mtime,omitempty"`               // For seed_read_state
-	Settings          *map[string]interface{}     `json:"settings,omitempty"`            // For apply_flag_settings/update_settings
-	SettingsSource    string                      `json:"source,omitempty"`              // For update_settings
-	Description       string                      `json:"description,omitempty"`         // For submit_feedback
-	Surface           string                      `json:"surface,omitempty"`             // For submit_feedback
-	TaskID            string                      `json:"task_id,omitempty"`             // For stop_task
-	ServerName        string                      `json:"server_name,omitempty"`         // For mcp_message (snake_case)
-	MCPServerName     string                      `json:"serverName,omitempty"`          // For mcp_reconnect/mcp_toggle/mcp_set_servers (camelCase)
-	Enabled           *bool                       `json:"enabled,omitempty"`             // For mcp_toggle (pointer so explicit false serializes)
-	Servers           *map[string]MCPServerConfig `json:"servers,omitempty"`             // For mcp_set_servers (pointer so nil/empty round-trips as {})
-	Message           map[string]interface{}      `json:"message,omitempty"`             // For mcp_message (JSONRPC)
-	Detail            string                      `json:"detail,omitempty"`              // For get_context_usage ("summary"|"full")
-	SkipBehaviors     bool                        `json:"skip_behaviors,omitempty"`      // For get_usage
+	CallbackID        string                      `json:"callback_id,omitempty"`          // For hook_callback
+	Mode              string                      `json:"mode,omitempty"`                 // For set_permission_mode
+	Model             string                      `json:"model,omitempty"`                // For set_model
+	MaxThinkingTokens *int                        `json:"max_thinking_tokens,omitempty"`  // For set_max_thinking_tokens
+	ThinkingDisplay   *ThinkingDisplayOverride    `json:"thinking_display,omitempty"`     // For set_max_thinking_tokens
+	Directory         string                      `json:"directory,omitempty"`            // For register_repo_root
+	ReloadClaudeMD    *bool                       `json:"reload_claude_md,omitempty"`     // For register_repo_root
+	ReloadPlugins     *bool                       `json:"reload_plugins,omitempty"`       // For register_repo_root
+	ReloadSkills      *bool                       `json:"reload_skills,omitempty"`        // For register_repo_root
+	UserMessageID     string                      `json:"user_message_id,omitempty"`      // For rewind_files
+	DryRun            *bool                       `json:"dry_run,omitempty"`              // For rewind_files
+	CancelQueued      *bool                       `json:"cancel_queued,omitempty"`        // For interrupt (interrupt_cancel_queued_v1)
+	Path              string                      `json:"path,omitempty"`                 // For read_file/seed_read_state
+	MaxBytes          *int                        `json:"max_bytes,omitempty"`            // For read_file
+	Encoding          string                      `json:"encoding,omitempty"`             // For read_file ("utf-8"|"base64")
+	MTime             *int64                      `json:"mtime,omitempty"`                // For seed_read_state
+	Settings          *map[string]interface{}     `json:"settings,omitempty"`             // For apply_flag_settings/update_settings
+	SettingsSource    string                      `json:"source,omitempty"`               // For update_settings
+	Description       string                      `json:"description,omitempty"`          // For submit_feedback
+	Surface           string                      `json:"surface,omitempty"`              // For submit_feedback
+	TaskID            string                      `json:"task_id,omitempty"`              // For stop_task
+	ServerName        string                      `json:"server_name,omitempty"`          // For mcp_message (snake_case)
+	MCPServerName     string                      `json:"serverName,omitempty"`           // For mcp_reconnect/mcp_toggle/mcp_set_servers (camelCase)
+	Enabled           *bool                       `json:"enabled,omitempty"`              // For mcp_toggle (pointer so explicit false serializes)
+	Servers           *map[string]MCPServerConfig `json:"servers,omitempty"`              // For mcp_set_servers (pointer so nil/empty round-trips as {})
+	Message           map[string]interface{}      `json:"message,omitempty"`              // For mcp_message (JSONRPC)
+	Detail            string                      `json:"detail,omitempty"`               // For get_context_usage ("summary"|"full")
+	SkipBehaviors     bool                        `json:"skip_behaviors,omitempty"`       // For get_usage
+	HoldOnCacheImpact bool                        `json:"hold_on_cache_impact,omitempty"` // For reload_plugins
 }
 
 // SDKHookCallbackMatcher defines hook callback matching configuration.

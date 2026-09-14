@@ -702,3 +702,127 @@ func TestStreamBackgroundTasksWireShape(t *testing.T) {
 		assert.True(t, ok)
 	})
 }
+
+// TestStreamReloadPluginsHoldOnCacheImpact covers the v0.3.270 cache-impact
+// hold: the request option, the held response with its impact preview, and the
+// three-state Held pointer.
+func TestStreamReloadPluginsHoldOnCacheImpact(t *testing.T) {
+	t.Run("option rides the request", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.ReloadPlugins(ctx, ReloadPluginsOptions{
+				HoldOnCacheImpact: true,
+			})
+			return err
+		})
+		require.NoError(t, err)
+
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1","request":`+
+				`{"subtype":"reload_plugins","hold_on_cache_impact":true}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+	})
+
+	t.Run("no opts omits the option", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.ReloadPlugins(ctx)
+			return err
+		})
+		require.NoError(t, err)
+
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1","request":{"subtype":"reload_plugins"}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+	})
+
+	t.Run("held response reports what applying would change", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"commands":    []interface{}{},
+				"agents":      []interface{}{},
+				"plugins":     []interface{}{},
+				"mcpServers":  []interface{}{},
+				"error_count": 0,
+				"held":        true,
+				"cache_impact": map[string]interface{}{
+					"mcp_servers_added":   []interface{}{"plugin:docs:export"},
+					"mcp_servers_removed": []interface{}{},
+					"lsp_tool_change":     "may-add",
+				},
+			}),
+		)
+
+		var got *SDKControlReloadPluginsResponse
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			var err error
+			got, err = stream.ReloadPlugins(ctx, ReloadPluginsOptions{
+				HoldOnCacheImpact: true,
+			})
+			return err
+		})
+		require.NoError(t, err)
+		require.NotNil(t, got.Held)
+		assert.True(t, *got.Held, "nothing was applied")
+
+		require.NotNil(t, got.CacheImpact)
+		assert.Equal(t, []string{"plugin:docs:export"}, got.CacheImpact.MCPServersAdded)
+		assert.Empty(t, got.CacheImpact.MCPServersRemoved)
+		require.NotNil(t, got.CacheImpact.LSPToolChange)
+		assert.Equal(t, LSPToolChangeMayAdd, *got.CacheImpact.LSPToolChange)
+	})
+
+	t.Run("check came back clean and the reload applied", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"commands":    []interface{}{},
+				"agents":      []interface{}{},
+				"plugins":     []interface{}{},
+				"mcpServers":  []interface{}{},
+				"error_count": 0,
+				"held":        false,
+			}),
+		)
+
+		var got *SDKControlReloadPluginsResponse
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			var err error
+			got, err = stream.ReloadPlugins(ctx, ReloadPluginsOptions{
+				HoldOnCacheImpact: true,
+			})
+			return err
+		})
+		require.NoError(t, err)
+		require.NotNil(t, got.Held, "an explicit false is not the same as absent")
+		assert.False(t, *got.Held)
+		assert.Nil(t, got.CacheImpact, "no impact to describe")
+	})
+
+	t.Run("older CLI applied it unchecked", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"commands":    []interface{}{},
+				"agents":      []interface{}{},
+				"plugins":     []interface{}{},
+				"mcpServers":  []interface{}{},
+				"error_count": 0,
+			}),
+		)
+
+		var got *SDKControlReloadPluginsResponse
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			var err error
+			got, err = stream.ReloadPlugins(ctx, ReloadPluginsOptions{
+				HoldOnCacheImpact: true,
+			})
+			return err
+		})
+		require.NoError(t, err)
+		assert.Nil(t, got.Held,
+			"absent must stay distinguishable from a check that came back clean")
+	})
+}
