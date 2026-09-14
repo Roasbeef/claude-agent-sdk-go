@@ -1124,12 +1124,36 @@ func (s *Stream) ReadFile(
 	return &out, nil
 }
 
-// ReloadPlugins reloads plugins from disk and returns refreshed session metadata.
+// ReloadPluginsOptions configures Stream.ReloadPlugins.
+type ReloadPluginsOptions struct {
+	// HoldOnCacheImpact asks the CLI to run the same check the interactive
+	// /reload-plugins makes before it asks for --force: if applying the
+	// reload would change the session's tool list while the conversation's
+	// prompt cache depends on that list, nothing is applied.
+	//
+	// The response then carries Held == true and a CacheImpact describing
+	// what applying would change, and the session keeps its current plugins.
+	// Call again without the option to apply anyway.
+	HoldOnCacheImpact bool
+}
+
+// ReloadPlugins reloads plugins from disk and returns refreshed session
+// metadata.
+//
+// By default the reload applies unconditionally, which can invalidate the
+// conversation's prompt cache when it changes the tool list. Pass
+// ReloadPluginsOptions{HoldOnCacheImpact: true} to have the CLI check first
+// and report back instead of applying; see SDKControlReloadPluginsResponse.Held.
 func (s *Stream) ReloadPlugins(
-	ctx context.Context,
+	ctx context.Context, opts ...ReloadPluginsOptions,
 ) (*SDKControlReloadPluginsResponse, error) {
+	var o ReloadPluginsOptions
+	if len(opts) > 0 {
+		o = opts[0]
+	}
 	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
-		Subtype: "reload_plugins",
+		Subtype:           "reload_plugins",
+		HoldOnCacheImpact: o.HoldOnCacheImpact,
 	})
 	if err != nil {
 		return nil, err
