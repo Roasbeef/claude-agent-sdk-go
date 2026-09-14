@@ -4475,3 +4475,56 @@ func TestIntegrationListPermissionRules(t *testing.T) {
 	assert.True(t, sawFlagRule,
 		"the --allowedTools rule this session launched with should be listed")
 }
+
+// TestIntegrationGetHooksListing exercises the v0.3.270 get_hooks_listing
+// control request against the live CLI.
+//
+// The eventCatalog is the invariant to lean on: the CLI always knows its own
+// hook-event set regardless of what hooks a session has configured, so it comes
+// back non-empty with a supportsMatcher flag per event. CLIs predating the
+// subtype reject it; the test skips so the slot activates once the binary
+// catches up.
+func TestIntegrationGetHooksListing(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	listing, err := stream.GetHooksListing(ctx)
+	if err != nil {
+		t.Skipf("CLI does not support get_hooks_listing: %v", err)
+	}
+	require.NotNil(t, listing)
+
+	require.NotEmpty(t, listing.EventCatalog,
+		"the CLI always knows its own hook-event set")
+	for _, ev := range listing.EventCatalog {
+		assert.NotEmpty(t, ev.Name, "every catalog entry names its event")
+	}
+
+	// Every listed hook row must point at an event and carry its display
+	// strings; the count summary must agree with the rows.
+	perEvent := map[string]int{}
+	for _, h := range listing.Hooks {
+		assert.NotEmpty(t, h.Event, "every hook row names its event")
+		assert.NotEmpty(t, h.Source, "every hook row carries its source")
+		perEvent[h.Event]++
+	}
+	for _, ev := range listing.Events {
+		assert.Equal(t, ev.HookCount, perEvent[ev.Name],
+			"event %q hookCount should match its listed rows", ev.Name)
+	}
+}

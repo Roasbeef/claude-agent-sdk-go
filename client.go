@@ -1310,6 +1310,35 @@ func (s *Stream) ListPermissionRules(
 	return &out.State, nil
 }
 
+// GetHooksListing returns the read-only snapshot the CLI's /hooks menu renders:
+// settings-file, session and plugin hooks grouped by event and matcher, with
+// display-ready strings and the policy and safe-mode state the menu banners on.
+//
+// Every display string comes back with control characters revealed, not
+// escaped for a host's own surface — escape again before rendering. It is a
+// snapshot at request time; re-request when a hooks surface reopens.
+//
+// Only available in streaming input mode.
+func (s *Stream) GetHooksListing(
+	ctx context.Context,
+) (*SDKControlGetHooksListingResponse, error) {
+	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "get_hooks_listing",
+	})
+	if err != nil {
+		return nil, err
+	}
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return nil, fmt.Errorf("get_hooks_listing: marshal: %w", err)
+	}
+	var out SDKControlGetHooksListingResponse
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return nil, fmt.Errorf("get_hooks_listing: unmarshal: %w", err)
+	}
+	return &out, nil
+}
+
 // StopTask asks the CLI to stop a running task.
 func (s *Stream) StopTask(ctx context.Context, taskID string) error {
 	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
