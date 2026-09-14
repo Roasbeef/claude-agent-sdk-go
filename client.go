@@ -1231,6 +1231,14 @@ func (s *Stream) ReloadOutputStyles(
 // the CLI treats as a clear-this-key signal. Passing nil as the whole settings
 // map sends an empty object (no-op for all keys).
 //
+// Four keys clear to a session reset rather than to a lower-precedence value:
+// "effortLevel" goes to the model's default effort, "model" to Claude Code's
+// default model (not ANTHROPIC_MODEL or settings.model), "agent" to no
+// main-thread agent, and "ultracode" to off with the current effort kept.
+// "effortLevel" also accepts "max", which is session-only (never written to a
+// settings file): it runs as "high" on a model without max support and no
+// higher than the organization's effort limit for the model.
+//
 // Only available in streaming input mode.
 func (s *Stream) ApplyFlagSettings(
 	ctx context.Context,

@@ -334,8 +334,12 @@ type UsageRateLimits struct {
 	SevenDayOpus      *UsageRateLimitWindow `json:"seven_day_opus,omitempty"`
 	SevenDaySonnet    *UsageRateLimitWindow `json:"seven_day_sonnet,omitempty"`
 	// ModelScoped holds per-model weekly windows from the server limits[]
-	// array, filtered by the overage-included-models allowlist. Additive —
-	// present only when the server emits them. Mirrors sdk.d.ts v0.3.195 L3088.
+	// array, filtered by the overage-included-models allowlist. Additive, and
+	// nil is not the same as empty: nil means nothing is known about them (an
+	// answer served from cached data, or rows the allowlist hides), while a
+	// present-but-empty slice means the endpoint itself answered and listed no
+	// per-model weekly window for this account, before the allowlist applied
+	// (sdk.d.ts v0.3.270 L4010).
 	ModelScoped []UsageModelScopedWindow `json:"model_scoped,omitempty"`
 	ExtraUsage  *UsageExtraUsage         `json:"extra_usage,omitempty"`
 }
