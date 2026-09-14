@@ -641,3 +641,133 @@ const (
 	// treats as read-only.
 	PermissionRuleEditabilityReadonly PermissionRuleEditability = "readonly"
 )
+
+// SDKControlGetHooksListingResponse is the hooks listing the CLI's read-only
+// /hooks menu renders: settings-file, session and plugin hooks grouped by
+// event and matcher, with display-ready strings and the policy and safe-mode
+// state the menu banners on.
+//
+// It is a snapshot taken at request time, so a host re-requests when its
+// surface opens rather than caching (sdk.d.ts v0.3.270 L3770).
+type SDKControlGetHooksListingResponse struct {
+	// Events are the events that have at least one listed hook, in the /hooks
+	// menu's lifecycle order.
+	Events []HookListingEvent `json:"events"`
+	// Hooks is one row per listed hook: events in lifecycle order, matchers in
+	// the menu's priority order.
+	Hooks []HookListingEntry `json:"hooks"`
+	// EventCatalog is every hook event in lifecycle order, for an add-hook
+	// form. Unlike Events it is not filtered to events that have hooks.
+	EventCatalog []HookListingEventSummary `json:"eventCatalog"`
+	Policy       HookListingPolicy         `json:"policy"`
+	// SafeMode is set only when the session runs under --safe-mode.
+	SafeMode *HookListingSafeMode `json:"safeMode,omitempty"`
+	// BareMode is set only under --bare / CLAUDE_CODE_SIMPLE with the hooks
+	// surface gated off: settings-file, flag, policy and plugin hooks never
+	// fire there, though session hooks still run.
+	BareMode *HookListingBareMode `json:"bareMode,omitempty"`
+	// Errors lists settings files skipped by the merge. Their hooks are
+	// neither listed above nor running.
+	Errors []SDKSettingsParseError `json:"errors,omitempty"`
+}
+
+// HookListingEventSummary describes a hook event for an add-hook form.
+type HookListingEventSummary struct {
+	Name string `json:"name"`
+	// Summary is the one-line description the /hooks event list shows.
+	Summary string `json:"summary"`
+	// SupportsMatcher reports whether hooks on this event can carry a matcher.
+	SupportsMatcher bool `json:"supportsMatcher"`
+}
+
+// HookListingEvent is an event that has at least one listed hook.
+type HookListingEvent struct {
+	HookListingEventSummary
+	HookCount int `json:"hookCount"`
+}
+
+// HookListingEntry is one row of the /hooks menu.
+//
+// The string fields arrive display-ready: the producer has already revealed
+// control characters, so a host renders them as-is rather than escaping again.
+// They remain author-controlled, though — a plugin picks its own command text.
+type HookListingEntry struct {
+	Event string `json:"event"`
+	// Matcher is the matcher with control characters revealed, or the empty
+	// string when the entry has none.
+	Matcher string `json:"matcher"`
+	// Source is the raw source name (userSettings, sessionHook, pluginHook, …).
+	Source string `json:"source"`
+	// SourceLabel is the user-facing description of Source.
+	SourceLabel string `json:"sourceLabel"`
+	PluginName  string `json:"pluginName,omitempty"`
+	// Type is the hook type (command, prompt, agent, http, mcp_tool, …).
+	Type string `json:"type"`
+	// DisplayText is the list-row label: StatusMessage when set, else the
+	// identity text. One line, control characters revealed.
+	DisplayText string `json:"displayText"`
+	// CommandText is the identity text — the literal command, prompt or URL
+	// that runs, control characters revealed.
+	CommandText string `json:"commandText"`
+	// ContentLabel labels CommandText (Command, Prompt, URL, …).
+	ContentLabel string `json:"contentLabel"`
+	// Condition is the if-condition, revealed, when set.
+	Condition string `json:"condition,omitempty"`
+	// Timeout is the hook timeout in seconds.
+	Timeout          int    `json:"timeout,omitempty"`
+	StatusMessage    string `json:"statusMessage,omitempty"`
+	RunsOnce         bool   `json:"runsOnce,omitempty"`
+	RunsInBackground bool   `json:"runsInBackground,omitempty"`
+	// Disabled is true when the session's mode or policy keeps this hook from
+	// running; Policy, SafeMode and BareMode say why. Rows that do run omit
+	// it, so false and absent mean the same thing.
+	Disabled bool `json:"disabled,omitempty"`
+	// Editable carries the entry as stored — raw matcher and raw hook object,
+	// no display escaping — for a host's edit form, and names the target for
+	// `claude edit-hook`. Nil on rows that do not come from a settings file
+	// this session reads and may write.
+	Editable *HookListingEditable `json:"editable,omitempty"`
+}
+
+// HookListingEditable is a hook entry as stored on disk, for an edit form.
+type HookListingEditable struct {
+	// Matcher is the raw matcher, empty when the entry has none. Unlike
+	// HookListingEntry.Matcher this carries no display escaping.
+	Matcher string                 `json:"matcher"`
+	Config  map[string]interface{} `json:"config"`
+	// HeadersRedacted is true when HTTP header values were blanked out of
+	// Config. A replace that sends no headers keeps the stored ones, so a
+	// host must not treat the blanks as an instruction to clear them.
+	HeadersRedacted bool `json:"headersRedacted,omitempty"`
+}
+
+// HookListingPolicy is the managed-settings state the /hooks menu banners on.
+type HookListingPolicy struct {
+	// DisabledByPolicy is managed disableAllHooks — nothing runs at all.
+	DisabledByPolicy bool `json:"disabledByPolicy"`
+	// ManagedOnly is managed allowManagedHooksOnly: non-managed hooks are
+	// blocked, and managed hooks are intentionally not listed. So an empty
+	// Hooks list under this flag does not mean no hooks will run.
+	ManagedOnly bool `json:"managedOnly"`
+	// PluginOnly is managed strictPluginOnlyCustomization locking the surface.
+	PluginOnly bool `json:"pluginOnly"`
+	// AllDisabled is the effective disableAllHooks, whatever source set it.
+	AllDisabled bool `json:"allDisabled"`
+	// PolicyHookCount counts hooks configured in managed settings. They run
+	// even under a non-managed disableAllHooks.
+	PolicyHookCount int `json:"policyHookCount"`
+}
+
+// HookListingSafeMode describes a session running under --safe-mode.
+type HookListingSafeMode struct {
+	ManagedHooksStillApply bool `json:"managedHooksStillApply"`
+	// ExitHint says how to leave safe mode, per its activation source.
+	ExitHint string `json:"exitHint"`
+}
+
+// HookListingBareMode describes a session running under --bare /
+// CLAUDE_CODE_SIMPLE with the hooks surface gated off.
+type HookListingBareMode struct {
+	// ExitHint says how to leave bare mode, per its activation source.
+	ExitHint string `json:"exitHint"`
+}

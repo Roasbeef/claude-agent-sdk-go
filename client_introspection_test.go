@@ -890,3 +890,252 @@ func TestStreamListPermissionRules(t *testing.T) {
 		assert.Contains(t, err.Error(), "unknown subtype")
 	})
 }
+
+// TestStreamGetHooksListing covers the v0.3.270 get_hooks_listing control
+// request: the wire shape it sends, and the menu state it parses back.
+func TestStreamGetHooksListing(t *testing.T) {
+	emptyListing := map[string]interface{}{
+		"events":       []interface{}{},
+		"hooks":        []interface{}{},
+		"eventCatalog": []interface{}{},
+		"policy": map[string]interface{}{
+			"disabledByPolicy": false,
+			"managedOnly":      false,
+			"pluginOnly":       false,
+			"allDisabled":      false,
+			"policyHookCount":  0,
+		},
+	}
+
+	t.Run("request wire shape", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(emptyListing))
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.GetHooksListing(ctx)
+			return err
+		})
+		require.NoError(t, err)
+
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1","request":{"subtype":"get_hooks_listing"}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+	})
+
+	t.Run("parses rows, catalog and policy", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"events": []interface{}{
+					map[string]interface{}{
+						"name": "PreToolUse", "summary": "Before a tool runs",
+						"supportsMatcher": true, "hookCount": 2,
+					},
+					map[string]interface{}{
+						"name": "SessionStart", "summary": "When a session begins",
+						"supportsMatcher": false, "hookCount": 1,
+					},
+				},
+				"hooks": []interface{}{
+					map[string]interface{}{
+						"event": "PreToolUse", "matcher": "Bash",
+						"source": "userSettings", "sourceLabel": "User settings",
+						"type": "command", "displayText": "Lint the command",
+						"commandText":  "/usr/local/bin/lint-bash",
+						"contentLabel": "Command", "timeout": 30,
+						"statusMessage": "Lint the command", "runsOnce": true,
+						"editable": map[string]interface{}{
+							"matcher": "Bash",
+							"config": map[string]interface{}{
+								"type":    "command",
+								"command": "/usr/local/bin/lint-bash",
+							},
+						},
+					},
+					map[string]interface{}{
+						"event": "PreToolUse", "matcher": "",
+						"source": "pluginHook", "sourceLabel": "Plugin: sec-default",
+						"pluginName": "sec-default", "type": "http",
+						"displayText":  "POST https://audit.example/hook",
+						"commandText":  "https://audit.example/hook",
+						"contentLabel": "URL", "runsInBackground": true,
+						"editable": map[string]interface{}{
+							"matcher":         "",
+							"config":          map[string]interface{}{"type": "http"},
+							"headersRedacted": true,
+						},
+					},
+					map[string]interface{}{
+						"event": "SessionStart", "matcher": "",
+						"source": "projectSettings", "sourceLabel": "Project settings",
+						"type": "prompt", "displayText": "Remind about the style guide",
+						"commandText":  "Remind about the style guide",
+						"contentLabel": "Prompt", "condition": "env.CI != 'true'",
+						"disabled": true,
+					},
+				},
+				"eventCatalog": []interface{}{
+					map[string]interface{}{
+						"name": "PreToolUse", "summary": "Before a tool runs",
+						"supportsMatcher": true,
+					},
+					map[string]interface{}{
+						"name": "SessionStart", "summary": "When a session begins",
+						"supportsMatcher": false,
+					},
+					map[string]interface{}{
+						"name": "Stop", "summary": "When the turn ends",
+						"supportsMatcher": false,
+					},
+				},
+				"policy": map[string]interface{}{
+					"disabledByPolicy": false,
+					"managedOnly":      false,
+					"pluginOnly":       false,
+					"allDisabled":      false,
+					"policyHookCount":  0,
+				},
+			}),
+		)
+
+		var got *SDKControlGetHooksListingResponse
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			var err error
+			got, err = stream.GetHooksListing(ctx)
+			return err
+		})
+		require.NoError(t, err)
+
+		require.Len(t, got.Events, 2)
+		assert.Equal(t, "PreToolUse", got.Events[0].Name)
+		assert.True(t, got.Events[0].SupportsMatcher)
+		assert.Equal(t, 2, got.Events[0].HookCount)
+		assert.False(t, got.Events[1].SupportsMatcher)
+
+		require.Len(t, got.Hooks, 3)
+
+		cmd := got.Hooks[0]
+		assert.Equal(t, "command", cmd.Type)
+		assert.Equal(t, "Command", cmd.ContentLabel)
+		assert.Equal(t, 30, cmd.Timeout)
+		assert.True(t, cmd.RunsOnce)
+		assert.False(t, cmd.Disabled)
+		require.NotNil(t, cmd.Editable)
+		assert.Equal(t, "Bash", cmd.Editable.Matcher)
+		assert.Equal(t, "command", cmd.Editable.Config["type"])
+		assert.False(t, cmd.Editable.HeadersRedacted)
+
+		http := got.Hooks[1]
+		assert.Equal(t, "sec-default", http.PluginName)
+		assert.Equal(t, "URL", http.ContentLabel)
+		assert.True(t, http.RunsInBackground)
+		assert.Empty(t, http.Matcher, "an entry with no matcher reports an empty string")
+		require.NotNil(t, http.Editable)
+		assert.True(t, http.Editable.HeadersRedacted,
+			"blanked headers must be distinguishable from headers the user cleared")
+
+		off := got.Hooks[2]
+		assert.True(t, off.Disabled)
+		assert.Equal(t, "env.CI != 'true'", off.Condition)
+		assert.Nil(t, off.Editable,
+			"a row the session cannot write has no edit target")
+
+		assert.Len(t, got.EventCatalog, 3,
+			"the catalog lists every event, not just those with hooks")
+		assert.Nil(t, got.SafeMode)
+		assert.Nil(t, got.BareMode)
+	})
+
+	t.Run("managed-only withholds hooks that still run", func(t *testing.T) {
+		// The listing is empty but PolicyHookCount is non-zero: an empty
+		// Hooks list under this flag is not evidence that nothing fires.
+		stream, _, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"events":       []interface{}{},
+				"hooks":        []interface{}{},
+				"eventCatalog": []interface{}{},
+				"policy": map[string]interface{}{
+					"disabledByPolicy": false,
+					"managedOnly":      true,
+					"pluginOnly":       false,
+					"allDisabled":      false,
+					"policyHookCount":  4,
+				},
+			}),
+		)
+
+		var got *SDKControlGetHooksListingResponse
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			var err error
+			got, err = stream.GetHooksListing(ctx)
+			return err
+		})
+		require.NoError(t, err)
+		assert.Empty(t, got.Hooks)
+		assert.True(t, got.Policy.ManagedOnly)
+		assert.Equal(t, 4, got.Policy.PolicyHookCount)
+		assert.False(t, got.Policy.AllDisabled)
+	})
+
+	t.Run("safe mode and bare mode banners", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"events":       []interface{}{},
+				"hooks":        []interface{}{},
+				"eventCatalog": []interface{}{},
+				"policy": map[string]interface{}{
+					"disabledByPolicy": false,
+					"managedOnly":      false,
+					"pluginOnly":       false,
+					"allDisabled":      true,
+					"policyHookCount":  2,
+				},
+				"safeMode": map[string]interface{}{
+					"managedHooksStillApply": true,
+					"exitHint":               "restart without --safe-mode",
+				},
+				"bareMode": map[string]interface{}{
+					"exitHint": "unset CLAUDE_CODE_SIMPLE",
+				},
+				"errors": []interface{}{
+					map[string]interface{}{
+						"file":    "/repo/.claude/settings.json",
+						"path":    "",
+						"message": "unexpected end of JSON input",
+					},
+				},
+			}),
+		)
+
+		var got *SDKControlGetHooksListingResponse
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			var err error
+			got, err = stream.GetHooksListing(ctx)
+			return err
+		})
+		require.NoError(t, err)
+
+		require.NotNil(t, got.SafeMode)
+		assert.True(t, got.SafeMode.ManagedHooksStillApply)
+		assert.Equal(t, "restart without --safe-mode", got.SafeMode.ExitHint)
+
+		require.NotNil(t, got.BareMode)
+		assert.Equal(t, "unset CLAUDE_CODE_SIMPLE", got.BareMode.ExitHint)
+
+		require.Len(t, got.Errors, 1)
+		assert.Equal(t, "/repo/.claude/settings.json", got.Errors[0].File)
+		assert.Empty(t, got.Errors[0].Path, "whole-file errors carry an empty path")
+	})
+
+	t.Run("error", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(
+			controlErrorResponse("unknown subtype get_hooks_listing"))
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.GetHooksListing(ctx)
+			return err
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unknown subtype")
+	})
+}
