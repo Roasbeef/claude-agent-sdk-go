@@ -477,6 +477,15 @@ type Settings struct {
 	DisableAllHooks            *bool                            `json:"disableAllHooks,omitempty"`
 	DisableSkillShellExecution *bool                            `json:"disableSkillShellExecution,omitempty"`
 	DefaultShell               string                           `json:"defaultShell,omitempty"`
+	// BashEditDiffEnabled controls whether the Bash tool shows a diff of the
+	// files a Bash command changed; PostToolUse Bash hooks then get the
+	// changed-file list in tool_response. Defaults to on wherever the Bash
+	// tool handles file edits, so a pointer is needed to turn it off — a
+	// plain bool could not express the only setting worth writing.
+	//
+	// Outside auto and bypassPermissions modes only user, flag or policy
+	// settings can turn it on (sdk.d.ts v0.3.270 L6682).
+	BashEditDiffEnabled *bool `json:"bashEditDiffEnabled,omitempty"`
 	// BashOutputMaxChars caps how many characters of a successful Bash or
 	// PowerShell command's output Claude receives inline (default 30000,
 	// clamped to 4000-128000). Output past the cap is written to a file and
@@ -495,18 +504,41 @@ type Settings struct {
 	// RespondToBashCommands controls whether Claude responds after an
 	// input-box ! bash command runs. Set to false to add the command output to
 	// context without a response. Default true. Mirrors sdk.d.ts v0.3.195 L5032.
-	RespondToBashCommands           *bool                          `json:"respondToBashCommands,omitempty"`
-	AllowManagedHooksOnly           *bool                          `json:"allowManagedHooksOnly,omitempty"`
-	AllowedHTTPHookURLs             []string                       `json:"allowedHttpHookUrls,omitempty"`
-	HTTPHookAllowedEnvVars          []string                       `json:"httpHookAllowedEnvVars,omitempty"`
-	AllowManagedPermissionRulesOnly *bool                          `json:"allowManagedPermissionRulesOnly,omitempty"`
-	AllowManagedMCPServersOnly      *bool                          `json:"allowManagedMcpServersOnly,omitempty"`
-	StrictPluginOnlyCustomization   interface{}                    `json:"strictPluginOnlyCustomization,omitempty"`
-	StatusLine                      *SettingsCommand               `json:"statusLine,omitempty"`
-	PRURLTemplate                   string                         `json:"prUrlTemplate,omitempty"`
-	SubagentStatusLine              *SettingsCommand               `json:"subagentStatusLine,omitempty"`
-	EnabledPlugins                  map[string]interface{}         `json:"enabledPlugins,omitempty"`
-	ExtraKnownMarketplaces          map[string]SettingsMarketplace `json:"extraKnownMarketplaces,omitempty"`
+	RespondToBashCommands           *bool                  `json:"respondToBashCommands,omitempty"`
+	AllowManagedHooksOnly           *bool                  `json:"allowManagedHooksOnly,omitempty"`
+	AllowedHTTPHookURLs             []string               `json:"allowedHttpHookUrls,omitempty"`
+	HTTPHookAllowedEnvVars          []string               `json:"httpHookAllowedEnvVars,omitempty"`
+	AllowManagedPermissionRulesOnly *bool                  `json:"allowManagedPermissionRulesOnly,omitempty"`
+	AllowManagedMCPServersOnly      *bool                  `json:"allowManagedMcpServersOnly,omitempty"`
+	StrictPluginOnlyCustomization   interface{}            `json:"strictPluginOnlyCustomization,omitempty"`
+	StatusLine                      *SettingsCommand       `json:"statusLine,omitempty"`
+	PRURLTemplate                   string                 `json:"prUrlTemplate,omitempty"`
+	SubagentStatusLine              *SettingsCommand       `json:"subagentStatusLine,omitempty"`
+	EnabledPlugins                  map[string]interface{} `json:"enabledPlugins,omitempty"`
+	// PrependPlugins lists managed plugins — plugin@marketplace ids that
+	// managed EnabledPlugins sets true — whose hooks run first and outermost,
+	// in the order given: the first id sees every event before any other
+	// plugin and every result after it. Managed plugins named in neither this
+	// nor AppendPlugins follow the listed ones, then user, project and
+	// marketplace plugins, then AppendPlugins, then the built-ins.
+	//
+	// The bundled sec-default@builtin seats itself outermost on a machine
+	// with managed settings and for Team and Enterprise organizations —
+	// unless this list is set, in which case list it where it should sit or
+	// leave it out deliberately. Any id that is not an enabled managed plugin
+	// is skipped; an id in both keys is prepended.
+	//
+	// Honored only from managed settings, or from user settings on a machine
+	// with none; ignored in project, local and --settings sources (sdk.d.ts
+	// v0.3.270 L6789).
+	PrependPlugins []string `json:"prependPlugins,omitempty"`
+	// AppendPlugins is the mirror of PrependPlugins: managed plugins whose
+	// hooks run last among plugins, innermost, in the order given. The last
+	// id listed sits just above the built-in plugins and sees each event as
+	// every other plugin left it. Same source restrictions (sdk.d.ts v0.3.270
+	// L6793).
+	AppendPlugins          []string                       `json:"appendPlugins,omitempty"`
+	ExtraKnownMarketplaces map[string]SettingsMarketplace `json:"extraKnownMarketplaces,omitempty"`
 	// StrictKnownMarketplaces and BlockedMarketplaces are the managed-settings
 	// policy lists, and are the only place a github entry may use the
 	// owner-wildcard form {"source":"github","repo":"owner/*"} to match every
@@ -560,6 +592,23 @@ type Settings struct {
 	// user, project, and remote-delivered settings, since pointing a login
 	// flow at an attacker-chosen gateway is exactly what that tier exists to
 	// prevent. Mirrors sdk.d.ts v0.3.233 L6914.
+	// GatewayInternalNetworks lists the IPv4 CIDR blocks your Cloud gateway
+	// sits in — at most 4, each /8 to /32, non-overlapping: the public block
+	// an organization numbers its internal network from, which is what lets
+	// /login reach a gateway there. A block must lie entirely outside private
+	// space, where /login accepts a gateway without this key at all.
+	//
+	// /login accepts a gateway inside a listed block only over a direct
+	// connection, and only when this machine's own address on that connection
+	// is inside the same block — so login must happen from a machine whose
+	// address is in the block, not through a proxy, VPN pool, container or
+	// NAT segment outside it. That is a bar against a copied settings file,
+	// not proof of location.
+	//
+	// Honored only from admin-controlled managed settings (MDM,
+	// managed-settings.json, policy helper); ignored in user, project and
+	// remote-delivered settings (sdk.d.ts v0.3.270 L7992).
+	GatewayInternalNetworks    []string                     `json:"gatewayInternalNetworks,omitempty"`
 	ForceLoginGatewayURL       string                       `json:"forceLoginGatewayUrl,omitempty"`
 	ForceLoginOrgUUID          interface{}                  `json:"forceLoginOrgUUID,omitempty"`
 	ForceRemoteSettingsRefresh *bool                        `json:"forceRemoteSettingsRefresh,omitempty"`
@@ -591,6 +640,19 @@ type Settings struct {
 	SubagentPromptCacheTTL CacheTTL    `json:"subagentPromptCacheTtl,omitempty"`
 	AlwaysThinkingEnabled  *bool       `json:"alwaysThinkingEnabled,omitempty"`
 	EffortLevel            EffortLevel `json:"effortLevel,omitempty"`
+	// MaxEffortLevel caps effort: anything above it — an /effort or /model
+	// pick, --effort, CLAUDE_CODE_EFFORT_LEVEL, a model default — is clamped
+	// down, on every provider including Bedrock, Vertex and Foundry. It
+	// combines with an organization's per-model cap by taking the lower of
+	// the two, and across settings files the lowest value wins.
+	// SettingsModel.MaxEffortLevel replaces it per model.
+	//
+	// Unlike the sibling EffortLevel, "max" IS a member here: listing it is
+	// how you decline to cap.
+	//
+	// Enforced client-side, so an effort supplied through
+	// CLAUDE_CODE_EXTRA_BODY is not clamped (sdk.d.ts v0.3.270 L8329).
+	MaxEffortLevel EffortLevel `json:"maxEffortLevel,omitempty"`
 	// ModelSettings holds per-model settings keyed by canonical model name —
 	// the per-model twin of EffortLevel above. Note the ceiling differs: a
 	// persisted per-model effort tops out at "xhigh", where the init message's
@@ -1015,6 +1077,14 @@ type SettingsModel struct {
 	// EffortLevel is the persisted effort level for this model. Unlike the
 	// init message's applied effort, "max" is not a member here.
 	EffortLevel EffortLevel `json:"effortLevel,omitempty"`
+	// MaxEffortLevel caps effort for this model. Within one settings file it
+	// replaces the top-level Settings.MaxEffortLevel for the model, and "max"
+	// is how you exempt a model from that cap; across settings files the
+	// lowest applicable value wins.
+	//
+	// Keyed like EffortLevel: the canonical model name also matches its
+	// dated, [1m], Bedrock and Vertex spellings (sdk.d.ts v0.3.270 L8342).
+	MaxEffortLevel EffortLevel `json:"maxEffortLevel,omitempty"`
 }
 
 // SettingsModelPicker curates the rows shown in the /model picker.

@@ -2495,6 +2495,49 @@ func TestIntegrationSettingsV0_3_263RealCLI(t *testing.T) {
 	assert.False(t, result.IsError, "settings must not fault the run")
 }
 
+// TestIntegrationSettingsV0_3_270RealCLI checks the CLI starts on the v0.3.270
+// settings additions rather than rejecting them. These are all top-level keys,
+// which an older CLI ignores cleanly (unlike an unknown nested source-union
+// member, which stalls the managed-settings handshake), so the assertion is
+// just that the run completes without faulting.
+func TestIntegrationSettingsV0_3_270RealCLI(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	bashEditDiff := false
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+		WithManagedSettings(Settings{
+			BashEditDiffEnabled:     &bashEditDiff,
+			PrependPlugins:          []string{"sec-default@builtin"},
+			AppendPlugins:           []string{"telemetry@corp"},
+			GatewayInternalNetworks: []string{"203.0.113.0/24"},
+			MaxEffortLevel:          EffortHigh,
+			ModelSettings: map[string]SettingsModel{
+				"claude-opus-4-7": {MaxEffortLevel: EffortMax},
+			},
+		}),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var result *ResultMessage
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(ResultMessage); ok {
+			result = &m
+			break
+		}
+	}
+	require.NotNil(t, result, "the CLI must start and complete a turn on these settings")
+	assert.False(t, result.IsError, "settings must not fault the run")
+}
+
 func TestIntegrationSettingsManagedOrgFields(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
