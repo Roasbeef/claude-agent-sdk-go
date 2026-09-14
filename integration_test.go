@@ -4262,3 +4262,14 @@ func TestIntegrationSystemPromptSnapshot(t *testing.T) {
 		"snapshotting broke the preset append or stalled the handshake; "+
 			"reply was %q", reply.String())
 }
+
+func TestIntegrationResultIndex(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	// Probed against the runner CLI: a single-turn `claude -p` result carries
+	// neither result_index nor local_command. The numbering is emitted by the
+	// process hosting the run, and the in-process engine surface does not
+	// number yet, so a live assertion could only re-assert the absent state.
+	t.Skip("not triggerable from CLI: runner CLI omits result_index and local_command; tracked in INTEGRATION-FOLLOWUPS.md")
+}

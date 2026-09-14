@@ -439,8 +439,26 @@ type ResultMessage struct {
 	StructuredOutput interface{}     `json:"structured_output,omitempty"` // Structured output (if OutputFormat set)
 	StopReason       *string         `json:"stop_reason"`                 // Stop reason, explicitly null when absent
 	TerminalReason   *TerminalReason `json:"terminal_reason,omitempty"`   // Terminal completion reason
-	Origin           *MessageOrigin  `json:"origin,omitempty"`            // Originating actor for this result
-	FastModeState    *FastModeState  `json:"fast_mode_state,omitempty"`   // Fast mode state at completion
+	// ResultIndex is this result's delivery sequence within the run: how many
+	// results the run numbered before it, starting at zero, in the order the
+	// process writes them. A result held back while background work finishes
+	// is numbered when it is finally written, not when its text was produced,
+	// and a result whose write fails still consumes its number — so a gap in
+	// a stream-json sequence means a result was lost.
+	//
+	// Distinct from NumTurns, which counts model round-trips within one turn.
+	// Numbered by the process hosting the run: a local client relaying a
+	// cloud session passes the cloud numbering through and its own locally
+	// built error results carry none. Nil from older producers, which is not
+	// the same as index zero (sdk.d.ts v0.3.270 L5320 error, L5382 success).
+	ResultIndex *int `json:"result_index,omitempty"`
+	// LocalCommand names the local slash command this result answers, when
+	// the turn was one. Success results only. Carried opaquely: sdk.d.ts
+	// v0.3.270 L5344 declares it with no documentation and sdk.mjs never
+	// reads it.
+	LocalCommand  string         `json:"local_command,omitempty"`
+	Origin        *MessageOrigin `json:"origin,omitempty"`          // Originating actor for this result
+	FastModeState *FastModeState `json:"fast_mode_state,omitempty"` // Fast mode state at completion
 	// FastModeDisabledReason explains why fast mode could not serve, when
 	// fast_mode_state is not "on". Absent when nothing blocks it.
 	FastModeDisabledReason *FastModeDisabledReason `json:"fast_mode_disabled_reason,omitempty"`
