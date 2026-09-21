@@ -311,6 +311,21 @@ func parseMatchedAskRule(v interface{}) *MatchedAskRule {
 	}
 }
 
+// parseMCPServerProvenance extracts the mcp_server object from a permission or
+// hook payload. It returns nil when the field is absent or malformed.
+func parseMCPServerProvenance(v interface{}) *MCPServerProvenance {
+	m, ok := v.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	name, _ := m["name"].(string)
+	source, _ := m["source"].(string)
+	return &MCPServerProvenance{
+		Name:   name,
+		Source: MCPServerSource(source),
+	}
+}
+
 // handlePermissionRequest processes a permission check request.
 func (p *Protocol) handlePermissionRequest(ctx context.Context, req ControlRequest) SDKControlResponse {
 	// Extract request details (per TypeScript SDK: tool_name, input).
@@ -322,6 +337,7 @@ func (p *Protocol) handlePermissionRequest(ctx context.Context, req ControlReque
 	suppressAlwaysAllowRule, _ := req.Payload["suppress_always_allow_rule"].(bool)
 	defaultToNo, _ := req.Payload["default_to_no"].(bool)
 	matchedAskRule := parseMatchedAskRule(req.Payload["matched_ask_rule"])
+	mcpServer := parseMCPServerProvenance(req.Payload["mcp_server"])
 
 	// Build permission request.
 	permReq := ToolPermissionRequest{
@@ -334,6 +350,7 @@ func (p *Protocol) handlePermissionRequest(ctx context.Context, req ControlReque
 			SuppressAlwaysAllowRule: suppressAlwaysAllowRule,
 			DefaultToNo:             defaultToNo,
 			MatchedAskRule:          matchedAskRule,
+			MCPServer:               mcpServer,
 		},
 	}
 
@@ -987,6 +1004,7 @@ func (p *Protocol) handleSDKPermissionRequest(ctx context.Context, req SDKContro
 			SuppressAlwaysAllowRule: req.Request.SuppressAlwaysAllowRule,
 			DefaultToNo:             req.Request.DefaultToNo,
 			MatchedAskRule:          req.Request.MatchedAskRule,
+			MCPServer:               req.Request.MCPServer,
 		},
 	}
 

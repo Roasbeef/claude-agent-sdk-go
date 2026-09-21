@@ -2284,6 +2284,66 @@ type MatchedAskRule struct {
 	RuleContent string `json:"rule_content,omitempty"`
 }
 
+// MCPServerProvenance identifies the MCP server serving an mcp__* tool and
+// where that server's definition came from (sdk.d.ts v0.3.278 L1154).
+//
+// Key trust decisions on Source, never on Name and never on the tool-name
+// prefix. MCPServerSourceSDK is the only value meaning an in-process server
+// this SDK host registered, and the CLI will not report it for a server that
+// merely shares the name of one — so a configured server cannot impersonate a
+// host-registered one by naming itself after it.
+//
+// Name is the server's configuration key: for MCPServerSourceSDK, exactly the
+// name registered via Options.MCPServers; for every other source, the key as
+// authored in that configuration. That makes it untrusted, producer-authored
+// text — escape it before display.
+//
+// Absent for non-MCP tools and on CLIs that predate the field.
+type MCPServerProvenance struct {
+	Name   string          `json:"name"`
+	Source MCPServerSource `json:"source"`
+}
+
+// MCPServerSource names where an MCP server's definition came from.
+//
+// This is an open set: the CLI may report a source this SDK does not know.
+// Compare against the constants below and treat an unrecognized value as some
+// other configured source — never as MCPServerSourceSDK.
+type MCPServerSource string
+
+const (
+	// MCPServerSourceSDK is an in-process server the SDK host registered.
+	// Only the host can register one.
+	MCPServerSourceSDK MCPServerSource = "sdk"
+	// MCPServerSourcePlugin is a server a plugin ships or registers at runtime.
+	MCPServerSourcePlugin MCPServerSource = "plugin"
+	// MCPServerSourceUser is a server from user-scope configuration.
+	MCPServerSourceUser MCPServerSource = "user"
+	// MCPServerSourceProject is a server from project-scope configuration.
+	MCPServerSourceProject MCPServerSource = "project"
+	// MCPServerSourceLocal is a server from local-scope configuration.
+	MCPServerSourceLocal MCPServerSource = "local"
+	// MCPServerSourceDynamic is a process server supplied via --mcp-config or
+	// the mcp_set_servers control request.
+	MCPServerSourceDynamic MCPServerSource = "dynamic"
+	// MCPServerSourceManaged is a server from managed settings.
+	MCPServerSourceManaged MCPServerSource = "managed"
+	// MCPServerSourceEnterprise is a server from enterprise configuration.
+	MCPServerSourceEnterprise MCPServerSource = "enterprise"
+	// MCPServerSourceClaudeAI is a server configured on claude.ai.
+	MCPServerSourceClaudeAI MCPServerSource = "claudeai"
+	// MCPServerSourceAgent is a server declared by an agent definition.
+	MCPServerSourceAgent MCPServerSource = "agent"
+)
+
+// IsSDK reports whether the server is an in-process one this SDK host
+// registered. Prefer it over comparing Source by hand: it is the single
+// trust-relevant question this type answers, and it keeps an unknown source
+// from being mistaken for a host-registered server.
+func (p *MCPServerProvenance) IsSDK() bool {
+	return p != nil && p.Source == MCPServerSourceSDK
+}
+
 // PermissionContext provides additional context for permission decisions.
 type PermissionContext struct {
 	SessionID string
@@ -2313,7 +2373,13 @@ type PermissionContext struct {
 	// while the ask still carries the tool's own decision reason. Nil when no
 	// such rule applied. See MatchedAskRule (sdk.d.ts v0.3.215).
 	MatchedAskRule *MatchedAskRule
-	Metadata       map[string]interface{}
+	// MCPServer identifies the MCP server behind an mcp__* tool and where its
+	// definition came from. Nil for non-MCP tools and on CLIs that predate the
+	// field, so a host that auto-approves on provenance must treat nil as
+	// "unknown" rather than as a host-registered server (sdk.d.ts v0.3.278
+	// L241).
+	MCPServer *MCPServerProvenance
+	Metadata  map[string]interface{}
 }
 
 // PermissionDecisionClassification labels how a permission decision was reached

@@ -756,10 +756,11 @@ type SDKControlRequestBody struct {
 
 	// Inbound can_use_tool context. These describe how the ask reached the
 	// host and constrain how it may be rendered; see PermissionContext.
-	RequiresUserInteraction bool            `json:"requires_user_interaction,omitempty"`
-	SuppressAlwaysAllowRule bool            `json:"suppress_always_allow_rule,omitempty"`
-	DefaultToNo             bool            `json:"default_to_no,omitempty"`
-	MatchedAskRule          *MatchedAskRule `json:"matched_ask_rule,omitempty"`
+	RequiresUserInteraction bool                 `json:"requires_user_interaction,omitempty"`
+	SuppressAlwaysAllowRule bool                 `json:"suppress_always_allow_rule,omitempty"`
+	DefaultToNo             bool                 `json:"default_to_no,omitempty"`
+	MatchedAskRule          *MatchedAskRule      `json:"matched_ask_rule,omitempty"`
+	MCPServer               *MCPServerProvenance `json:"mcp_server,omitempty"`
 
 	CallbackID        string                      `json:"callback_id,omitempty"`          // For hook_callback
 	Mode              string                      `json:"mode,omitempty"`                 // For set_permission_mode
