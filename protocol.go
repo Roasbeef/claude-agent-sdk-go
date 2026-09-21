@@ -572,6 +572,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			BaseHookInput: base,
 			ToolName:      getString(inputData, "tool_name"),
 			ToolInput:     marshalJSON(inputData["tool_input"]),
+			MCPServer:     parseMCPServerProvenance(inputData["mcp_server"]),
 		}
 	case HookTypePostToolUse:
 		input = PostToolUseInput{
@@ -579,6 +580,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			ToolName:      getString(inputData, "tool_name"),
 			ToolInput:     marshalJSON(inputData["tool_input"]),
 			ToolResponse:  marshalJSON(inputData["tool_response"]),
+			MCPServer:     parseMCPServerProvenance(inputData["mcp_server"]),
 		}
 	case HookTypeUserPromptSubmit:
 		input = UserPromptSubmitInput{
@@ -643,6 +645,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			ToolInput:     marshalJSON(inputData["tool_input"]),
 			Error:         getString(inputData, "error"),
 			IsInterrupt:   getBool(inputData, "is_interrupt"),
+			MCPServer:     parseMCPServerProvenance(inputData["mcp_server"]),
 		}
 	case HookTypeNotification:
 		input = NotificationInput{
@@ -677,6 +680,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			BaseHookInput: base,
 			ToolName:      getString(inputData, "tool_name"),
 			ToolInput:     marshalJSON(inputData["tool_input"]),
+			MCPServer:     parseMCPServerProvenance(inputData["mcp_server"]),
 		}
 	case HookTypePermissionDenied:
 		input = PermissionDeniedInput{
@@ -685,6 +689,7 @@ func (p *Protocol) handleHookCallback(ctx context.Context, req ControlRequest) S
 			ToolInput:     marshalJSON(inputData["tool_input"]),
 			ToolUseID:     getString(inputData, "tool_use_id"),
 			Reason:        getString(inputData, "reason"),
+			MCPServer:     parseMCPServerProvenance(inputData["mcp_server"]),
 		}
 	case HookTypeCwdChanged:
 		input = CwdChangedInput{
@@ -1118,6 +1123,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			BaseHookInput: base,
 			ToolName:      getString(hookInput, "tool_name"),
 			ToolInput:     marshalJSON(hookInput["tool_input"]),
+			MCPServer:     parseMCPServerProvenance(hookInput["mcp_server"]),
 		}
 	case "PostToolUse":
 		input = PostToolUseInput{
@@ -1125,6 +1131,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			ToolName:      getString(hookInput, "tool_name"),
 			ToolInput:     marshalJSON(hookInput["tool_input"]),
 			ToolResponse:  marshalJSON(hookInput["tool_response"]),
+			MCPServer:     parseMCPServerProvenance(hookInput["mcp_server"]),
 		}
 	case "UserPromptSubmit":
 		input = UserPromptSubmitInput{
@@ -1189,6 +1196,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			ToolInput:     marshalJSON(hookInput["tool_input"]),
 			Error:         getString(hookInput, "error"),
 			IsInterrupt:   getBool(hookInput, "is_interrupt"),
+			MCPServer:     parseMCPServerProvenance(hookInput["mcp_server"]),
 		}
 	case "Notification":
 		input = NotificationInput{
@@ -1223,6 +1231,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			BaseHookInput: base,
 			ToolName:      getString(hookInput, "tool_name"),
 			ToolInput:     marshalJSON(hookInput["tool_input"]),
+			MCPServer:     parseMCPServerProvenance(hookInput["mcp_server"]),
 		}
 	case "PermissionDenied":
 		input = PermissionDeniedInput{
@@ -1231,6 +1240,7 @@ func (p *Protocol) handleSDKHookCallback(ctx context.Context, req SDKControlRequ
 			ToolInput:     marshalJSON(hookInput["tool_input"]),
 			ToolUseID:     getString(hookInput, "tool_use_id"),
 			Reason:        getString(hookInput, "reason"),
+			MCPServer:     parseMCPServerProvenance(hookInput["mcp_server"]),
 		}
 	case "CwdChanged":
 		input = CwdChangedInput{
