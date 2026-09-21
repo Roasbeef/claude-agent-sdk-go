@@ -1743,7 +1743,10 @@ type ToolsConfig struct {
 //
 // Type is one of "adaptive", "enabled", or "disabled". BudgetTokens applies only
 // when Type is "enabled"; if nil, the CLI is told to use adaptive thinking. Display
-// applies when Type is "adaptive" or "enabled" and is one of "summarized" or "omitted".
+// applies when Type is "adaptive" or "enabled" and is one of "summarized" or
+// "omitted". ThinkingDisplayHighlights is NOT accepted here: the spawn-time
+// --thinking-display flag takes only the first two (sdk.d.ts v0.3.278 L9204).
+// See ThinkingDisplayHighlights.
 type ThinkingConfig struct {
 	Type         string          `json:"type"`
 	BudgetTokens *int            `json:"budgetTokens,omitempty"`
@@ -1758,6 +1761,23 @@ const (
 	ThinkingDisplaySummarized ThinkingDisplay = "summarized"
 	// ThinkingDisplayOmitted suppresses thinking blocks entirely.
 	ThinkingDisplayOmitted ThinkingDisplay = "omitted"
+	// ThinkingDisplayHighlights returns one short title per stretch of
+	// thinking, the API's thinking highlights, instead of a prose summary.
+	//
+	// It is accepted only mid-session, via Stream.SetMaxThinkingTokens with
+	// WithThinkingDisplay. The spawn-time --thinking-display flag does not
+	// take it, so setting it in ThinkingConfig hands the CLI a value it will
+	// reject (sdk.d.ts v0.3.278 L2746 and L4779 for the accepted union,
+	// L9204 for the spawn-time one that still excludes it).
+	//
+	// Even mid-session it is conditional: the API honors highlights only for
+	// Claude Code sessions Anthropic hosts. Anywhere else the control request
+	// still SUCCEEDS and the session then falls back to
+	// ThinkingDisplayOmitted once the API has rejected the value. So a host
+	// that asks for highlights and sees no thinking text is looking at that
+	// fallback, not at a bug, and there is no success/failure signal on the
+	// response to distinguish the two.
+	ThinkingDisplayHighlights ThinkingDisplay = "highlights"
 )
 
 // ThinkingAdaptive lets Claude decide when and how much to think.

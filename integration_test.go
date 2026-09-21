@@ -4875,3 +4875,41 @@ func TestIntegrationProjectConfigRoot(t *testing.T) {
 	assert.NotContains(t, reply, "MARIGOLD",
 		"the cwd's CLAUDE.md must not be what the session runs")
 }
+
+// TestIntegrationThinkingDisplayHighlights sets the highlights display mode
+// mid-session (sdk.d.ts v0.3.278 L4779).
+//
+// The assertion is deliberately weak: the API honors highlights only for
+// Anthropic-hosted Claude Code sessions, and everywhere else the control
+// request still succeeds and the session falls back to omitted, with nothing
+// on the response saying which happened. So the only thing a test can hold
+// the CLI to is that the request is accepted rather than rejected as an
+// unknown value. Asserting on the thinking text that follows would be
+// asserting on which lane the test happens to run in.
+func TestIntegrationThinkingDisplayHighlights(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithThinking(ThinkingAdaptive()),
+		WithMaxTurns(1),
+		WithStderr(func(data string) { t.Logf("CLI stderr: %s", data) }),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+
+	err = stream.SetMaxThinkingTokens(ctx, nil,
+		WithThinkingDisplay(ThinkingDisplayHighlights))
+	if err != nil {
+		// An older CLI validates the union and rejects the value outright.
+		t.Skipf("CLI rejected the highlights display mode: %v", err)
+	}
+}

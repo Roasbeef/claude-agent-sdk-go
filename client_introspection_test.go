@@ -1054,3 +1054,64 @@ func TestStreamGetHooksListing(t *testing.T) {
 		assert.Contains(t, err.Error(), "unknown subtype")
 	})
 }
+
+// TestSetMaxThinkingTokensHighlights covers the highlights display mode added
+// in TS SDK v0.3.278 (sdk.d.ts L2746 / L4779).
+func TestSetMaxThinkingTokensHighlights(t *testing.T) {
+	t.Run("rides the control request", func(t *testing.T) {
+		body := SDKControlRequestBody{
+			Subtype:         "set_max_thinking_tokens",
+			ThinkingDisplay: &ThinkingDisplayOverride{Mode: thinkingDisplayPtr(ThinkingDisplayHighlights)},
+		}
+
+		raw, err := json.Marshal(body)
+		require.NoError(t, err)
+
+		var got map[string]interface{}
+		require.NoError(t, json.Unmarshal(raw, &got))
+		assert.Equal(t, "highlights", got["thinking_display"])
+	})
+
+	t.Run("round-trips back off the wire", func(t *testing.T) {
+		var body SDKControlRequestBody
+		require.NoError(t, json.Unmarshal([]byte(
+			`{"subtype":"set_max_thinking_tokens","thinking_display":"highlights"}`,
+		), &body))
+
+		require.NotNil(t, body.ThinkingDisplay)
+		require.NotNil(t, body.ThinkingDisplay.Mode)
+		assert.Equal(t, ThinkingDisplayHighlights, *body.ThinkingDisplay.Mode)
+	})
+
+	// The option constructor is the only supported way to reach it.
+	t.Run("WithThinkingDisplay carries it", func(t *testing.T) {
+		var cfg setMaxThinkingTokensOptions
+		WithThinkingDisplay(ThinkingDisplayHighlights)(&cfg)
+
+		require.NotNil(t, cfg.display)
+		require.NotNil(t, cfg.display.Mode)
+		assert.Equal(t, ThinkingDisplayHighlights, *cfg.display.Mode)
+	})
+
+	// The spawn-time flag union does not include highlights, so this pins the
+	// asymmetry rather than the behavior: if a future CLI starts accepting it
+	// at spawn time, this is the test that should change.
+	t.Run("spawn-time flag union excludes it", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := &Options{
+			Thinking: &ThinkingConfig{
+				Type:    "adaptive",
+				Display: ThinkingDisplaySummarized,
+			},
+		}
+		transport := NewSubprocessTransportWithRunner(runner, opts)
+		require.NoError(t, transport.Connect(context.Background()))
+		defer transport.Close()
+
+		assert.Contains(t, runner.StartArgs, "--thinking-display")
+		assert.Contains(t, runner.StartArgs, "summarized")
+		assert.NotContains(t, runner.StartArgs, "highlights")
+	})
+}
+
+func thinkingDisplayPtr(d ThinkingDisplay) *ThinkingDisplay { return &d }
