@@ -2628,6 +2628,12 @@ type PreToolUseInput struct {
 	BaseHookInput
 	ToolName  string          `json:"tool_name"`
 	ToolInput json.RawMessage `json:"tool_input"`
+	// MCPServer identifies the MCP server behind an mcp__* tool and where its
+	// definition came from. Nil for non-MCP tools and on CLIs that predate the
+	// field; neither case licenses a hook to assume SDK provenance. Key any
+	// policy on MCPServerProvenance.IsSDK, never on the tool-name prefix
+	// (sdk.d.ts v0.3.278 L2644).
+	MCPServer *MCPServerProvenance `json:"mcp_server,omitempty"`
 }
 
 // HookType implements HookInput.
@@ -2642,6 +2648,12 @@ type PostToolUseInput struct {
 	ToolName     string          `json:"tool_name"`
 	ToolInput    json.RawMessage `json:"tool_input"`
 	ToolResponse json.RawMessage `json:"tool_response"`
+	// MCPServer identifies the MCP server behind an mcp__* tool and where its
+	// definition came from. Nil for non-MCP tools and on CLIs that predate the
+	// field; neither case licenses a hook to assume SDK provenance. Key any
+	// policy on MCPServerProvenance.IsSDK, never on the tool-name prefix
+	// (sdk.d.ts v0.3.278 L2566).
+	MCPServer *MCPServerProvenance `json:"mcp_server,omitempty"`
 }
 
 // HookType implements HookInput.
@@ -2925,6 +2937,12 @@ type PostToolUseFailureInput struct {
 	ToolInput   json.RawMessage `json:"tool_input"`
 	Error       string          `json:"error"`
 	IsInterrupt bool            `json:"is_interrupt,omitempty"`
+	// MCPServer identifies the MCP server behind an mcp__* tool and where its
+	// definition came from. Nil for non-MCP tools and on CLIs that predate the
+	// field; neither case licenses a hook to assume SDK provenance. Key any
+	// policy on MCPServerProvenance.IsSDK, never on the tool-name prefix
+	// (sdk.d.ts v0.3.278 L2548).
+	MCPServer *MCPServerProvenance `json:"mcp_server,omitempty"`
 }
 
 // HookType implements HookInput.
@@ -3022,6 +3040,12 @@ type PermissionRequestInput struct {
 	ToolName              string             `json:"tool_name"`
 	ToolInput             json.RawMessage    `json:"tool_input"`
 	PermissionSuggestions []PermissionUpdate `json:"permission_suggestions,omitempty"`
+	// MCPServer identifies the MCP server behind an mcp__* tool and where its
+	// definition came from. Nil for non-MCP tools and on CLIs that predate the
+	// field; neither case licenses a hook to assume SDK provenance. Key any
+	// policy on MCPServerProvenance.IsSDK, never on the tool-name prefix
+	// (sdk.d.ts v0.3.278 L2390).
+	MCPServer *MCPServerProvenance `json:"mcp_server,omitempty"`
 }
 
 // HookType implements HookInput.
@@ -3037,6 +3061,12 @@ type PermissionDeniedInput struct {
 	ToolInput json.RawMessage `json:"tool_input"`
 	ToolUseID string          `json:"tool_use_id"`
 	Reason    string          `json:"reason"`
+	// MCPServer identifies the MCP server behind an mcp__* tool and where its
+	// definition came from. Nil for non-MCP tools and on CLIs that predate the
+	// field; neither case licenses a hook to assume SDK provenance. Key any
+	// policy on MCPServerProvenance.IsSDK, never on the tool-name prefix
+	// (sdk.d.ts v0.3.278 L2372).
+	MCPServer *MCPServerProvenance `json:"mcp_server,omitempty"`
 }
 
 // HookType implements HookInput.

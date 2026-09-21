@@ -5075,3 +5075,160 @@ func TestProtocolPermissionMCPServerProvenance(t *testing.T) {
 		assert.Nil(t, captured.MCPServer)
 	})
 }
+
+// TestHookMCPServerProvenance covers mcp_server on all five tool-related hook
+// inputs, through both hook-input builders. The builders are separate explicit
+// field-mapping sites, so a field added to one and not the other is silently
+// empty at runtime rather than a compile error. Sweeping every hook type
+// through both is the only way to catch that.
+func TestHookMCPServerProvenance(t *testing.T) {
+	// extract pulls MCPServer back off whichever concrete input type the
+	// builder produced, so the table can stay one row per hook event.
+	extract := func(t *testing.T, input HookInput) *MCPServerProvenance {
+		t.Helper()
+		switch in := input.(type) {
+		case PreToolUseInput:
+			return in.MCPServer
+		case PostToolUseInput:
+			return in.MCPServer
+		case PostToolUseFailureInput:
+			return in.MCPServer
+		case PermissionRequestInput:
+			return in.MCPServer
+		case PermissionDeniedInput:
+			return in.MCPServer
+		default:
+			t.Fatalf("unexpected hook input type %T", input)
+			return nil
+		}
+	}
+
+	events := []string{
+		"PreToolUse",
+		"PostToolUse",
+		"PostToolUseFailure",
+		"PermissionRequest",
+		"PermissionDenied",
+	}
+
+	payload := func(eventKey, event string, withServer bool) map[string]interface{} {
+		p := map[string]interface{}{
+			eventKey:      event,
+			"tool_name":   "mcp__acme__deploy",
+			"tool_input":  map[string]interface{}{},
+			"tool_use_id": "tool_1",
+			"reason":      "denied by rule",
+			"error":       "boom",
+		}
+		if withServer {
+			p["mcp_server"] = map[string]interface{}{
+				"name":   "acme",
+				"source": "plugin",
+			}
+		}
+		return p
+	}
+
+	// run drives one hook event through one builder and hands back what the
+	// callback saw.
+	run := func(t *testing.T, event string, sdk, withServer bool) *MCPServerProvenance {
+		t.Helper()
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+
+		var got *MCPServerProvenance
+		protocol.hookCallbacks["cb"] = func(
+			ctx context.Context, input HookInput,
+		) (HookResult, error) {
+			got = extract(t, input)
+			return HookResult{Continue: true}, nil
+		}
+
+		var resp SDKControlResponse
+		if sdk {
+			resp = protocol.handleSDKHookCallback(context.Background(), SDKControlRequest{
+				Type:      "control_request",
+				RequestID: "sdk_req",
+				Request: SDKControlRequestBody{
+					Subtype:    "hook_callback",
+					CallbackID: "cb",
+					Input:      payload("hook_event_name", event, withServer),
+				},
+			})
+		} else {
+			resp = protocol.handleHookCallback(context.Background(), ControlRequest{
+				Type:      "control",
+				Subtype:   "hook_callback",
+				RequestID: "req",
+				Payload: map[string]interface{}{
+					"callback_id": "cb",
+					"input":       payload("hook_event", event, withServer),
+				},
+			})
+		}
+		require.Equal(t, "success", resp.Response.Subtype)
+		return got
+	}
+
+	for _, event := range events {
+		t.Run(event+"/legacy builder", func(t *testing.T) {
+			got := run(t, event, false, true)
+			require.NotNil(t, got, "mcp_server not mapped by the legacy builder")
+			assert.Equal(t, "acme", got.Name)
+			assert.Equal(t, MCPServerSourcePlugin, got.Source)
+			assert.False(t, got.IsSDK())
+		})
+
+		t.Run(event+"/sdk builder", func(t *testing.T) {
+			got := run(t, event, true, true)
+			require.NotNil(t, got, "mcp_server not mapped by the SDK builder")
+			assert.Equal(t, "acme", got.Name)
+			assert.Equal(t, MCPServerSourcePlugin, got.Source)
+			assert.False(t, got.IsSDK())
+		})
+
+		t.Run(event+"/absent", func(t *testing.T) {
+			assert.Nil(t, run(t, event, false, false))
+			assert.Nil(t, run(t, event, true, false))
+		})
+	}
+
+	// An in-process server registered by this host is the one case that may
+	// read as SDK, and it has to survive the hook path too.
+	t.Run("sdk server reaches the hook as sdk", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := NewOptions()
+		protocol := NewProtocol(NewSubprocessTransportWithRunner(runner, opts), opts)
+
+		var got *MCPServerProvenance
+		protocol.hookCallbacks["cb"] = func(
+			ctx context.Context, input HookInput,
+		) (HookResult, error) {
+			got = extract(t, input)
+			return HookResult{Continue: true}, nil
+		}
+
+		resp := protocol.handleHookCallback(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "hook_callback",
+			RequestID: "req",
+			Payload: map[string]interface{}{
+				"callback_id": "cb",
+				"input": map[string]interface{}{
+					"hook_event": "PreToolUse",
+					"tool_name":  "mcp__calculator__add_numbers",
+					"tool_input": map[string]interface{}{},
+					"mcp_server": map[string]interface{}{
+						"name":   "calculator",
+						"source": "sdk",
+					},
+				},
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		require.NotNil(t, got)
+		assert.True(t, got.IsSDK())
+	})
+}

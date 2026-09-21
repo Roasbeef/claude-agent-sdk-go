@@ -4665,3 +4665,94 @@ func TestIntegrationMCPServerProvenancePermission(t *testing.T) {
 	assert.Equal(t, MCPServerSourceSDK, gotProv.Source)
 	assert.True(t, gotProv.IsSDK())
 }
+
+// TestIntegrationMCPServerProvenanceHook asserts the CLI reports MCP server
+// provenance on a PreToolUse hook for an mcp__* tool (sdk.d.ts v0.3.278
+// L2644).
+func TestIntegrationMCPServerProvenanceHook(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	type AddArgs struct {
+		A int `json:"a"`
+		B int `json:"b"`
+	}
+
+	server := CreateMcpServer(McpServerOptions{
+		Name:    "calculator",
+		Version: "1.0.0",
+		Tools: []ToolRegistrar{
+			ToolWithSchema("add_numbers", "Add two numbers together and return the sum",
+				map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"a": map[string]interface{}{"type": "integer"},
+						"b": map[string]interface{}{"type": "integer"},
+					},
+					"required": []string{"a", "b"},
+				},
+				func(ctx context.Context, args AddArgs) (ToolResult, error) {
+					return TextResult(fmt.Sprintf("%d", args.A+args.B)), nil
+				},
+			),
+		},
+	})
+
+	var (
+		mu      sync.Mutex
+		fired   bool
+		gotProv *MCPServerProvenance
+	)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt(
+			"You are a helpful assistant. When asked to add numbers, "+
+				"you MUST use the add_numbers tool. Do not calculate manually.",
+		),
+		WithMcpServer("calculator", server),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithHooks(map[HookType][]HookConfig{
+			HookTypePreToolUse: {{Matcher: "*", Callback: func(
+				ctx context.Context, input HookInput,
+			) (HookResult, error) {
+				in, ok := input.(PreToolUseInput)
+				if !ok || !strings.HasPrefix(in.ToolName, "mcp__") {
+					return HookResult{Continue: true}, nil
+				}
+				mu.Lock()
+				defer mu.Unlock()
+				fired = true
+				gotProv = in.MCPServer
+				t.Logf("PreToolUse %s, mcp_server=%+v", in.ToolName, in.MCPServer)
+				return HookResult{Continue: true}, nil
+			}}},
+		}),
+		WithMaxTurns(5),
+		WithStderr(func(data string) { t.Logf("CLI stderr: %s", data) }),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	for msg := range client.Query(ctx, "Use the add_numbers tool to add 7 and 4.") {
+		if m, ok := msg.(ResultMessage); ok {
+			t.Logf("Result: status=%s", m.Status)
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.True(t, fired, "expected a PreToolUse hook for the mcp__ tool")
+
+	if gotProv == nil {
+		t.Skip("CLI predates mcp_server on the PreToolUse hook input")
+	}
+	assert.Equal(t, "calculator", gotProv.Name)
+	assert.Equal(t, MCPServerSourceSDK, gotProv.Source)
+	assert.True(t, gotProv.IsSDK())
+}
