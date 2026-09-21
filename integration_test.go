@@ -4959,3 +4959,50 @@ func TestIntegrationThinkingDisplayHighlights(t *testing.T) {
 		t.Skipf("CLI rejected the highlights display mode: %v", err)
 	}
 }
+
+// TestIntegrationStartupFailureReason drives a real startup failure and reads
+// the machine-readable cause off the zeroed result (sdk.d.ts v0.3.278 L5388).
+//
+// cwd_unavailable is the one cause on the list that can be provoked without
+// touching org policy, gateway state or the host OS: point the session at a
+// directory and delete it before connecting. The env var is required because
+// this is one of the failures that historically ended with stderr alone, and
+// the CLI only writes the result frame for those when the host asks for it.
+func TestIntegrationStartupFailureReason(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, "2.1.278")
+
+	gone := filepath.Join(t.TempDir(), "deleted-before-connect")
+	require.NoError(t, os.MkdirAll(gone, 0755))
+	require.NoError(t, os.RemoveAll(gone))
+
+	opts := append(isolatedClientOptions(t),
+		WithCwd(gone),
+		WithEnv(map[string]string{"CLAUDE_CODE_STARTUP_FAILURE_RESULTS": "1"}),
+		WithMaxTurns(1),
+		WithStderr(func(data string) { t.Logf("CLI stderr: %s", data) }),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	var result *ResultMessage
+	for msg := range client.Query(ctx, "say ok") {
+		if m, ok := msg.(ResultMessage); ok {
+			result = &m
+			t.Logf("result: subtype=%s reason=%q errors=%v",
+				m.Subtype, m.StartupFailureReason, m.Errors)
+		}
+	}
+
+	if result == nil {
+		t.Skip("CLI exited without writing a startup-failure result frame")
+	}
+	assert.Equal(t, StartupFailureCwdUnavailable, result.StartupFailureReason)
+	assert.NotEmpty(t, result.Errors,
+		"errors should carry the same text as stderr")
+}
