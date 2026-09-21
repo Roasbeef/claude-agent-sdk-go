@@ -3662,9 +3662,15 @@ type AgentDefinition struct {
 	InitialPrompt                      string               `json:"initialPrompt,omitempty"`
 	MaxTurns                           int                  `json:"maxTurns,omitempty"`
 	Background                         *bool                `json:"background,omitempty"`
-	Memory                             AgentMemoryScope     `json:"memory,omitempty"`
-	Effort                             AgentEffort          `json:"effort,omitempty"`
-	PermissionMode                     PermissionMode       `json:"permissionMode,omitempty"`
+	// OmitClaudeMd runs this agent without the user, project and local
+	// CLAUDE.md instruction files when it runs as a subagent; managed policy
+	// files are kept. For agents that take everything they need from the
+	// delegation prompt. No effect on the main session agent (sdk.d.ts
+	// v0.3.278 L81).
+	OmitClaudeMd   bool             `json:"omitClaudeMd,omitempty"`
+	Memory         AgentMemoryScope `json:"memory,omitempty"`
+	Effort         AgentEffort      `json:"effort,omitempty"`
+	PermissionMode PermissionMode   `json:"permissionMode,omitempty"`
 	// Observer names an agent type auto-spawned as a background observer
 	// whenever this agent runs. The observer receives read-only activity
 	// digests and reports via the ObserverReport tool; it never
@@ -3690,6 +3696,7 @@ func (a AgentDefinition) MarshalJSON() ([]byte, error) {
 		InitialPrompt                      string               `json:"initialPrompt,omitempty"`
 		MaxTurns                           int                  `json:"maxTurns,omitempty"`
 		Background                         *bool                `json:"background,omitempty"`
+		OmitClaudeMd                       bool                 `json:"omitClaudeMd,omitempty"`
 		Memory                             AgentMemoryScope     `json:"memory,omitempty"`
 		Effort                             *AgentEffort         `json:"effort,omitempty"`
 		PermissionMode                     PermissionMode       `json:"permissionMode,omitempty"`
@@ -3709,6 +3716,7 @@ func (a AgentDefinition) MarshalJSON() ([]byte, error) {
 		InitialPrompt:                      a.InitialPrompt,
 		MaxTurns:                           a.MaxTurns,
 		Background:                         a.Background,
+		OmitClaudeMd:                       a.OmitClaudeMd,
 		Memory:                             a.Memory,
 		PermissionMode:                     a.PermissionMode,
 		Observer:                           a.Observer,

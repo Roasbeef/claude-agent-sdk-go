@@ -110,6 +110,7 @@ func TestAgentDefinitionJSON(t *testing.T) {
 		InitialPrompt:                      "Start here",
 		MaxTurns:                           5,
 		Background:                         &background,
+		OmitClaudeMd:                       true,
 		Memory:                             AgentMemoryProject,
 		Effort:                             AgentEffort{Numeric: &effortBudget},
 		PermissionMode:                     PermissionModeAcceptEdits,
@@ -136,6 +137,7 @@ func TestAgentDefinitionJSON(t *testing.T) {
 	assert.Equal(t, "Start here", got["initialPrompt"])
 	assert.Equal(t, float64(5), got["maxTurns"])
 	assert.Equal(t, false, got["background"])
+	assert.Equal(t, true, got["omitClaudeMd"])
 	assert.Equal(t, "project", got["memory"])
 	assert.Equal(t, float64(30000), got["effort"])
 	assert.Equal(t, "acceptEdits", got["permissionMode"])
@@ -157,6 +159,7 @@ func TestAgentDefinitionJSON(t *testing.T) {
 	assert.Equal(t, agent.MaxTurns, decoded.MaxTurns)
 	require.NotNil(t, decoded.Background)
 	assert.Equal(t, false, *decoded.Background)
+	assert.True(t, decoded.OmitClaudeMd)
 	assert.Equal(t, agent.Memory, decoded.Memory)
 	require.NotNil(t, decoded.Effort.Numeric)
 	assert.Equal(t, effortBudget, *decoded.Effort.Numeric)
@@ -177,7 +180,7 @@ func TestAgentDefinitionJSONOmitUnset(t *testing.T) {
 
 	assert.Equal(t, "Reviews changes", got["description"])
 	assert.Equal(t, "Review carefully", got["prompt"])
-	for _, key := range []string{"memory", "effort", "maxTurns", "background", "observer", "observerMessage"} {
+	for _, key := range []string{"memory", "effort", "maxTurns", "background", "omitClaudeMd", "observer", "observerMessage"} {
 		assert.NotContains(t, got, key)
 	}
 }
@@ -3413,6 +3416,27 @@ func TestParseMessageTaskNotification(t *testing.T) {
 				assert.Empty(t, taskMsg.ToolUseID)
 				assert.Nil(t, taskMsg.Usage)
 				assert.Nil(t, taskMsg.SkipTranscript)
+				// An ordinary stop carries no machine-readable reason.
+				assert.Empty(t, taskMsg.Reason)
+			},
+		},
+		{
+			name: "stopped by worker restart",
+			input: `{
+				"type": "system",
+				"subtype": "task_notification",
+				"task_id": "task_01J8Z8Y2X3K4M5N6P7Q8R9S0TL",
+				"status": "stopped",
+				"reason": "worker_restart",
+				"output_file": "/tmp/claude-task-output-orphaned.md",
+				"summary": "Task orphaned by a worker restart",
+				"uuid": "550e8400-e29b-41d4-a716-446655440022",
+				"session_id": "sess_task_123"
+			}`,
+			wantStatus: TaskNotificationStatusStopped,
+			check: func(t *testing.T, taskMsg TaskNotificationMessage) {
+				t.Helper()
+				assert.Equal(t, TaskEndReasonWorkerRestart, taskMsg.Reason)
 			},
 		},
 	}
