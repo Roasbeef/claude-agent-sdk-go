@@ -4914,3 +4914,164 @@ func TestProtocolInitializeSystemPromptConflict(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "mutually exclusive")
 }
+
+// TestProtocolPermissionMCPServerProvenance covers mcp_server on both
+// permission paths. As with default_to_no, the two are separate field-mapping
+// sites and drift independently.
+func TestProtocolPermissionMCPServerProvenance(t *testing.T) {
+	capture := func(into *PermissionContext) *Options {
+		opts := NewOptions()
+		opts.CanUseTool = func(
+			ctx context.Context, req ToolPermissionRequest,
+		) PermissionResult {
+			*into = req.Context
+			return PermissionAllow{}
+		}
+		return opts
+	}
+
+	t.Run("legacy control_request path", func(t *testing.T) {
+		var captured PermissionContext
+		protocol := NewProtocol(nil, capture(&captured))
+
+		resp := protocol.handlePermissionRequest(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "can_use_tool",
+			RequestID: "req_1",
+			Payload: map[string]interface{}{
+				"tool_name":   "mcp__tickertape__fetch_quote",
+				"tool_use_id": "tool_1",
+				"input":       map[string]interface{}{},
+				"mcp_server": map[string]interface{}{
+					"name":   "tickertape",
+					"source": "sdk",
+				},
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		require.NotNil(t, captured.MCPServer)
+		assert.Equal(t, "tickertape", captured.MCPServer.Name)
+		assert.Equal(t, MCPServerSourceSDK, captured.MCPServer.Source)
+		assert.True(t, captured.MCPServer.IsSDK())
+	})
+
+	t.Run("sdk control_request path", func(t *testing.T) {
+		var captured PermissionContext
+		protocol := NewProtocol(nil, capture(&captured))
+
+		resp := protocol.handleSDKPermissionRequest(context.Background(), SDKControlRequest{
+			Type:      "control_request",
+			RequestID: "sdk_req_1",
+			Request: SDKControlRequestBody{
+				Subtype:   "can_use_tool",
+				ToolName:  "mcp__acme__deploy",
+				ToolUseID: "tool_1",
+				Input:     map[string]interface{}{},
+				MCPServer: &MCPServerProvenance{
+					Name:   "acme",
+					Source: MCPServerSourceProject,
+				},
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		require.NotNil(t, captured.MCPServer)
+		assert.Equal(t, "acme", captured.MCPServer.Name)
+		assert.Equal(t, MCPServerSourceProject, captured.MCPServer.Source)
+		assert.False(t, captured.MCPServer.IsSDK())
+	})
+
+	t.Run("absent for a non-MCP tool", func(t *testing.T) {
+		var captured PermissionContext
+		protocol := NewProtocol(nil, capture(&captured))
+
+		resp := protocol.handlePermissionRequest(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "can_use_tool",
+			RequestID: "req_2",
+			Payload: map[string]interface{}{
+				"tool_name":   "Bash",
+				"tool_use_id": "tool_2",
+				"input":       map[string]interface{}{},
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		assert.Nil(t, captured.MCPServer)
+		assert.False(t, captured.MCPServer.IsSDK())
+	})
+
+	// A configured server cannot reach source "sdk", so a host keying trust on
+	// the name or the mcp__ prefix rather than the source is the mistake this
+	// field exists to prevent. Pin that IsSDK does not fall for it.
+	t.Run("configured server naming itself after an sdk one is not sdk", func(t *testing.T) {
+		var captured PermissionContext
+		protocol := NewProtocol(nil, capture(&captured))
+
+		resp := protocol.handlePermissionRequest(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "can_use_tool",
+			RequestID: "req_3",
+			Payload: map[string]interface{}{
+				"tool_name":   "mcp__tickertape__fetch_quote",
+				"tool_use_id": "tool_3",
+				"input":       map[string]interface{}{},
+				"mcp_server": map[string]interface{}{
+					"name":   "tickertape",
+					"source": "user",
+				},
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		require.NotNil(t, captured.MCPServer)
+		assert.False(t, captured.MCPServer.IsSDK())
+	})
+
+	// The source set is open: the CLI may report one this SDK predates.
+	t.Run("unknown source is not sdk", func(t *testing.T) {
+		var captured PermissionContext
+		protocol := NewProtocol(nil, capture(&captured))
+
+		resp := protocol.handlePermissionRequest(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "can_use_tool",
+			RequestID: "req_4",
+			Payload: map[string]interface{}{
+				"tool_name":   "mcp__future__thing",
+				"tool_use_id": "tool_4",
+				"input":       map[string]interface{}{},
+				"mcp_server": map[string]interface{}{
+					"name":   "future",
+					"source": "some-source-from-a-newer-cli",
+				},
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		require.NotNil(t, captured.MCPServer)
+		assert.Equal(t, MCPServerSource("some-source-from-a-newer-cli"), captured.MCPServer.Source)
+		assert.False(t, captured.MCPServer.IsSDK())
+	})
+
+	t.Run("malformed mcp_server is dropped", func(t *testing.T) {
+		var captured PermissionContext
+		protocol := NewProtocol(nil, capture(&captured))
+
+		resp := protocol.handlePermissionRequest(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "can_use_tool",
+			RequestID: "req_5",
+			Payload: map[string]interface{}{
+				"tool_name":   "mcp__acme__deploy",
+				"tool_use_id": "tool_5",
+				"input":       map[string]interface{}{},
+				"mcp_server":  "acme",
+			},
+		})
+
+		require.Equal(t, "success", resp.Response.Subtype)
+		assert.Nil(t, captured.MCPServer)
+	})
+}

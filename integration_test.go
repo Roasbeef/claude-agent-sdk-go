@@ -4571,3 +4571,97 @@ func TestIntegrationGetHooksListing(t *testing.T) {
 			"event %q hookCount should match its listed rows", ev.Name)
 	}
 }
+
+// TestIntegrationMCPServerProvenancePermission asserts the CLI reports MCP
+// server provenance on the permission request for an mcp__* tool, and that an
+// in-process SDK server reports source "sdk" — the one value a configured
+// server can never claim (sdk.d.ts v0.3.278 L241).
+func TestIntegrationMCPServerProvenancePermission(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	type AddArgs struct {
+		A int `json:"a"`
+		B int `json:"b"`
+	}
+
+	server := CreateMcpServer(McpServerOptions{
+		Name:    "calculator",
+		Version: "1.0.0",
+		Tools: []ToolRegistrar{
+			ToolWithSchema("add_numbers", "Add two numbers together and return the sum",
+				map[string]interface{}{
+					"type": "object",
+					"properties": map[string]interface{}{
+						"a": map[string]interface{}{"type": "integer"},
+						"b": map[string]interface{}{"type": "integer"},
+					},
+					"required": []string{"a", "b"},
+				},
+				func(ctx context.Context, args AddArgs) (ToolResult, error) {
+					return TextResult(fmt.Sprintf("%d", args.A+args.B)), nil
+				},
+			),
+		},
+	})
+
+	var (
+		mu        sync.Mutex
+		asked     bool
+		askedTool string
+		gotProv   *MCPServerProvenance
+	)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt(
+			"You are a helpful assistant. When asked to add numbers, "+
+				"you MUST use the add_numbers tool. Do not calculate manually.",
+		),
+		WithMcpServer("calculator", server),
+		WithPermissionMode(PermissionModeDefault),
+		WithCanUseTool(func(
+			ctx context.Context, req ToolPermissionRequest,
+		) PermissionResult {
+			mu.Lock()
+			defer mu.Unlock()
+			if strings.HasPrefix(req.ToolName, "mcp__") {
+				asked = true
+				askedTool = req.ToolName
+				gotProv = req.Context.MCPServer
+				t.Logf("permission for %s, mcp_server=%+v",
+					req.ToolName, req.Context.MCPServer)
+			}
+			return PermissionAllow{}
+		}),
+		WithMaxTurns(5),
+		WithStderr(func(data string) { t.Logf("CLI stderr: %s", data) }),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	for msg := range client.Query(ctx, "Use the add_numbers tool to add 7 and 4.") {
+		if m, ok := msg.(ResultMessage); ok {
+			t.Logf("Result: status=%s", m.Status)
+		}
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.True(t, asked, "expected a permission request for the mcp__ tool")
+	assert.Contains(t, askedTool, "add_numbers")
+
+	if gotProv == nil {
+		// Pre-v2.1.278 CLIs do not send the field. Absent is a valid wire
+		// state, so this is a skip rather than a failure — but it must not be
+		// silently read as "not an SDK server".
+		t.Skip("CLI predates mcp_server on the permission request")
+	}
+	assert.Equal(t, "calculator", gotProv.Name)
+	assert.Equal(t, MCPServerSourceSDK, gotProv.Source)
+	assert.True(t, gotProv.IsSDK())
+}
