@@ -4756,3 +4756,68 @@ func TestIntegrationMCPServerProvenanceHook(t *testing.T) {
 	assert.Equal(t, MCPServerSourceSDK, gotProv.Source)
 	assert.True(t, gotProv.IsSDK())
 }
+
+// TestIntegrationMCPServerProvenanceStatus asserts mcp_status reports where
+// each server came from (sdk.d.ts v0.3.278 L1197).
+//
+// It drives a stdio server rather than an in-process one on purpose: against
+// the CLI installed here, mcp_status returns an empty list for SDK-registered
+// servers, so an in-process fixture gives nothing to assert against either
+// way. A configured server is also the case with a trust answer worth pinning,
+// since "not sdk" is the verdict a host must reach for anything it did not
+// register itself.
+func TestIntegrationMCPServerProvenanceStatus(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	mcpServerPath := filepath.Join(t.TempDir(), "example-mcp-server")
+	buildCmd := exec.Command("go", "build", "-o", mcpServerPath, "./cmd/example-mcp-server")
+	buildCmd.Dir = "."
+	out, err := buildCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("failed to build MCP server: %v\n%s", err, out)
+	}
+
+	opts := append(isolatedClientOptions(t),
+		WithMCPServers(map[string]MCPServerConfig{
+			"example": {
+				Type:    "stdio",
+				Command: mcpServerPath,
+			},
+		}),
+		WithStrictMCPConfig(true),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithStderr(func(data string) { t.Logf("CLI stderr: %s", data) }),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+
+	statuses, err := stream.McpServerStatus(ctx)
+	require.NoError(t, err)
+	t.Logf("mcp_status: %+v", statuses)
+
+	var found *McpServerStatus
+	for i := range statuses {
+		if statuses[i].Name == "example" {
+			found = &statuses[i]
+			break
+		}
+	}
+	require.NotNil(t, found, "expected the example server in mcp_status")
+
+	if found.Source == "" {
+		t.Skip("CLI predates source on mcp_status rows")
+	}
+	// Whatever scope it lands in, a server we passed by config is not ours.
+	assert.False(t, found.IsSDK(),
+		"a configured server must never report source sdk, got %q", found.Source)
+}
