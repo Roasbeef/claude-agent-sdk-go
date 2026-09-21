@@ -937,6 +937,12 @@ type SetMaxThinkingTokensOption func(*setMaxThinkingTokensOptions)
 
 // WithThinkingDisplay sets the thinking display mode for the rest of the
 // session. The supplied value replaces the current session display mode.
+//
+// This is the only path that accepts ThinkingDisplayHighlights; the
+// spawn-time ThinkingConfig.Display does not. Note that highlights is honored
+// by the API only for Anthropic-hosted Claude Code sessions. Elsewhere the
+// request still succeeds and the session quietly falls back to
+// ThinkingDisplayOmitted, with nothing on the response to say so.
 func WithThinkingDisplay(mode ThinkingDisplay) SetMaxThinkingTokensOption {
 	return func(o *setMaxThinkingTokensOptions) {
 		o.display = &ThinkingDisplayOverride{Mode: &mode}
