@@ -1260,22 +1260,38 @@ func (s *Stream) ApplyFlagSettings(
 	return err
 }
 
-// SettingsSource names the settings file Stream.UpdateSettings writes to. It
-// is a single-member type today; a named type keeps widening it additive.
+// SettingsSource names the settings file Stream.UpdateSettings writes to.
 type SettingsSource string
 
-// SettingsSourceLocal is the project's local settings file — the only scope the
-// CLI accepts today, chosen so a host UI's writes land exactly where /config's
-// do.
-const SettingsSourceLocal SettingsSource = "localSettings"
+const (
+	// SettingsSourceLocal is the project's local settings file, where
+	// /config's own writes land. Its allowlist is outputStyle.
+	SettingsSourceLocal SettingsSource = "localSettings"
+	// SettingsSourceUser is the user's settings file. Its allowlist is
+	// effortLevel, and the write is scoped to the session's current model
+	// (sdk.d.ts v0.3.278 L4820).
+	//
+	// Writing it saves a default the way /effort does, under modelSettings
+	// for whichever model the session is on. It does NOT change the running
+	// session's effort level — that is ApplyFlagSettings. A host that wants
+	// both has to send both.
+	SettingsSourceUser SettingsSource = "userSettings"
+)
 
 // UpdateSettings writes settings to a settings file on disk, the durable
 // counterpart to ApplyFlagSettings' in-memory flag layer. The CLI persists the
-// merge to the named file rather than holding it for the session.
+// merge to the named file rather than holding it for the session, through its
+// own writer: canonical store root, gitignore upkeep, hardened write, the same
+// path /config uses.
 //
-// The CLI enforces a narrow contract: only outputStyle is writable today, its
-// value must be a string, and deletion is unsupported (a key cannot be cleared
-// this way). It refuses remote transports and any session whose
+// The allowlist is per file, not shared, because each file feeds hook and
+// permission-rule loading and so every writable key is a security decision:
+//
+//   - SettingsSourceLocal accepts outputStyle.
+//   - SettingsSourceUser accepts effortLevel.
+//
+// Values must be strings and deletion is unsupported, so a key cannot be
+// cleared this way. The CLI refuses remote transports and any session whose
 // --setting-sources excludes source. Violations surface as an error response.
 //
 // Only available in streaming input mode.

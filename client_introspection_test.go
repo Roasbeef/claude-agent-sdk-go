@@ -1115,3 +1115,53 @@ func TestSetMaxThinkingTokensHighlights(t *testing.T) {
 }
 
 func thinkingDisplayPtr(d ThinkingDisplay) *ThinkingDisplay { return &d }
+
+// TestUpdateSettingsSources covers the userSettings source v0.3.278 adds
+// alongside localSettings (sdk.d.ts L4812-4822).
+func TestUpdateSettingsSources(t *testing.T) {
+	t.Run("constants match the wire values", func(t *testing.T) {
+		assert.Equal(t, SettingsSource("localSettings"), SettingsSourceLocal)
+		assert.Equal(t, SettingsSource("userSettings"), SettingsSourceUser)
+	})
+
+	// Each source carries its own allowlisted key, so both shapes need to
+	// survive the marshal the way the CLI expects to read them.
+	for _, tc := range []struct {
+		name     string
+		source   SettingsSource
+		settings map[string]interface{}
+		wantKey  string
+	}{
+		{
+			name:     "localSettings writes outputStyle",
+			source:   SettingsSourceLocal,
+			settings: map[string]interface{}{"outputStyle": "Explanatory"},
+			wantKey:  "outputStyle",
+		},
+		{
+			name:     "userSettings writes effortLevel",
+			source:   SettingsSourceUser,
+			settings: map[string]interface{}{"effortLevel": "high"},
+			wantKey:  "effortLevel",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := SDKControlRequestBody{
+				Subtype:        "update_settings",
+				SettingsSource: string(tc.source),
+				Settings:       &tc.settings,
+			}
+
+			raw, err := json.Marshal(body)
+			require.NoError(t, err)
+
+			var got map[string]interface{}
+			require.NoError(t, json.Unmarshal(raw, &got))
+
+			assert.Equal(t, string(tc.source), got["source"])
+			settings, ok := got["settings"].(map[string]interface{})
+			require.True(t, ok)
+			assert.Contains(t, settings, tc.wantKey)
+		})
+	}
+}
