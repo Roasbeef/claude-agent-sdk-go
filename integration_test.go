@@ -921,6 +921,33 @@ func TestIntegrationResultFirstFrameTimings(t *testing.T) {
 		t.Logf("origin=%d relative=%d wall=%d", *result.TimeOriginMs,
 			*result.FirstStreamPostMs, *result.FirstStreamPostWallMs)
 	}
+
+	// v0.3.278 splits the post timing further: how long the first post waited
+	// in the queue and what it waited on, plus when text specifically first
+	// went out. Conditional because older CLIs report the trio above without
+	// these.
+	if result.FirstStreamPostQueueWaitMs != nil {
+		t.Logf("queue_wait=%d queued_behind=%q",
+			*result.FirstStreamPostQueueWaitMs,
+			result.FirstStreamPostQueuedBehind)
+
+		assert.GreaterOrEqual(t, *result.FirstStreamPostQueueWaitMs, int64(0),
+			"a queue wait cannot be negative")
+
+		// The wait cannot exceed the time to the post it was waiting for.
+		assert.LessOrEqual(t, *result.FirstStreamPostQueueWaitMs,
+			*result.FirstStreamPostMs,
+			"the queue wait cannot exceed the time to the post itself")
+	}
+
+	if result.FirstTextPostMs != nil {
+		t.Logf("first_text_post=%d", *result.FirstTextPostMs)
+
+		// Text cannot go out before the stream's first post.
+		assert.GreaterOrEqual(t, *result.FirstTextPostMs,
+			*result.FirstStreamPostMs,
+			"the first text post cannot precede the first stream post")
+	}
 }
 
 // TestIntegrationAPIRetryNoResponse is a slot for the v0.3.263 no_response

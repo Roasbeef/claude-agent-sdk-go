@@ -539,12 +539,31 @@ type ResultMessage struct {
 	// every other turn, on the Remote Control bridge's per-turn synthetic
 	// results, and from older producers. See the ResumeReason* constants
 	// (sdk.d.ts v0.3.270 L5315 error, L5343 success).
-	ResumeReason             string `json:"resume_reason,omitempty"`
-	RequestSentWallMs        *int64 `json:"request_sent_wall_ms,omitempty"`          // Wall-clock time the request was sent, ms since epoch (success only; sdk.d.ts v0.3.220 L4301)
-	FirstContentFrameMs      *int64 `json:"first_content_frame_ms,omitempty"`        // Time to the first content frame, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5016)
-	FirstStreamPostMs        *int64 `json:"first_stream_post_ms,omitempty"`          // Time to the first stream post, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5017)
-	FirstStreamPostAckMs     *int64 `json:"first_stream_post_ack_ms,omitempty"`      // Time to that post being acked, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5018)
-	FirstStreamPostWallMs    *int64 `json:"first_stream_post_wall_ms,omitempty"`     // Wall-clock time of the first stream post, ms since epoch (success only; sdk.d.ts v0.3.263 L5019)
+	ResumeReason         string `json:"resume_reason,omitempty"`
+	RequestSentWallMs    *int64 `json:"request_sent_wall_ms,omitempty"`     // Wall-clock time the request was sent, ms since epoch (success only; sdk.d.ts v0.3.220 L4301)
+	FirstContentFrameMs  *int64 `json:"first_content_frame_ms,omitempty"`   // Time to the first content frame, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5016)
+	FirstStreamPostMs    *int64 `json:"first_stream_post_ms,omitempty"`     // Time to the first stream post, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5017)
+	FirstStreamPostAckMs *int64 `json:"first_stream_post_ack_ms,omitempty"` // Time to that post being acked, relative to TimeOriginMs (success only; sdk.d.ts v0.3.263 L5018)
+	// FirstStreamPostQueueWaitMs is how long the first stream post waited in
+	// the queue before being sent, so the gap between FirstContentFrameMs and
+	// FirstStreamPostMs can be split into queueing versus everything else
+	// (success only; sdk.d.ts v0.3.278 L5434).
+	FirstStreamPostQueueWaitMs *int64 `json:"first_stream_post_queue_wait_ms,omitempty"`
+	// FirstStreamPostQueuedBehind says what the first stream post waited on.
+	// See the FirstPostQueuedBehind* constants; "none" means it did not wait,
+	// which is distinct from the field being absent (success only; sdk.d.ts
+	// v0.3.278 L5435).
+	FirstStreamPostQueuedBehind FirstPostQueuedBehind `json:"first_stream_post_queued_behind,omitempty"`
+	FirstStreamPostWallMs       *int64                `json:"first_stream_post_wall_ms,omitempty"` // Wall-clock time of the first stream post, ms since epoch (success only; sdk.d.ts v0.3.263 L5019)
+	// FirstTextPostMs is the time to the first post carrying assistant text,
+	// relative to TimeOriginMs. It trails FirstStreamPostMs whenever the
+	// first post out was something else, so the two together separate "the
+	// stream opened" from "the user saw words" (success only; sdk.d.ts
+	// v0.3.278 L5440).
+	FirstTextPostMs *int64 `json:"first_text_post_ms,omitempty"`
+	// FirstTextPostWallMs is the wall-clock time of that first text post, ms
+	// since epoch (success only; sdk.d.ts v0.3.278 L5441).
+	FirstTextPostWallMs      *int64 `json:"first_text_post_wall_ms,omitempty"`
 	TimeToRequestFromSpawnMs *int64 `json:"time_to_request_from_spawn_ms,omitempty"` // Time to request from spawn in milliseconds
 	WarmSpareClaimed         *bool  `json:"warm_spare_claimed,omitempty"`            // Whether a warm spare was claimed
 	TimeOriginMs             *int64 `json:"time_origin_ms,omitempty"`                // Wall-clock origin for the above timings, in milliseconds (success only)
@@ -618,6 +637,28 @@ type ResultMessage struct {
 	// fast_mode_state is not "on". Absent when nothing blocks it.
 	FastModeDisabledReason *FastModeDisabledReason `json:"fast_mode_disabled_reason,omitempty"`
 }
+
+// FirstPostQueuedBehind says what the first stream post was waiting on, when
+// it waited at all (sdk.d.ts v0.3.278 L5435).
+//
+// The set is open: treat an unrecognized value as some other queueing cause
+// rather than as no wait. FirstPostQueuedBehindNone is a positive statement
+// that there was no wait, which is not the same as the field being absent —
+// absent means the producer did not report it.
+type FirstPostQueuedBehind string
+
+const (
+	// FirstPostQueuedBehindDurablePost waited on a durable post.
+	FirstPostQueuedBehindDurablePost FirstPostQueuedBehind = "durable_post"
+	// FirstPostQueuedBehindEphemeralPost waited on an ephemeral post.
+	FirstPostQueuedBehindEphemeralPost FirstPostQueuedBehind = "ephemeral_post"
+	// FirstPostQueuedBehindRetryBackoff waited on a retry backoff.
+	FirstPostQueuedBehindRetryBackoff FirstPostQueuedBehind = "retry_backoff"
+	// FirstPostQueuedBehindHold waited on a hold.
+	FirstPostQueuedBehindHold FirstPostQueuedBehind = "hold"
+	// FirstPostQueuedBehindNone did not wait.
+	FirstPostQueuedBehindNone FirstPostQueuedBehind = "none"
+)
 
 // StartupFailureReason is a machine-readable cause for Claude Code refusing to
 // start, carried on the result a stream-json run writes before exiting. See

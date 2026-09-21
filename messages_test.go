@@ -6106,3 +6106,140 @@ func TestAssistantUsageReport(t *testing.T) {
 		assert.Equal(t, "informational", am.UsageReport.RateLimits.Limits[0].Severity)
 	})
 }
+
+// TestResultFirstPostTimings covers the four first-post timing fields added in
+// TS SDK v0.3.278 (sdk.d.ts L5434, L5435, L5440, L5441).
+func TestResultFirstPostTimings(t *testing.T) {
+	t.Run("all four parse", func(t *testing.T) {
+		raw := []byte(`{
+			"type": "result",
+			"subtype": "success",
+			"session_id": "sess_1",
+			"uuid": "11111111-1111-1111-1111-111111111111",
+			"is_error": false,
+			"result": "done",
+			"time_origin_ms": 1700000000000,
+			"first_stream_post_ms": 120,
+			"first_stream_post_queue_wait_ms": 45,
+			"first_stream_post_queued_behind": "retry_backoff",
+			"first_stream_post_wall_ms": 1700000000120,
+			"first_text_post_ms": 180,
+			"first_text_post_wall_ms": 1700000000180,
+			"num_turns": 1,
+			"total_cost_usd": 0.01
+		}`)
+
+		msg, err := ParseMessage(raw)
+		require.NoError(t, err)
+		res, ok := msg.(ResultMessage)
+		require.True(t, ok, "expected ResultMessage, got %T", msg)
+
+		require.NotNil(t, res.FirstStreamPostQueueWaitMs)
+		assert.Equal(t, int64(45), *res.FirstStreamPostQueueWaitMs)
+		assert.Equal(t, FirstPostQueuedBehindRetryBackoff,
+			res.FirstStreamPostQueuedBehind)
+
+		require.NotNil(t, res.FirstTextPostMs)
+		assert.Equal(t, int64(180), *res.FirstTextPostMs)
+		require.NotNil(t, res.FirstTextPostWallMs)
+		assert.Equal(t, int64(1700000000180), *res.FirstTextPostWallMs)
+
+		// The first text post trails the first stream post when the stream
+		// opened with something other than text.
+		require.NotNil(t, res.FirstStreamPostMs)
+		assert.Greater(t, *res.FirstTextPostMs, *res.FirstStreamPostMs)
+	})
+
+	// A zero wait is real data, so it must survive as a present zero rather
+	// than collapsing into the absent case.
+	t.Run("zero queue wait is present, not absent", func(t *testing.T) {
+		raw := []byte(`{
+			"type": "result",
+			"subtype": "success",
+			"session_id": "s",
+			"uuid": "11111111-1111-1111-1111-111111111111",
+			"is_error": false,
+			"first_stream_post_queue_wait_ms": 0,
+			"first_stream_post_queued_behind": "none"
+		}`)
+
+		msg, err := ParseMessage(raw)
+		require.NoError(t, err)
+		res, ok := msg.(ResultMessage)
+		require.True(t, ok)
+
+		require.NotNil(t, res.FirstStreamPostQueueWaitMs)
+		assert.Equal(t, int64(0), *res.FirstStreamPostQueueWaitMs)
+		assert.Equal(t, FirstPostQueuedBehindNone, res.FirstStreamPostQueuedBehind)
+	})
+
+	t.Run("absent on a result that omits them", func(t *testing.T) {
+		raw := []byte(`{
+			"type": "result",
+			"subtype": "success",
+			"session_id": "s",
+			"uuid": "11111111-1111-1111-1111-111111111111",
+			"is_error": false,
+			"result": "done"
+		}`)
+
+		msg, err := ParseMessage(raw)
+		require.NoError(t, err)
+		res, ok := msg.(ResultMessage)
+		require.True(t, ok)
+
+		assert.Nil(t, res.FirstStreamPostQueueWaitMs)
+		assert.Nil(t, res.FirstTextPostMs)
+		assert.Nil(t, res.FirstTextPostWallMs)
+		// Empty is distinct from "none": the producer said nothing.
+		assert.Empty(t, res.FirstStreamPostQueuedBehind)
+		assert.NotEqual(t, FirstPostQueuedBehindNone,
+			res.FirstStreamPostQueuedBehind)
+	})
+
+	t.Run("all queued-behind members round-trip", func(t *testing.T) {
+		all := []FirstPostQueuedBehind{
+			FirstPostQueuedBehindDurablePost,
+			FirstPostQueuedBehindEphemeralPost,
+			FirstPostQueuedBehindRetryBackoff,
+			FirstPostQueuedBehindHold,
+			FirstPostQueuedBehindNone,
+		}
+		require.Len(t, all, 5, "TS union has 5 members at sdk.d.ts L5435")
+
+		for _, v := range all {
+			raw := []byte(`{
+				"type": "result",
+				"subtype": "success",
+				"session_id": "s",
+				"uuid": "11111111-1111-1111-1111-111111111111",
+				"is_error": false,
+				"first_stream_post_queued_behind": "` + string(v) + `"
+			}`)
+			msg, err := ParseMessage(raw)
+			require.NoError(t, err)
+			res, ok := msg.(ResultMessage)
+			require.True(t, ok)
+			assert.Equal(t, v, res.FirstStreamPostQueuedBehind)
+		}
+	})
+
+	// Open set: a newer CLI may name a queueing cause this SDK predates.
+	t.Run("unknown queued-behind survives", func(t *testing.T) {
+		raw := []byte(`{
+			"type": "result",
+			"subtype": "success",
+			"session_id": "s",
+			"uuid": "11111111-1111-1111-1111-111111111111",
+			"is_error": false,
+			"first_stream_post_queued_behind": "some_new_queue"
+		}`)
+
+		msg, err := ParseMessage(raw)
+		require.NoError(t, err)
+		res, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.Equal(t, FirstPostQueuedBehind("some_new_queue"),
+			res.FirstStreamPostQueuedBehind)
+	})
+}
