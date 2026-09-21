@@ -619,9 +619,12 @@ type ResultMessage struct {
 	// call, covering the same calls as ModelUsage and sharing its lifecycle:
 	// cumulative across turns in streaming-input sessions, so read the latest
 	// result rather than summing across results. Crash and startup-error
-	// results may carry zeroed values, resumed sessions start fresh, and a
-	// mid-session /clear resets the running total. An estimate, not a billing
-	// statement.
+	// results may carry zeroed values; a resumed or forked session continues
+	// from the total its transcript saved, when it has one, so the first
+	// result already carries the earlier turns (MaxBudgetUSD counts only the
+	// spend since this query() call started or last /clear); and a mid-session
+	// /clear resets the running total. An estimate, not a billing statement
+	// (wording corrected in sdk.d.ts v0.3.278 L5366).
 	TotalCostUSD float64 `json:"total_cost_usd,omitempty"`
 
 	// Usage covers the MAIN AGENT LOOP ONLY — it excludes Task subagent,

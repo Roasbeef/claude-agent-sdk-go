@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.263 catchup work, using Go idioms where the API shape differs.
+v0.3.278 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -863,6 +863,71 @@ desktop/IDE-only settings are not modeled exhaustively, several runtime control
 paths have unit coverage plus skipped integration slots until stable live CLI
 fixtures exist, and alpha task/agent behavior should still be checked against
 the installed Claude Code CLI version.
+
+The v0.3.278 catchup added:
+
+- MCP server provenance. `McpServerProvenance` (`name`, `source`) rides the
+  permission request, the tool-related hook inputs, and the `mcp_status` and
+  init reporting rows. Trust keys on `source`, never on the name or the
+  `mcp__*` tool-name prefix: `source: "sdk"` is the only value that means an
+  in-process server the host itself registered, and a configured server of the
+  same name can never claim it. `IsSDK()` on the status rows is the decode-side
+  check.
+- `ProjectConfigRoot` option and `--project-config-root` flag — the trusted
+  checkout a worktree is of. Project settings, `.mcp.json`, the `.claude` config
+  trees and `CLAUDE_PROJECT_DIR` come from here rather than `cwd`, so what the
+  branch checked out in `cwd` is not what the session runs.
+- `highlights` thinking display mode — one short title per stretch of thinking.
+  The API honors it only for Anthropic-hosted Claude Code sessions; any other
+  client's request still succeeds but the session falls back to `omitted` once
+  the API rejects the value.
+- `userSettings` source on `update_settings` — takes `effortLevel` only, saved
+  as the default for the session's current model as `/effort` saves it, without
+  changing the running session's level.
+- `StartupFailureReason` and `SDKStartupFailureReason` on the result frame — a
+  machine-readable cause a stream-json run writes before exiting on a known
+  startup failure, so a host can offer the fix instead of a blind retry.
+- `UsageReport` and `SDKUsageReport` on the assistant message that delivers a
+  `/usage` result — the session totals, the plan's usage rows as the server
+  sent them, and extra-usage spend, for a client that renders a card from data
+  rather than the text.
+- Four first-post timing fields on the result frame:
+  `FirstStreamPostQueueWaitMs`, `FirstStreamPostQueuedBehind`,
+  `FirstTextPostMs`, `FirstTextPostWallMs`.
+- `Stream.RenameSession` — the `rename_session` control request, with a source
+  (`remote`, the CLI default, or `host`) and a session-id guard that refuses
+  the rename if this process has since moved to another conversation.
+- Four one-field adds: `AgentDefinition.OmitClaudeMd` (run a subagent without
+  the user/project/local CLAUDE.md files, managed policy kept),
+  `SlashCommand.Builtin`, `HooksListingPolicy.PolicyUnreadable` (managed
+  settings present but unreadable, which fails `edit_hook` closed), and
+  `TaskNotificationMessage.Reason` (`worker_restart`).
+- `UserMessage.PastedContent` — content pasted rather than typed, each entry the
+  `MessageParam['content']` union modeled as `PastedContentEntry` (a string or
+  a block array).
+- Settings: npm marketplace `version`/`registry`, `modelPricing.multiplier`
+  range widened to `(0, 10]`, `taskOutputMaxChars` deprecated to a no-op (the
+  TaskOutput tool was removed), `skipLfs` documented as a no-op, and
+  `workflowSizeGuideline` "medium" now `<10` agents.
+- A behavior correction to `TotalCostUSD`/`ModelUsage`: a resumed or forked
+  session continues from the total its transcript saved rather than starting
+  fresh, so the first result already carries the earlier turns.
+
+PRs in this cycle (squash-merged): #260/#262/#263 MCP server provenance, #264
+`projectConfigRoot`, #265 `highlights`, #266 `userSettings`, #267
+`startup_failure_reason`, #268 `usage_report`, #269 first-post timings, #270
+`rename_session`, #271 assorted field adds, #272 `pasted_content`, #273 Settings
+parity, plus this docs refresh.
+
+Deferred in v0.3.278:
+
+- `set_chrome_browser_hints` — `sdk.mjs` emits it via `Query.setChromeBrowserHints`,
+  but it has no declaration anywhere in `sdk.d.ts` (no request type, no method on
+  the typed `Query`), so there is nothing to model without guessing. Same posture
+  as `set_mcp_permission_mode_override` before v0.3.185 — wait for the wire shape.
+- `sdk-tools.d.ts` schema churn — the standing deferral since v0.3.207.
+- `bridge.d.ts` and `browser-sdk.d.ts` — no Go bridge/WebSocket transport exists.
+- `sdkMcpServerManifests` on initialize — tracked in #256.
 
 ### Porting from the TypeScript SDK - Go-side differences
 
