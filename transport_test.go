@@ -2489,3 +2489,72 @@ func TestSubprocessTransportPermissionPromptsRejectsInvalid(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid permission prompts")
 	assert.False(t, runner.started)
 }
+
+// TestSubprocessTransportProjectConfigRoot pins the argv form of
+// --project-config-root. The TS SDK emits it as a single "="-joined element
+// rather than a flag/value pair (sdk.mjs: `--project-config-root=${t}`), and
+// splitting it into two would be a silently different command line.
+func TestSubprocessTransportProjectConfigRoot(t *testing.T) {
+	t.Run("joined with =", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := &Options{ProjectConfigRoot: "/src/trusted-checkout"}
+
+		transport := NewSubprocessTransportWithRunner(runner, opts)
+		require.NoError(t, transport.Connect(context.Background()))
+		defer transport.Close()
+
+		assert.Contains(t, runner.StartArgs,
+			"--project-config-root=/src/trusted-checkout")
+
+		// The pair form must not appear: a CLI reading it that way would
+		// take the path as a positional argument.
+		assert.NotContains(t, runner.StartArgs, "--project-config-root")
+	})
+
+	// A path with a space still travels as one argv element, so no quoting
+	// or splitting is needed at this layer.
+	t.Run("path with a space stays one element", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := &Options{ProjectConfigRoot: "/src/my checkout"}
+
+		transport := NewSubprocessTransportWithRunner(runner, opts)
+		require.NoError(t, transport.Connect(context.Background()))
+		defer transport.Close()
+
+		assert.Contains(t, runner.StartArgs, "--project-config-root=/src/my checkout")
+	})
+
+	t.Run("omitted when unset", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := &Options{}
+
+		transport := NewSubprocessTransportWithRunner(runner, opts)
+		require.NoError(t, transport.Connect(context.Background()))
+		defer transport.Close()
+
+		for _, arg := range runner.StartArgs {
+			assert.NotContains(t, arg, "--project-config-root",
+				"unset ProjectConfigRoot must emit no flag, got %v",
+				runner.StartArgs)
+		}
+	})
+
+	// It is independent of --add-dir: a worktree session typically sets both,
+	// and they must not collapse into each other.
+	t.Run("coexists with --add-dir", func(t *testing.T) {
+		runner := NewMockSubprocessRunner()
+		opts := &Options{
+			ProjectConfigRoot:     "/src/trusted-checkout",
+			AdditionalDirectories: []string{"/tmp"},
+		}
+
+		transport := NewSubprocessTransportWithRunner(runner, opts)
+		require.NoError(t, transport.Connect(context.Background()))
+		defer transport.Close()
+
+		assert.Contains(t, runner.StartArgs,
+			"--project-config-root=/src/trusted-checkout")
+		assert.Contains(t, runner.StartArgs, "--add-dir")
+		assert.Contains(t, runner.StartArgs, "/tmp")
+	})
+}
