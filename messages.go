@@ -968,7 +968,7 @@ type SDKControlRequestBody struct {
 	PlanModeInstructions   string                              `json:"planModeInstructions,omitempty"`   // For initialize
 	ExcludeDynamicSections *bool                               `json:"excludeDynamicSections,omitempty"` // For initialize
 	Agents                 map[string]interface{}              `json:"agents,omitempty"`                 // For initialize
-	Title                  string                              `json:"title,omitempty"`                  // For initialize
+	Title                  string                              `json:"title,omitempty"`                  // For initialize/rename_session
 	Skills                 []string                            `json:"skills,omitempty"`                 // For initialize
 	PromptSuggestions      *bool                               `json:"promptSuggestions,omitempty"`      // For initialize
 	AgentProgressSummaries *bool                               `json:"agentProgressSummaries,omitempty"` // For initialize
@@ -995,24 +995,28 @@ type SDKControlRequestBody struct {
 	MatchedAskRule          *MatchedAskRule      `json:"matched_ask_rule,omitempty"`
 	MCPServer               *MCPServerProvenance `json:"mcp_server,omitempty"`
 
-	CallbackID        string                      `json:"callback_id,omitempty"`          // For hook_callback
-	Mode              string                      `json:"mode,omitempty"`                 // For set_permission_mode
-	Model             string                      `json:"model,omitempty"`                // For set_model
-	MaxThinkingTokens *int                        `json:"max_thinking_tokens,omitempty"`  // For set_max_thinking_tokens
-	ThinkingDisplay   *ThinkingDisplayOverride    `json:"thinking_display,omitempty"`     // For set_max_thinking_tokens
-	Directory         string                      `json:"directory,omitempty"`            // For register_repo_root
-	ReloadClaudeMD    *bool                       `json:"reload_claude_md,omitempty"`     // For register_repo_root
-	ReloadPlugins     *bool                       `json:"reload_plugins,omitempty"`       // For register_repo_root
-	ReloadSkills      *bool                       `json:"reload_skills,omitempty"`        // For register_repo_root
-	UserMessageID     string                      `json:"user_message_id,omitempty"`      // For rewind_files
-	DryRun            *bool                       `json:"dry_run,omitempty"`              // For rewind_files
-	CancelQueued      *bool                       `json:"cancel_queued,omitempty"`        // For interrupt (interrupt_cancel_queued_v1)
-	Path              string                      `json:"path,omitempty"`                 // For read_file/seed_read_state
-	MaxBytes          *int                        `json:"max_bytes,omitempty"`            // For read_file
-	Encoding          string                      `json:"encoding,omitempty"`             // For read_file ("utf-8"|"base64")
-	MTime             *int64                      `json:"mtime,omitempty"`                // For seed_read_state
-	Settings          *map[string]interface{}     `json:"settings,omitempty"`             // For apply_flag_settings/update_settings
-	SettingsSource    string                      `json:"source,omitempty"`               // For update_settings
+	CallbackID        string                   `json:"callback_id,omitempty"`         // For hook_callback
+	Mode              string                   `json:"mode,omitempty"`                // For set_permission_mode
+	Model             string                   `json:"model,omitempty"`               // For set_model
+	MaxThinkingTokens *int                     `json:"max_thinking_tokens,omitempty"` // For set_max_thinking_tokens
+	ThinkingDisplay   *ThinkingDisplayOverride `json:"thinking_display,omitempty"`    // For set_max_thinking_tokens
+	Directory         string                   `json:"directory,omitempty"`           // For register_repo_root
+	ReloadClaudeMD    *bool                    `json:"reload_claude_md,omitempty"`    // For register_repo_root
+	ReloadPlugins     *bool                    `json:"reload_plugins,omitempty"`      // For register_repo_root
+	ReloadSkills      *bool                    `json:"reload_skills,omitempty"`       // For register_repo_root
+	UserMessageID     string                   `json:"user_message_id,omitempty"`     // For rewind_files
+	DryRun            *bool                    `json:"dry_run,omitempty"`             // For rewind_files
+	CancelQueued      *bool                    `json:"cancel_queued,omitempty"`       // For interrupt (interrupt_cancel_queued_v1)
+	Path              string                   `json:"path,omitempty"`                // For read_file/seed_read_state
+	MaxBytes          *int                     `json:"max_bytes,omitempty"`           // For read_file
+	Encoding          string                   `json:"encoding,omitempty"`            // For read_file ("utf-8"|"base64")
+	MTime             *int64                   `json:"mtime,omitempty"`               // For seed_read_state
+	Settings          *map[string]interface{}  `json:"settings,omitempty"`            // For apply_flag_settings/update_settings
+	SettingsSource    string                   `json:"source,omitempty"`              // For update_settings/rename_session
+	// RenameSessionID guards a rename_session against naming the wrong
+	// conversation: when set and this process has since moved to another
+	// session, the CLI refuses the request instead of renaming the new one.
+	RenameSessionID   string                      `json:"session_id,omitempty"`           // For rename_session
 	Description       string                      `json:"description,omitempty"`          // For submit_feedback
 	Surface           string                      `json:"surface,omitempty"`              // For submit_feedback
 	TaskID            string                      `json:"task_id,omitempty"`              // For stop_task

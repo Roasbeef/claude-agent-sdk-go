@@ -852,6 +852,69 @@ func (s *Stream) SetModel(ctx context.Context, model string) error {
 	return err
 }
 
+// RenameSessionSource says who chose a session title.
+type RenameSessionSource string
+
+const (
+	// RenameSessionSourceRemote is a rename made on claude.ai and relayed to
+	// this process. It is the CLI's default when the field is omitted.
+	RenameSessionSourceRemote RenameSessionSource = "remote"
+	// RenameSessionSourceHost is a rename the user made in the hosting
+	// application, such as an IDE. The CLI counts it as a user rename, which
+	// is what an SDK host driving a title field wants.
+	RenameSessionSourceHost RenameSessionSource = "host"
+)
+
+// RenameSessionOption configures Stream.RenameSession.
+type RenameSessionOption func(*renameSessionOptions)
+
+type renameSessionOptions struct {
+	source    RenameSessionSource
+	sessionID string
+}
+
+// WithRenameSource sets who chose the title. Omitting it leaves the field off
+// the wire, and the CLI then treats the rename as RenameSessionSourceRemote.
+func WithRenameSource(source RenameSessionSource) RenameSessionOption {
+	return func(o *renameSessionOptions) {
+		o.source = source
+	}
+}
+
+// WithRenameSessionID guards the rename against a session switch. Pass the
+// session the title is meant for: if this process has since moved to another
+// one, through /clear or an in-session resume, the CLI refuses the request
+// rather than naming the new session.
+//
+// Worth using whenever the title was composed against a session the caller
+// observed earlier, since the alternative failure is silent and lands a
+// user-visible title on the wrong conversation.
+func WithRenameSessionID(sessionID string) RenameSessionOption {
+	return func(o *renameSessionOptions) {
+		o.sessionID = sessionID
+	}
+}
+
+// RenameSession sets the user-facing title for the current session.
+//
+// Only available in streaming input mode.
+func (s *Stream) RenameSession(
+	ctx context.Context, title string, opts ...RenameSessionOption,
+) error {
+	var cfg renameSessionOptions
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype:         "rename_session",
+		Title:           title,
+		SettingsSource:  string(cfg.source),
+		RenameSessionID: cfg.sessionID,
+	})
+	return err
+}
+
 // McpPermissionOverrideMode is a per-MCP-server permission-mode override. The
 // override is tighten-only: it applies only when the session mode would
 // already auto-allow (bypassPermissions/auto), so it can never widen

@@ -397,6 +397,42 @@ func TestStreamSetMaxThinkingTokensThinkingDisplay(t *testing.T) {
 	})
 }
 
+func TestStreamRenameSession(t *testing.T) {
+	t.Run("title only omits source and session_id", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			return stream.RenameSession(ctx, "New title")
+		})
+		require.NoError(t, err)
+
+		_, generic := decodeWrittenSDKControlRequest(t, transport)
+		body := genericRequestBody(t, generic)
+		assert.Equal(t, "rename_session", body["subtype"])
+		assert.Equal(t, "New title", body["title"])
+		assert.NotContains(t, body, "source")
+		assert.NotContains(t, body, "session_id")
+	})
+
+	t.Run("source and session guard carried through", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			return stream.RenameSession(ctx, "Guarded title",
+				WithRenameSource(RenameSessionSourceHost),
+				WithRenameSessionID("sess-123"))
+		})
+		require.NoError(t, err)
+
+		_, generic := decodeWrittenSDKControlRequest(t, transport)
+		body := genericRequestBody(t, generic)
+		assert.Equal(t, "rename_session", body["subtype"])
+		assert.Equal(t, "Guarded title", body["title"])
+		assert.Equal(t, "host", body["source"])
+		assert.Equal(t, "sess-123", body["session_id"])
+	})
+}
+
 func TestStreamRegisterRepoRootMinimal(t *testing.T) {
 	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
 
