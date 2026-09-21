@@ -3286,6 +3286,58 @@ func TestParseMessageTaskUpdatedPausedStatus(t *testing.T) {
 	assert.Equal(t, TaskRunStatusPaused, taskMsg.Patch.Status)
 }
 
+func TestUserMessagePastedContent(t *testing.T) {
+	t.Run("submit path emits the union", func(t *testing.T) {
+		msg := UserMessage{
+			Type: "user",
+			Message: APIUserMessage{
+				Role:    "user",
+				Content: []UserContentBlock{{Type: "text", Text: "explain this"}},
+			},
+			PastedContent: []PastedContentEntry{
+				{Text: "line one\nline two"},
+				{Blocks: []UserContentBlock{{Type: "text", Text: "block text"}}},
+			},
+		}
+
+		data, err := json.Marshal(msg)
+		require.NoError(t, err)
+
+		var got map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(data, &got))
+		require.Contains(t, got, "pasted_content")
+		// First entry is a bare string, second is an array of blocks.
+		assert.JSONEq(t,
+			`["line one\nline two",[{"type":"text","text":"block text"}]]`,
+			string(got["pasted_content"]))
+	})
+
+	t.Run("omitted when empty", func(t *testing.T) {
+		data, err := json.Marshal(UserMessage{Type: "user"})
+		require.NoError(t, err)
+		var got map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(data, &got))
+		assert.NotContains(t, got, "pasted_content")
+	})
+
+	t.Run("unmarshal accepts both forms", func(t *testing.T) {
+		var got UserMessage
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"type": "user",
+			"message": {"role": "user", "content": []},
+			"parent_tool_use_id": null,
+			"pasted_content": ["typed paste", [{"type": "text", "text": "b"}]]
+		}`), &got))
+
+		require.Len(t, got.PastedContent, 2)
+		assert.Equal(t, "typed paste", got.PastedContent[0].Text)
+		assert.Nil(t, got.PastedContent[0].Blocks)
+		assert.Empty(t, got.PastedContent[1].Text)
+		require.Len(t, got.PastedContent[1].Blocks, 1)
+		assert.Equal(t, "b", got.PastedContent[1].Blocks[0].Text)
+	})
+}
+
 func TestParseMessageTaskNotification(t *testing.T) {
 	tests := []struct {
 		name       string
