@@ -370,6 +370,19 @@ type ResultMessage struct {
 	Result string   `json:"result,omitempty"` // Result text (for success)
 	Errors []string `json:"errors,omitempty"` // Error messages (for errors)
 
+	// StartupFailureReason says why Claude Code refused to start, so a host
+	// can offer the fix instead of retrying into the same wall.
+	//
+	// It is set only on the zeroed error_during_execution result a
+	// stream-json run writes before exiting on a KNOWN startup failure;
+	// Errors carries the same text the process put on stderr. Failures that
+	// historically ended with stderr alone write that result at all only when
+	// the host sets CLAUDE_CODE_STARTUP_FAILURE_RESULTS. Absent on every
+	// other result, on startup failures with no recognized cause, and from
+	// producers older than v0.3.278 — so empty means "no machine-readable
+	// cause", never "started fine" (sdk.d.ts v0.3.278 L5388).
+	StartupFailureReason StartupFailureReason `json:"startup_failure_reason,omitempty"`
+
 	DurationMs    int64 `json:"duration_ms,omitempty"`     // Total duration in milliseconds
 	DurationAPIMs int64 `json:"duration_api_ms,omitempty"` // API call duration in milliseconds
 	TTFTMs        int64 `json:"ttft_ms,omitempty"`         // Time-to-first-token in milliseconds
@@ -491,6 +504,71 @@ type ResultMessage struct {
 	// fast_mode_state is not "on". Absent when nothing blocks it.
 	FastModeDisabledReason *FastModeDisabledReason `json:"fast_mode_disabled_reason,omitempty"`
 }
+
+// StartupFailureReason is a machine-readable cause for Claude Code refusing to
+// start, carried on the result a stream-json run writes before exiting. See
+// ResultMessage.StartupFailureReason for when it is present.
+//
+// The set is open: a newer CLI may report a cause this SDK predates. Treat an
+// unrecognized value as an unknown startup failure and fall back to Errors,
+// which always carries the human-readable text.
+type StartupFailureReason string
+
+const (
+	// StartupFailureOrgPinAPIKeyConflict means managed settings pin a
+	// first-party or Cloud gateway sign-in, and an Anthropic API key or auth
+	// token is configured instead.
+	// #nosec G101 -- a startup-failure enum value, not a credential.
+	StartupFailureOrgPinAPIKeyConflict StartupFailureReason = "org_pin_api_key_conflict"
+	// StartupFailureOrgVerifyFailed means the sign-in's organization could
+	// not be verified against the pin, through a network failure or a revoked
+	// token.
+	StartupFailureOrgVerifyFailed StartupFailureReason = "org_verify_failed"
+	// StartupFailureOrgPinMismatch means the sign-in belongs to an
+	// organization the pin does not allow.
+	StartupFailureOrgPinMismatch StartupFailureReason = "org_pin_mismatch"
+	// StartupFailureManagedSettingsInvalid means managed policy settings
+	// could not be read, or the pin names no organization.
+	StartupFailureManagedSettingsInvalid StartupFailureReason = "managed_settings_invalid"
+	// StartupFailureRemoteSettingsRequiredUnavailable means managed settings
+	// the organization requires could not be loaded.
+	StartupFailureRemoteSettingsRequiredUnavailable StartupFailureReason = "remote_settings_required_unavailable"
+	// StartupFailureGatewaySignInRequired means the Cloud gateway ended this
+	// sign-in.
+	StartupFailureGatewaySignInRequired StartupFailureReason = "gateway_signin_required"
+	// StartupFailureGatewayAccessDenied means the Cloud gateway refused
+	// managed settings for this account.
+	StartupFailureGatewayAccessDenied StartupFailureReason = "gateway_access_denied"
+	// StartupFailureProxyInvalid means a proxy setting is not a complete URL.
+	StartupFailureProxyInvalid StartupFailureReason = "proxy_invalid"
+	// StartupFailureTempDirUnusable means the per-user temp directory is
+	// unsafe or could not be created.
+	StartupFailureTempDirUnusable StartupFailureReason = "temp_dir_unusable"
+	// StartupFailureCwdUnavailable means the working directory was deleted,
+	// moved, or cannot be read.
+	StartupFailureCwdUnavailable StartupFailureReason = "cwd_unavailable"
+	// StartupFailureShellToolMissing means Windows has no shell tool: Git
+	// Bash is missing, and PowerShell is missing or turned off by
+	// CLAUDE_CODE_USE_POWERSHELL_TOOL.
+	StartupFailureShellToolMissing StartupFailureReason = "shell_tool_missing"
+	// StartupFailureSessionHeldByBackground means the conversation to resume
+	// or continue is already running as a background session.
+	StartupFailureSessionHeldByBackground StartupFailureReason = "session_held_by_background"
+	// StartupFailureWorktreeResumeRefused means the resume was refused
+	// because the session's worktree failed its safety checks, or the resume
+	// was launched from inside it. Errors says whether a re-run continues
+	// without the worktree.
+	StartupFailureWorktreeResumeRefused StartupFailureReason = "worktree_resume_refused"
+	// StartupFailureWorktreeUnverified means the session's worktree could not
+	// be verified right now. Retrying may succeed, unlike most causes here.
+	StartupFailureWorktreeUnverified StartupFailureReason = "worktree_unverified"
+	// StartupFailureCLIVersionTooOld means this Claude Code version is below
+	// the minimum Anthropic requires.
+	StartupFailureCLIVersionTooOld StartupFailureReason = "cli_version_too_old"
+	// StartupFailureBypassRoot means bypass permissions mode was requested
+	// while running as root.
+	StartupFailureBypassRoot StartupFailureReason = "bypass_root"
+)
 
 // MessageType implements Message.
 func (m ResultMessage) MessageType() string { return "result" }

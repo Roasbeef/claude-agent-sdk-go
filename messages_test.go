@@ -5730,3 +5730,127 @@ func TestSystemMessageMCPServerSource(t *testing.T) {
 	assert.Empty(t, sys.MCPServers[2].Source)
 	assert.False(t, sys.MCPServers[2].IsSDK())
 }
+
+// TestResultStartupFailureReason covers startup_failure_reason and the
+// StartupFailureReason enum added in TS SDK v0.3.278 (sdk.d.ts L5388, L5561).
+func TestResultStartupFailureReason(t *testing.T) {
+	t.Run("parsed off the zeroed error result", func(t *testing.T) {
+		raw := []byte(`{
+			"type": "result",
+			"subtype": "error_during_execution",
+			"session_id": "sess_1",
+			"uuid": "11111111-1111-1111-1111-111111111111",
+			"is_error": true,
+			"errors": ["Claude Code requires a newer version."],
+			"startup_failure_reason": "cli_version_too_old",
+			"duration_ms": 0,
+			"num_turns": 0,
+			"total_cost_usd": 0
+		}`)
+
+		msg, err := ParseMessage(raw)
+		require.NoError(t, err)
+
+		res, ok := msg.(ResultMessage)
+		require.True(t, ok, "expected ResultMessage, got %T", msg)
+		assert.Equal(t, StartupFailureCLIVersionTooOld, res.StartupFailureReason)
+		// Errors carries the same text stderr got; it stays the fallback.
+		require.Len(t, res.Errors, 1)
+	})
+
+	// Empty means "no machine-readable cause", which covers an ordinary
+	// result, an unrecognized startup failure, and any producer older than
+	// v0.3.278. It never means the session started fine.
+	t.Run("absent on an ordinary result", func(t *testing.T) {
+		raw := []byte(`{
+			"type": "result",
+			"subtype": "success",
+			"session_id": "sess_1",
+			"uuid": "11111111-1111-1111-1111-111111111111",
+			"is_error": false,
+			"result": "done",
+			"duration_ms": 10,
+			"num_turns": 1,
+			"total_cost_usd": 0.01
+		}`)
+
+		msg, err := ParseMessage(raw)
+		require.NoError(t, err)
+
+		res, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.Empty(t, res.StartupFailureReason)
+	})
+
+	// Open set: a newer CLI may name a cause this SDK predates, and that must
+	// survive parsing rather than failing the whole result.
+	t.Run("unknown reason survives", func(t *testing.T) {
+		raw := []byte(`{
+			"type": "result",
+			"subtype": "error_during_execution",
+			"session_id": "sess_1",
+			"uuid": "11111111-1111-1111-1111-111111111111",
+			"is_error": true,
+			"errors": ["something new went wrong"],
+			"startup_failure_reason": "a_cause_from_a_newer_cli",
+			"duration_ms": 0,
+			"num_turns": 0,
+			"total_cost_usd": 0
+		}`)
+
+		msg, err := ParseMessage(raw)
+		require.NoError(t, err)
+
+		res, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.Equal(t, StartupFailureReason("a_cause_from_a_newer_cli"),
+			res.StartupFailureReason)
+		require.Len(t, res.Errors, 1)
+	})
+
+	// Every member of the TS union must round-trip, since a host switching on
+	// these needs the constant to equal the wire string exactly.
+	t.Run("all sixteen members round-trip", func(t *testing.T) {
+		all := []StartupFailureReason{
+			StartupFailureOrgPinAPIKeyConflict,
+			StartupFailureOrgVerifyFailed,
+			StartupFailureOrgPinMismatch,
+			StartupFailureManagedSettingsInvalid,
+			StartupFailureRemoteSettingsRequiredUnavailable,
+			StartupFailureGatewaySignInRequired,
+			StartupFailureGatewayAccessDenied,
+			StartupFailureProxyInvalid,
+			StartupFailureTempDirUnusable,
+			StartupFailureCwdUnavailable,
+			StartupFailureShellToolMissing,
+			StartupFailureSessionHeldByBackground,
+			StartupFailureWorktreeResumeRefused,
+			StartupFailureWorktreeUnverified,
+			StartupFailureCLIVersionTooOld,
+			StartupFailureBypassRoot,
+		}
+		require.Len(t, all, 16, "TS union has 16 members at sdk.d.ts L5561")
+
+		seen := make(map[StartupFailureReason]bool, len(all))
+		for _, reason := range all {
+			assert.NotEmpty(t, reason)
+			assert.False(t, seen[reason], "duplicate value %q", reason)
+			seen[reason] = true
+
+			raw := []byte(`{
+				"type": "result",
+				"subtype": "error_during_execution",
+				"session_id": "s",
+				"uuid": "11111111-1111-1111-1111-111111111111",
+				"is_error": true,
+				"startup_failure_reason": "` + string(reason) + `"
+			}`)
+
+			msg, err := ParseMessage(raw)
+			require.NoError(t, err)
+			res, ok := msg.(ResultMessage)
+			require.True(t, ok)
+			assert.Equal(t, reason, res.StartupFailureReason)
+		}
+	})
+}
