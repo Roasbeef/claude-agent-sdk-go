@@ -34,6 +34,51 @@ type UserMessage struct {
 	// from tool input). Absent for cross-session peers. Note: camelCase wire
 	// key, matching the TS SDK.
 	SenderTaskID string `json:"senderTaskId,omitempty"`
+	// PastedContent is content the user pasted into the prompt rather than
+	// typed: each entry a string or an array of content blocks. The CLI
+	// appends the text of each entry after the typed text, in order, and may
+	// wrap it in <pasted_content> tags. Blocks other than text are ignored;
+	// send images and documents in Message.Content instead (sdk.d.ts v0.3.278
+	// L5943).
+	PastedContent []PastedContentEntry `json:"pasted_content,omitempty"`
+}
+
+// PastedContentEntry is one entry of UserMessage.PastedContent, the union
+// MessageParam['content'] the TS SDK carries per entry: either a plain string
+// or an array of content blocks. Exactly one of Text / Blocks is meaningful;
+// Blocks takes precedence when both are set.
+type PastedContentEntry struct {
+	// Text is the entry as a plain pasted string.
+	Text string
+	// Blocks is the entry as an array of content blocks. Only text blocks are
+	// honored by the CLI.
+	Blocks []UserContentBlock
+}
+
+// MarshalJSON emits the entry as the TS union: a bare string, or an array of
+// content blocks when Blocks is set.
+func (e PastedContentEntry) MarshalJSON() ([]byte, error) {
+	if e.Blocks != nil {
+		return json.Marshal(e.Blocks)
+	}
+	return json.Marshal(e.Text)
+}
+
+// UnmarshalJSON accepts either wire form of the union.
+func (e *PastedContentEntry) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		e.Text = s
+		e.Blocks = nil
+		return nil
+	}
+	var blocks []UserContentBlock
+	if err := json.Unmarshal(data, &blocks); err != nil {
+		return err
+	}
+	e.Text = ""
+	e.Blocks = blocks
+	return nil
 }
 
 // APIUserMessage represents the message content in Anthropic API format.
