@@ -5695,3 +5695,38 @@ func TestAssistantMessageErrorCodes(t *testing.T) {
 		})
 	}
 }
+
+// TestSystemMessageMCPServerSource covers the source field v0.3.278 adds to
+// the init system message's MCP rows (sdk.d.ts L5599).
+func TestSystemMessageMCPServerSource(t *testing.T) {
+	raw := []byte(`{
+		"type": "system",
+		"subtype": "init",
+		"session_id": "sess_1",
+		"uuid": "11111111-1111-1111-1111-111111111111",
+		"model": "claude-opus-4-8",
+		"tools": ["Bash"],
+		"mcp_servers": [
+			{"name": "calculator", "status": "connected", "source": "sdk"},
+			{"name": "acme", "status": "connected", "source": "project"},
+			{"name": "legacy", "status": "connected"}
+		]
+	}`)
+
+	msg, err := ParseMessage(raw)
+	require.NoError(t, err)
+
+	sys, ok := msg.(SystemMessage)
+	require.True(t, ok, "expected SystemMessage, got %T", msg)
+	require.Len(t, sys.MCPServers, 3)
+
+	assert.Equal(t, MCPServerSourceSDK, sys.MCPServers[0].Source)
+	assert.True(t, sys.MCPServers[0].IsSDK())
+
+	assert.Equal(t, MCPServerSourceProject, sys.MCPServers[1].Source)
+	assert.False(t, sys.MCPServers[1].IsSDK())
+
+	// Pre-v2.1.278 CLIs omit it. Unknown is not a license to assume SDK.
+	assert.Empty(t, sys.MCPServers[2].Source)
+	assert.False(t, sys.MCPServers[2].IsSDK())
+}

@@ -1275,6 +1275,17 @@ func (m SystemMessage) MessageType() string { return "system" }
 type MCPServerInfo struct {
 	Name   string `json:"name"`   // Server name
 	Status string `json:"status"` // Connection status
+	// Source is where the server definition came from, the same values
+	// McpServerStatus.Source carries. Empty on CLIs that predate the field,
+	// which means unknown rather than "not an SDK server" (sdk.d.ts v0.3.278
+	// L5599).
+	Source MCPServerSource `json:"source,omitempty"`
+}
+
+// IsSDK reports whether the server is an in-process one this SDK host
+// registered. Mirrors MCPServerProvenance.IsSDK.
+func (i MCPServerInfo) IsSDK() bool {
+	return i.Source == MCPServerSourceSDK
 }
 
 // SystemPlugin contains metadata for an installed Claude Code plugin.

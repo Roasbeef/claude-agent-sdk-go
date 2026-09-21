@@ -86,6 +86,21 @@ type McpServerStatus struct {
 	Name       string         `json:"name"`       // Server name
 	Status     McpServerState `json:"status"`     // Connection state
 	ServerInfo *McpServerInfo `json:"serverInfo"` // Server metadata (if connected)
+	// Source is where the server definition came from. It answers the same
+	// question MCPServerProvenance.Source does on a permission or hook
+	// payload, with the same rule: MCPServerSourceSDK is the only value
+	// meaning an in-process server this host registered, and a configured
+	// server cannot reach it by sharing the name. Empty on CLIs that predate
+	// the field, which means unknown rather than "not an SDK server"
+	// (sdk.d.ts v0.3.278 L1197).
+	Source MCPServerSource `json:"source,omitempty"`
+}
+
+// IsSDK reports whether the server is an in-process one this SDK host
+// registered. Mirrors MCPServerProvenance.IsSDK, and is false for the empty
+// source an older CLI reports.
+func (s McpServerStatus) IsSDK() bool {
+	return s.Source == MCPServerSourceSDK
 }
 
 // McpServerState represents MCP server connection states.
