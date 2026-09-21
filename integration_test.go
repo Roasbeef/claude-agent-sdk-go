@@ -5006,3 +5006,66 @@ func TestIntegrationStartupFailureReason(t *testing.T) {
 	assert.NotEmpty(t, result.Errors,
 		"errors should carry the same text as stderr")
 }
+
+// TestIntegrationAssistantUsageReport drives /usage against the live CLI and
+// checks the structured sibling on the assistant message carrying the text.
+//
+// Two conditions gate the field rather than one: the CLI has to be new enough
+// to attach it, and the session has to be a claude.ai-subscriber one. So the
+// assertions are conditional on it being attached at all, the same way
+// TestIntegrationAssistantContextUsage handles /context.
+func TestIntegrationAssistantUsageReport(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	client, err := NewClient(isolatedClientOptions(t)...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	var report *UsageReport
+	for msg := range client.Query(ctx, "/usage") {
+		assistant, ok := msg.(AssistantMessage)
+		if !ok || assistant.UsageReport == nil {
+			continue
+		}
+		report = assistant.UsageReport
+		break
+	}
+
+	if report == nil {
+		t.Skip("CLI did not attach usage_report to the /usage result; " +
+			"needs a CLI at 2.1.278 or newer on a claude.ai-subscriber session")
+	}
+
+	// Session totals are always real when the report is present.
+	assert.GreaterOrEqual(t, report.Session.TotalCostUSD, 0.0)
+	assert.GreaterOrEqual(t, report.Session.TotalDurationMs, int64(0))
+
+	if report.RateLimits == nil {
+		t.Log("rate_limits null: no plan on this lane, or a token without " +
+			"the profile scope")
+		return
+	}
+
+	for _, row := range report.RateLimits.Limits {
+		// Kind and group are the server's taxonomy, but a row with neither
+		// cannot be classified or grouped by any client.
+		assert.NotEmpty(t, row.Kind, "row with no kind cannot be classified")
+		assert.NotEmpty(t, row.Group)
+		assert.GreaterOrEqual(t, row.Percent, 0.0)
+		assert.LessOrEqual(t, row.Percent, 100.0)
+	}
+
+	if extra := report.RateLimits.ExtraUsage; extra != nil {
+		// Minor units, so these are integers and never negative.
+		if extra.MonthlyLimit != nil {
+			assert.GreaterOrEqual(t, *extra.MonthlyLimit, int64(0))
+		}
+		if extra.UsedCredits != nil {
+			assert.GreaterOrEqual(t, *extra.UsedCredits, int64(0))
+		}
+	}
+}

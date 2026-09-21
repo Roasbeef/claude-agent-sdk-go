@@ -189,6 +189,120 @@ type AssistantMessage struct {
 	// — never inside message.content — so it is not replayed to the model
 	// (sdk.d.ts v0.3.233 L3058).
 	ContextUsage *AssistantContextUsage `json:"context_usage,omitempty"`
+
+	// UsageReport is the structured twin of the /usage report, carried on the
+	// synthetic assistant message that delivers its text. Set only on /usage
+	// results from CLIs new enough to attach it and from claude.ai-subscriber
+	// sessions; the text in Message.Content stays the canonical fallback. A
+	// wrapper-level sibling — never inside message.content — so it is not
+	// replayed to the model.
+	//
+	// Experimental: the TS SDK marks the shape as subject to change
+	// (sdk.d.ts v0.3.278 L3463).
+	UsageReport *UsageReport `json:"usage_report,omitempty"`
+}
+
+// UsageReport is the structured twin of a /usage result, carried beside its
+// text for clients that render a card from data rather than parsing prose.
+//
+// It carries the session totals, the plan's usage rows as the server sent
+// them, and the extra-usage spend. Nothing else from the usage body: the
+// get_usage control reply carries the rest.
+//
+// Experimental — the TS SDK says the shape may change (sdk.d.ts v0.3.278
+// L5807).
+type UsageReport struct {
+	// Session is cost and usage accumulated by the current session.
+	Session UsageReportSession `json:"session"`
+	// RateLimits is the plan's usage rows and extra-usage spend from the
+	// claude.ai usage endpoint. Nil when the CLI could not fetch them: no
+	// plan on this lane, or a token without the profile scope.
+	RateLimits *UsageReportRateLimits `json:"rate_limits"`
+}
+
+// UsageReportSession is the current session's accumulated cost and usage.
+type UsageReportSession struct {
+	TotalCostUSD       float64               `json:"total_cost_usd"`
+	TotalAPIDurationMs int64                 `json:"total_api_duration_ms"`
+	TotalDurationMs    int64                 `json:"total_duration_ms"`
+	TotalLinesAdded    int                   `json:"total_lines_added"`
+	TotalLinesRemoved  int                   `json:"total_lines_removed"`
+	ModelUsage         map[string]ModelUsage `json:"model_usage"`
+}
+
+// UsageReportRateLimits is the plan's usage rows and extra-usage spend.
+type UsageReportRateLimits struct {
+	// Limits is the server's usage rows, as sent. Which meters apply, their
+	// scope, labels, severity and order are all the server's, so a client
+	// renders them verbatim and a new meter needs no client release.
+	//
+	// The empty and nil cases differ: empty means the server reported no
+	// meters, nil means the body carried no rows at all (a server that
+	// predates them, or a usage fetch that is currently failing). Only ever
+	// the server's current reply — neither the row the CLI builds from
+	// rate-limit response headers for its own screen nor its snapshot of an
+	// earlier reply appears here.
+	Limits []UsageReportLimit `json:"limits"`
+	// ExtraUsage is overage spend for the billing period, when the plan has
+	// it. Nil when it does not.
+	ExtraUsage *UsageReportExtraUsage `json:"extra_usage,omitempty"`
+}
+
+// UsageReportLimit is one server-authored usage row.
+//
+// Kind, Group and Severity are the server's strings rather than Go enums on
+// purpose: the server owns the meter taxonomy, and a new meter has to render
+// without an SDK release. Classify a row on Kind, never on a label.
+type UsageReportLimit struct {
+	// Kind is the server's meter kind, e.g. "session", "weekly_all" or
+	// "weekly_scoped".
+	Kind string `json:"kind"`
+	// Group is the server's row group, e.g. "session" or "weekly". Rows
+	// render grouped under it, in the server's order.
+	Group string `json:"group"`
+	// Percent is the share of the window used, 0-100.
+	Percent float64 `json:"percent"`
+	// ResetsAt is when the window resets, ISO 8601. Nil when the server sent
+	// no reset time.
+	ResetsAt *string `json:"resets_at"`
+	// Scope is what a scoped row is for, a model or a surface, with the
+	// server's display label. Nil on unscoped rows.
+	Scope *UsageReportLimitScope `json:"scope,omitempty"`
+	// Severity is the server's reading of the row, e.g. "normal", "warning"
+	// or "critical". Every row here is the server's, so a client never grades
+	// a row itself.
+	Severity string `json:"severity"`
+	// IsActive marks the server's headline pick: the row a single-value
+	// indicator shows.
+	IsActive bool `json:"is_active"`
+}
+
+// UsageReportLimitScope names what a scoped usage row covers.
+type UsageReportLimitScope struct {
+	Model   *UsageReportScopeLabel `json:"model,omitempty"`
+	Surface *UsageReportScopeLabel `json:"surface,omitempty"`
+}
+
+// UsageReportScopeLabel is a server-authored display label.
+type UsageReportScopeLabel struct {
+	DisplayName string `json:"display_name"`
+}
+
+// UsageReportExtraUsage is overage spend for the billing period.
+//
+// Amounts are in minor units of Currency (cents for USD), so rendering them
+// as a major-unit figure without dividing is off by a hundred.
+type UsageReportExtraUsage struct {
+	// IsEnabled is false while extra usage cannot cover sends.
+	IsEnabled bool `json:"is_enabled"`
+	// MonthlyLimit is the cap in minor units. Nil when uncapped or unknown.
+	MonthlyLimit *int64 `json:"monthly_limit"`
+	// UsedCredits is spend so far in minor units. Nil when unknown.
+	UsedCredits *int64 `json:"used_credits"`
+	// Utilization is the fraction of the cap used. Nil when unknown.
+	Utilization *float64 `json:"utilization"`
+	// Currency is the ISO currency code the amounts are denominated in.
+	Currency *string `json:"currency,omitempty"`
 }
 
 // AssistantContextUsage is the structured twin of the /context report: the data
