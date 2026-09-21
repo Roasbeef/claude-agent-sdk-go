@@ -515,13 +515,10 @@ type Settings struct {
 	// replaces BASH_MAX_OUTPUT_LENGTH, which on its own only sizes the
 	// read-back window (sdk.d.ts v0.3.263 L6298).
 	BashOutputMaxChars *int `json:"bashOutputMaxChars,omitempty"`
-	// TaskOutputMaxChars caps how many characters of a background task's
-	// output the TaskOutput tool hands Claude inline (default 32000, same
-	// 4000-128000 clamp). Longer output is cut to its most recent
-	// characters plus the path of the full output file — except for a shell
-	// command still running, which returns its first characters instead.
-	// Setting this also replaces TASK_MAX_OUTPUT_LENGTH (sdk.d.ts v0.3.263
-	// L6302).
+	// TaskOutputMaxChars is deprecated and no longer has any effect: the
+	// TaskOutput tool was removed, so a background task's output is read with
+	// the Read tool instead. The field is kept so existing settings keep
+	// parsing (sdk.d.ts v0.3.278 L6870).
 	TaskOutputMaxChars *int `json:"taskOutputMaxChars,omitempty"`
 	// RespondToBashCommands controls whether Claude responds after an
 	// input-box ! bash command runs. Set to false to add the command output to
@@ -781,9 +778,10 @@ type Settings struct {
 	TerminalProgressBarEnabled *bool `json:"terminalProgressBarEnabled,omitempty"`
 	TodoFeatureEnabled         *bool `json:"todoFeatureEnabled,omitempty"`
 	// WorkflowSizeGuideline is the advisory size guideline for the dynamic
-	// workflows Claude writes: "small" (<5 agents), "medium" (<15, the
-	// default), "large" (<50), or "unrestricted" (no guideline). A value here
-	// takes precedence over the /config choice. Mirrors sdk.d.ts v0.3.220 L5396.
+	// workflows Claude writes: "small" (<5 agents), "medium" (<10), "large"
+	// (<50), or "unrestricted" (no guideline). Unset defaults to "medium", or
+	// "small" on Pro plans. A value here takes precedence over the /config
+	// choice (sdk.d.ts v0.3.278 L6849; "medium" was <15 before v0.3.278).
 	WorkflowSizeGuideline string `json:"workflowSizeGuideline,omitempty"`
 	// EmojiCompletionEnabled toggles the :emoji: shortcode typeahead (the
 	// suggestion popup and :name: inline replacement). Enabled when absent or
@@ -1148,7 +1146,8 @@ type SettingsModelPickerOption struct {
 // SettingsModelPricing prices usage at an organization's contracted rates.
 type SettingsModelPricing struct {
 	// Multiplier scales every computed cost, overridden or not — 0.85 charges
-	// 85% of the price. Must fall in (0, 1].
+	// 85% of the price, 1.2 charges 120%. Must fall in (0, 10] (widened from
+	// (0, 1] in sdk.d.ts v0.3.278 L6518).
 	Multiplier *float64 `json:"multiplier,omitempty"`
 
 	// Overrides maps a model ID to its rates. A key Claude Code itself uses
@@ -1215,8 +1214,24 @@ type SettingsMarketplace struct {
 
 // SettingsMarketplaceSource is the opaque marketplace source descriptor. Required key "source"
 // selects the variant; remaining keys depend on the variant (e.g. "repo", "url", "package",
-// "path", "ref", "sparsePaths", "skipLfs"). Per sdk.d.ts v0.3.168 L4695/L4717 (github) and
-// L4895/L4917 (git), the optional "skipLfs": boolean key sets GIT_LFS_SKIP_SMUDGE=1 on clone/update.
+// "path", "ref", "sparsePaths", "skipLfs").
+//
+// The npm source ("source": "npm") takes an optional "version" (a dist-tag or
+// range, defaulting to the latest dist-tag) and "registry". "registry" is
+// dual-purpose: on an add it is a one-off registry override (otherwise the npm
+// configuration decides); in a strictKnownMarketplaces / blockedMarketplaces
+// policy entry it is the origin and path prefix the package's resolved tarball
+// URL must fall under. The npm "package" key also governs plugins installed
+// straight from the npm marketplace (<package>@npm) — an exact name matches
+// that package, and "@scope/*" matches every package under the scope
+// (sdk.d.ts v0.3.278 L7546).
+//
+// The optional "skipLfs": boolean key on the git and github sources is now a
+// documented no-op, accepted only so existing settings keep parsing: Claude
+// Code's own git never smudges Git LFS content, so LFS-tracked files check out
+// as pointers regardless. To fetch their content, run git lfs pull in the
+// marketplace's checkout under ~/.claude/plugins/marketplaces/ (sdk.d.ts
+// v0.3.278 L7522).
 //
 // Sources that carry an inline "catalog" array accept two per-entry keys
 // scoped to downloading that entry's "archive" source: "headers"
@@ -1239,12 +1254,13 @@ type SettingsMarketplaceSourceKind string
 
 const (
 	// SettingsMarketplaceSourceGithub identifies a GitHub marketplace source. Mirrors sdk.d.ts v0.3.150 L4459.
-	// Honors optional "skipLfs": boolean per sdk.d.ts v0.3.168 L4695.
+	// Accepts optional "skipLfs": boolean, a documented no-op as of v0.3.278 (see SettingsMarketplaceSource).
 	SettingsMarketplaceSourceGithub SettingsMarketplaceSourceKind = "github"
 	// SettingsMarketplaceSourceGit identifies a Git marketplace source. Mirrors sdk.d.ts v0.3.150 L4466.
-	// Honors optional "skipLfs": boolean per sdk.d.ts v0.3.168 L4717.
+	// Accepts optional "skipLfs": boolean, a documented no-op as of v0.3.278 (see SettingsMarketplaceSource).
 	SettingsMarketplaceSourceGit SettingsMarketplaceSourceKind = "git"
 	// SettingsMarketplaceSourceNPM identifies an npm marketplace source. Mirrors sdk.d.ts v0.3.150 L4484.
+	// Accepts optional "version" and "registry" keys as of v0.3.278 (see SettingsMarketplaceSource).
 	SettingsMarketplaceSourceNPM SettingsMarketplaceSourceKind = "npm"
 	// SettingsMarketplaceSourceFile identifies a file marketplace source. Mirrors sdk.d.ts v0.3.150 L4500.
 	SettingsMarketplaceSourceFile SettingsMarketplaceSourceKind = "file"

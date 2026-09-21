@@ -1364,6 +1364,31 @@ func TestSettingsMarketplaceSourceVariants(t *testing.T) {
 		assert.Len(t, got, 1)
 	})
 
+	t.Run("npm source round-trips with version and registry", func(t *testing.T) {
+		in := Settings{
+			ExtraKnownMarketplaces: map[string]SettingsMarketplace{
+				"acme": {
+					Source: SettingsMarketplaceSource{
+						"source":   string(SettingsMarketplaceSourceNPM),
+						"package":  "@acme/claude-marketplace",
+						"version":  "^1.4",
+						"registry": "https://npm.example.com/api/npm/internal/",
+					},
+				},
+			},
+		}
+		data, err := json.Marshal(in)
+		require.NoError(t, err)
+
+		var out Settings
+		require.NoError(t, json.Unmarshal(data, &out))
+		got := out.ExtraKnownMarketplaces["acme"].Source
+		assert.Equal(t, "npm", got["source"])
+		assert.Equal(t, "@acme/claude-marketplace", got["package"])
+		assert.Equal(t, "^1.4", got["version"])
+		assert.Equal(t, "https://npm.example.com/api/npm/internal/", got["registry"])
+	})
+
 	t.Run("archive source round-trips with url and sha256", func(t *testing.T) {
 		in := Settings{
 			ExtraKnownMarketplaces: map[string]SettingsMarketplace{
