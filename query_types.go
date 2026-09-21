@@ -6,6 +6,13 @@ type SlashCommand struct {
 	Description  string   `json:"description"`       // Command description
 	ArgumentHint string   `json:"argumentHint"`      // Hint for command arguments
 	Aliases      []string `json:"aliases,omitempty"` // Alternate names resolving to this command (e.g. /cost and /stats both resolve to /usage)
+	// Builtin is true when the command is Claude Code's own; absent for a
+	// command defined by a user, project, plugin or MCP server. Rows can share
+	// a name: when a marked row carries it, /name runs that one; an unmarked
+	// row is the one /name runs only when no marked row shares its name. The
+	// marker describes the row's name, not its aliases (sdk.d.ts v0.3.278
+	// L8938).
+	Builtin bool `json:"builtin,omitempty"`
 }
 
 // ModelInfo contains information about an available model.
@@ -769,6 +776,12 @@ type HooksListingPolicy struct {
 	// PolicyHookCount is hooks configured in managed settings — they run even
 	// under a non-managed disableAllHooks.
 	PolicyHookCount int `json:"policyHookCount"`
+	// PolicyUnreadable is set when a managed settings source exists but could
+	// not be read: what the organization configured is unknown, so edit_hook
+	// refuses every edit (fail-closed) and a host locks its editing controls.
+	// The wire only ever carries true, so absence means readable (sdk.d.ts
+	// v0.3.278 L3957).
+	PolicyUnreadable bool `json:"policyUnreadable,omitempty"`
 }
 
 // HooksListingSafeMode describes the session's --safe-mode state.

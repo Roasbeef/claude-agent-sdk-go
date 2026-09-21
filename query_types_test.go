@@ -120,3 +120,52 @@ func TestMcpServerStatusSource(t *testing.T) {
 		assert.False(t, got.McpServers[0].IsSDK())
 	})
 }
+
+// TestSlashCommandBuiltin covers the builtin marker v0.3.278 adds to command
+// rows (sdk.d.ts L8938).
+func TestSlashCommandBuiltin(t *testing.T) {
+	var got SlashCommand
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"name": "usage",
+		"description": "show usage",
+		"argumentHint": "",
+		"aliases": ["cost", "stats"],
+		"builtin": true
+	}`), &got))
+	assert.True(t, got.Builtin)
+	assert.Equal(t, []string{"cost", "stats"}, got.Aliases)
+
+	// Absent marker (user/project/plugin command) reads false and is omitted
+	// on the way back out.
+	var custom SlashCommand
+	require.NoError(t, json.Unmarshal([]byte(`{"name":"deploy","description":"","argumentHint":""}`), &custom))
+	assert.False(t, custom.Builtin)
+
+	data, err := json.Marshal(custom)
+	require.NoError(t, err)
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &raw))
+	assert.NotContains(t, raw, "builtin")
+}
+
+// TestHooksListingPolicyUnreadable covers the fail-closed marker v0.3.278 adds
+// to the /hooks policy block (sdk.d.ts L3957).
+func TestHooksListingPolicyUnreadable(t *testing.T) {
+	var got HooksListingPolicy
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"disabledByPolicy": false,
+		"managedOnly": false,
+		"pluginOnly": false,
+		"allDisabled": false,
+		"policyHookCount": 0,
+		"policyUnreadable": true
+	}`), &got))
+	assert.True(t, got.PolicyUnreadable)
+
+	// Readable managed settings omit the field; it must not marshal back.
+	data, err := json.Marshal(HooksListingPolicy{})
+	require.NoError(t, err)
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &raw))
+	assert.NotContains(t, raw, "policyUnreadable")
+}

@@ -1666,6 +1666,18 @@ const (
 	TaskNotificationStatusStopped   TaskNotificationStatus = "stopped"
 )
 
+// TaskEndReason is the machine-readable cause on TaskNotificationMessage.Reason,
+// set only when a task did not end through an ordinary completion, failure, or
+// stop.
+type TaskEndReason string
+
+const (
+	// TaskEndReasonWorkerRestart means the worker process restarted and the
+	// resumed process found the task orphaned; it always accompanies
+	// TaskNotificationStatusStopped.
+	TaskEndReasonWorkerRestart TaskEndReason = "worker_restart"
+)
+
 // TaskRunStatus is the running status carried in TaskUpdatePatch.Status.
 //
 // Distinct from TaskNotificationStatus: the notification set is a subset oriented
@@ -1770,14 +1782,20 @@ func (m TaskUpdatedMessage) MessageType() string { return "system" }
 
 // TaskNotificationMessage reports terminal task output.
 type TaskNotificationMessage struct {
-	Type       string                 `json:"type"`                  // Always "system"
-	Subtype    string                 `json:"subtype"`               // "task_notification"
-	TaskID     string                 `json:"task_id"`               // Task identifier
-	ToolUseID  string                 `json:"tool_use_id,omitempty"` // Related tool use ID
-	Status     TaskNotificationStatus `json:"status"`                // Terminal status
-	OutputFile string                 `json:"output_file"`           // Output file path
-	Summary    string                 `json:"summary"`               // Task summary
-	Usage      *TaskUsage             `json:"usage,omitempty"`       // Resource consumption
+	Type      string                 `json:"type"`                  // Always "system"
+	Subtype   string                 `json:"subtype"`               // "task_notification"
+	TaskID    string                 `json:"task_id"`               // Task identifier
+	ToolUseID string                 `json:"tool_use_id,omitempty"` // Related tool use ID
+	Status    TaskNotificationStatus `json:"status"`                // Terminal status
+	// Reason is a machine-readable cause, set only when the task did not end
+	// through an ordinary completion, failure, or stop. TaskEndReasonWorkerRestart
+	// means the worker process restarted and the resumed process found the task
+	// orphaned (always with Status TaskNotificationStatusStopped). Absent
+	// otherwise and on CLIs that predate the field (sdk.d.ts v0.3.278 L5654).
+	Reason     TaskEndReason `json:"reason,omitempty"`
+	OutputFile string        `json:"output_file"`     // Output file path
+	Summary    string        `json:"summary"`         // Task summary
+	Usage      *TaskUsage    `json:"usage,omitempty"` // Resource consumption
 	// ResourceLinks carries the resource_link content blocks of a
 	// backgrounded MCP task's final result — the files it returned by
 	// reference. A backgrounded task's tool_result is placeholder text and
