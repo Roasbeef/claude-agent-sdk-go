@@ -2030,6 +2030,52 @@ func TestIntegrationStreamFileAndRuntime(t *testing.T) {
 			"update_settings did not persist outputStyle under %s", tempDir)
 	})
 
+	t.Run("update_settings userSettings", func(t *testing.T) {
+		// The userSettings source lands in Claude Code 2.1.278; before that
+		// the CLI accepts only localSettings and rejects this outright.
+		skipIfCLIOlderThan(t, "2.1.278")
+
+		// userSettings takes effortLevel only, and saves it as the default
+		// for the session's current model under modelSettings, the way
+		// /effort does. Assert it reaches disk rather than trusting a bare
+		// no-error: the CLI answering "ok" while writing the wrong file is
+		// exactly the drift worth catching, and this source writes outside
+		// the cwd.
+		configDir := filepath.Join(t.TempDir(), ".claude")
+		require.NoError(t, os.MkdirAll(configDir, 0755))
+
+		client, err := NewClient(
+			WithConfigDir(configDir),
+			WithSystemPrompt("You are a helpful assistant."),
+		)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, client.Close()) })
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		stream, err := client.Stream(ctx)
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, stream.Close()) })
+
+		require.NoError(t, stream.UpdateSettings(ctx, SettingsSourceUser,
+			map[string]interface{}{"effortLevel": "high"}))
+
+		var wrote bool
+		_ = filepath.Walk(configDir, func(p string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() || !strings.HasSuffix(p, ".json") {
+				return nil
+			}
+			if b, rerr := os.ReadFile(p); rerr == nil &&
+				strings.Contains(string(b), "effortLevel") {
+				wrote = true
+			}
+			return nil
+		})
+		assert.True(t, wrote,
+			"update_settings did not persist effortLevel under %s", configDir)
+	})
+
 	t.Run("reload_output_styles", func(t *testing.T) {
 		// The reload_output_styles control subtype lands in Claude Code
 		// 2.1.261; older binaries reject it as an unsupported subtype.
