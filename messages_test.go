@@ -5854,3 +5854,255 @@ func TestResultStartupFailureReason(t *testing.T) {
 		}
 	})
 }
+
+// TestAssistantUsageReport covers usage_report and the SDKUsageReport shape
+// added in TS SDK v0.3.278 (sdk.d.ts L3463, L5807).
+func TestAssistantUsageReport(t *testing.T) {
+	full := []byte(`{
+		"type": "assistant",
+		"session_id": "sess_1",
+		"uuid": "11111111-1111-1111-1111-111111111111",
+		"message": {
+			"id": "msg_1",
+			"type": "message",
+			"role": "assistant",
+			"model": "claude-opus-4-8",
+			"content": [{"type": "text", "text": "Current usage: ..."}],
+			"stop_reason": null,
+			"usage": {"input_tokens": 1, "output_tokens": 1}
+		},
+		"usage_report": {
+			"session": {
+				"total_cost_usd": 1.25,
+				"total_api_duration_ms": 4200,
+				"total_duration_ms": 9100,
+				"total_lines_added": 42,
+				"total_lines_removed": 7,
+				"model_usage": {
+					"claude-opus-4-8": {
+						"inputTokens": 100,
+						"outputTokens": 200,
+						"cacheReadInputTokens": 10,
+						"cacheCreationInputTokens": 5,
+						"webSearchRequests": 0
+					}
+				}
+			},
+			"rate_limits": {
+				"limits": [
+					{
+						"kind": "session",
+						"group": "session",
+						"percent": 12.5,
+						"resets_at": "2026-09-21T20:00:00Z",
+						"severity": "normal",
+						"is_active": true
+					},
+					{
+						"kind": "weekly_scoped",
+						"group": "weekly",
+						"percent": 88,
+						"resets_at": null,
+						"scope": {"model": {"display_name": "Opus"}},
+						"severity": "warning",
+						"is_active": false
+					}
+				],
+				"extra_usage": {
+					"is_enabled": true,
+					"monthly_limit": 5000,
+					"used_credits": 1234,
+					"utilization": 0.2468,
+					"currency": "USD"
+				}
+			}
+		}
+	}`)
+
+	t.Run("full report parses", func(t *testing.T) {
+		msg, err := ParseMessage(full)
+		require.NoError(t, err)
+
+		am, ok := msg.(AssistantMessage)
+		require.True(t, ok, "expected AssistantMessage, got %T", msg)
+		require.NotNil(t, am.UsageReport)
+
+		sess := am.UsageReport.Session
+		assert.InDelta(t, 1.25, sess.TotalCostUSD, 1e-9)
+		assert.Equal(t, int64(4200), sess.TotalAPIDurationMs)
+		assert.Equal(t, 42, sess.TotalLinesAdded)
+		require.Contains(t, sess.ModelUsage, "claude-opus-4-8")
+		assert.Equal(t, 200, sess.ModelUsage["claude-opus-4-8"].OutputTokens)
+
+		require.NotNil(t, am.UsageReport.RateLimits)
+		rows := am.UsageReport.RateLimits.Limits
+		require.Len(t, rows, 2)
+
+		assert.Equal(t, "session", rows[0].Kind)
+		assert.True(t, rows[0].IsActive)
+		require.NotNil(t, rows[0].ResetsAt)
+		assert.Equal(t, "2026-09-21T20:00:00Z", *rows[0].ResetsAt)
+		assert.Nil(t, rows[0].Scope)
+
+		assert.Equal(t, "weekly_scoped", rows[1].Kind)
+		assert.Equal(t, "warning", rows[1].Severity)
+		// A null reset time is distinct from an absent one; both mean the
+		// server gave no reset, and neither should read as a zero time.
+		assert.Nil(t, rows[1].ResetsAt)
+		require.NotNil(t, rows[1].Scope)
+		require.NotNil(t, rows[1].Scope.Model)
+		assert.Equal(t, "Opus", rows[1].Scope.Model.DisplayName)
+		assert.Nil(t, rows[1].Scope.Surface)
+
+		extra := am.UsageReport.RateLimits.ExtraUsage
+		require.NotNil(t, extra)
+		assert.True(t, extra.IsEnabled)
+		require.NotNil(t, extra.MonthlyLimit)
+		// Minor units: 5000 is $50.00, not $5000.
+		assert.Equal(t, int64(5000), *extra.MonthlyLimit)
+		require.NotNil(t, extra.Currency)
+		assert.Equal(t, "USD", *extra.Currency)
+	})
+
+	// The whole report is absent on ordinary assistant turns.
+	t.Run("absent on an ordinary turn", func(t *testing.T) {
+		raw := []byte(`{
+			"type": "assistant",
+			"session_id": "sess_1",
+			"uuid": "11111111-1111-1111-1111-111111111111",
+			"message": {
+				"id": "msg_1", "type": "message", "role": "assistant",
+				"model": "claude-opus-4-8",
+				"content": [{"type": "text", "text": "hi"}],
+				"stop_reason": null,
+				"usage": {"input_tokens": 1, "output_tokens": 1}
+			}
+		}`)
+
+		msg, err := ParseMessage(raw)
+		require.NoError(t, err)
+		am, ok := msg.(AssistantMessage)
+		require.True(t, ok)
+		assert.Nil(t, am.UsageReport)
+	})
+
+	// rate_limits is nullable on its own: the CLI could not fetch the plan
+	// rows, but the session totals are still real.
+	t.Run("null rate_limits keeps session totals", func(t *testing.T) {
+		raw := []byte(`{
+			"type": "assistant",
+			"session_id": "sess_1",
+			"uuid": "11111111-1111-1111-1111-111111111111",
+			"message": {
+				"id": "msg_1", "type": "message", "role": "assistant",
+				"model": "claude-opus-4-8",
+				"content": [{"type": "text", "text": "usage"}],
+				"stop_reason": null,
+				"usage": {"input_tokens": 1, "output_tokens": 1}
+			},
+			"usage_report": {
+				"session": {
+					"total_cost_usd": 0.5,
+					"total_api_duration_ms": 1,
+					"total_duration_ms": 2,
+					"total_lines_added": 0,
+					"total_lines_removed": 0,
+					"model_usage": {}
+				},
+				"rate_limits": null
+			}
+		}`)
+
+		msg, err := ParseMessage(raw)
+		require.NoError(t, err)
+		am, ok := msg.(AssistantMessage)
+		require.True(t, ok)
+		require.NotNil(t, am.UsageReport)
+		assert.Nil(t, am.UsageReport.RateLimits)
+		assert.InDelta(t, 0.5, am.UsageReport.Session.TotalCostUSD, 1e-9)
+	})
+
+	// limits has a three-way distinction the doc calls out: rows present,
+	// empty (server reported no meters), and null (body carried no rows).
+	t.Run("empty limits differs from null limits", func(t *testing.T) {
+		mk := func(limits string) *UsageReport {
+			raw := []byte(`{
+				"type": "assistant",
+				"session_id": "s",
+				"uuid": "11111111-1111-1111-1111-111111111111",
+				"message": {
+					"id": "m", "type": "message", "role": "assistant",
+					"model": "claude-opus-4-8",
+					"content": [], "stop_reason": null,
+					"usage": {"input_tokens": 1, "output_tokens": 1}
+				},
+				"usage_report": {
+					"session": {
+						"total_cost_usd": 0, "total_api_duration_ms": 0,
+						"total_duration_ms": 0, "total_lines_added": 0,
+						"total_lines_removed": 0, "model_usage": {}
+					},
+					"rate_limits": {"limits": ` + limits + `}
+				}
+			}`)
+			msg, err := ParseMessage(raw)
+			require.NoError(t, err)
+			am, ok := msg.(AssistantMessage)
+			require.True(t, ok)
+			require.NotNil(t, am.UsageReport)
+			return am.UsageReport
+		}
+
+		empty := mk(`[]`)
+		require.NotNil(t, empty.RateLimits)
+		assert.NotNil(t, empty.RateLimits.Limits)
+		assert.Empty(t, empty.RateLimits.Limits)
+
+		null := mk(`null`)
+		require.NotNil(t, null.RateLimits)
+		assert.Nil(t, null.RateLimits.Limits)
+	})
+
+	// An unknown meter kind must render rather than be dropped: the server
+	// owns the taxonomy and a new meter ships without an SDK release.
+	t.Run("unknown meter kind survives", func(t *testing.T) {
+		raw := []byte(`{
+			"type": "assistant",
+			"session_id": "s",
+			"uuid": "11111111-1111-1111-1111-111111111111",
+			"message": {
+				"id": "m", "type": "message", "role": "assistant",
+				"model": "claude-opus-4-8",
+				"content": [], "stop_reason": null,
+				"usage": {"input_tokens": 1, "output_tokens": 1}
+			},
+			"usage_report": {
+				"session": {
+					"total_cost_usd": 0, "total_api_duration_ms": 0,
+					"total_duration_ms": 0, "total_lines_added": 0,
+					"total_lines_removed": 0, "model_usage": {}
+				},
+				"rate_limits": {
+					"limits": [{
+						"kind": "monthly_org_pool",
+						"group": "monthly",
+						"percent": 3,
+						"resets_at": null,
+						"severity": "informational",
+						"is_active": false
+					}]
+				}
+			}
+		}`)
+
+		msg, err := ParseMessage(raw)
+		require.NoError(t, err)
+		am, ok := msg.(AssistantMessage)
+		require.True(t, ok)
+		require.NotNil(t, am.UsageReport)
+		require.NotNil(t, am.UsageReport.RateLimits)
+		require.Len(t, am.UsageReport.RateLimits.Limits, 1)
+		assert.Equal(t, "monthly_org_pool", am.UsageReport.RateLimits.Limits[0].Kind)
+		assert.Equal(t, "informational", am.UsageReport.RateLimits.Limits[0].Severity)
+	})
+}
