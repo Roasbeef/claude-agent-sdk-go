@@ -2539,3 +2539,12 @@ func TestSettingsParityV0_3_270OmitEmpty(t *testing.T) {
 	require.NoError(t, json.Unmarshal(modelData, &gotModel))
 	assert.NotContains(t, gotModel, "maxEffortLevel")
 }
+
+// TestWithProjectConfigRoot covers the option constructor.
+func TestWithProjectConfigRoot(t *testing.T) {
+	opts := NewOptions()
+	WithProjectConfigRoot("/src/trusted-checkout")(opts)
+	assert.Equal(t, "/src/trusted-checkout", opts.ProjectConfigRoot)
+
+	assert.Empty(t, NewOptions().ProjectConfigRoot)
+}

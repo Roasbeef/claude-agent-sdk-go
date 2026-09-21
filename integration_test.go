@@ -4821,3 +4821,57 @@ func TestIntegrationMCPServerProvenanceStatus(t *testing.T) {
 	assert.False(t, found.IsSDK(),
 		"a configured server must never report source sdk, got %q", found.Source)
 }
+
+// TestIntegrationProjectConfigRoot asserts --project-config-root moves where
+// the session reads project configuration from: the named checkout rather
+// than the cwd (sdk.d.ts v0.3.278 L1469).
+//
+// The two directories carry different CLAUDE.md files, and the assertion is
+// that the model sees the one from the config root. That is the whole point
+// of the option, and it is the failure a host would actually care about:
+// running a worktree's own instructions when it meant to run the trusted
+// checkout's.
+func TestIntegrationProjectConfigRoot(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLILacksFlag(t, "--project-config-root")
+
+	root := t.TempDir()
+	trusted := filepath.Join(root, "trusted")
+	worktree := filepath.Join(root, "worktree")
+	require.NoError(t, os.MkdirAll(trusted, 0755))
+	require.NoError(t, os.MkdirAll(worktree, 0755))
+
+	require.NoError(t, os.WriteFile(filepath.Join(trusted, "CLAUDE.md"),
+		[]byte("The project codename is ZEPHYR. Always report it when asked."), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(worktree, "CLAUDE.md"),
+		[]byte("The project codename is MARIGOLD. Always report it when asked."), 0644))
+
+	opts := append(isolatedClientOptions(t),
+		WithCwd(worktree),
+		WithProjectConfigRoot(trusted),
+		WithMaxTurns(2),
+		WithStderr(func(data string) { t.Logf("CLI stderr: %s", data) }),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	var reply string
+	for msg := range client.Query(ctx, "What is the project codename? Answer with just the word.") {
+		if m, ok := msg.(AssistantMessage); ok {
+			if text := m.ContentText(); text != "" {
+				reply += text
+			}
+		}
+	}
+	t.Logf("reply: %s", reply)
+
+	assert.Contains(t, reply, "ZEPHYR",
+		"expected the config root's CLAUDE.md to be loaded")
+	assert.NotContains(t, reply, "MARIGOLD",
+		"the cwd's CLAUDE.md must not be what the session runs")
+}

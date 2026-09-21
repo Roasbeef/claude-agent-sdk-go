@@ -73,6 +73,25 @@ type Options struct {
 	// AdditionalDirectories are additional directories Claude can access.
 	AdditionalDirectories []string
 
+	// ProjectConfigRoot names the trusted checkout that Cwd is a worktree of,
+	// and is emitted as --project-config-root. Must be an absolute path.
+	//
+	// It moves where the session reads its project configuration from:
+	// project settings (hooks, permissions), .mcp.json, the .claude config
+	// trees (commands, agents, skills, workflows, routines, output-styles)
+	// and CLAUDE_PROJECT_DIR all come from here instead of Cwd. So whatever
+	// the branch checked out in Cwd happens to carry is not what the session
+	// runs.
+	//
+	// That inversion is the point: a worktree of an untrusted branch can be
+	// given a session whose hooks and permission rules come from a checkout
+	// you control. It also means pointing this at a directory you do not
+	// control hands that directory's hooks a session, so treat it as the
+	// security decision it is.
+	//
+	// A routine cannot be activated through it (sdk.d.ts v0.3.278 L1469).
+	ProjectConfigRoot string
+
 	// Env is a map of environment variables to overlay onto the CLI
 	// subprocess environment. Entries are appended to os.Environ()
 	// before spawn, so parent-process variables like PATH and HOME
@@ -3945,6 +3964,17 @@ func WithFallbackModel(model string) Option {
 func WithCwd(cwd string) Option {
 	return func(o *Options) {
 		o.Cwd = cwd
+	}
+}
+
+// WithProjectConfigRoot names the trusted checkout that the session's cwd is
+// a worktree of, so project settings, .mcp.json, the .claude config trees and
+// CLAUDE_PROJECT_DIR are read from there instead of the cwd. Must be an
+// absolute path. See Options.ProjectConfigRoot for what that moves, and why
+// it is a security decision rather than a convenience.
+func WithProjectConfigRoot(dir string) Option {
+	return func(o *Options) {
+		o.ProjectConfigRoot = dir
 	}
 }
 

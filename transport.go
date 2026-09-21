@@ -371,6 +371,14 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, "--resume-drops-turn", t.options.SessionOptions.ResumeDropsTurn)
 	}
 
+	// Name the trusted checkout the cwd is a worktree of. The TS SDK emits
+	// this as a single "=" -joined element rather than a flag/value pair, so
+	// match that exactly.
+	if t.options.ProjectConfigRoot != "" {
+		args = append(args, fmt.Sprintf("--project-config-root=%s",
+			t.options.ProjectConfigRoot))
+	}
+
 	// Add additional directories for tool access (e.g., /tmp for
 	// temp file writes). Each directory is passed as a separate
 	// --add-dir flag.
