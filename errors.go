@@ -196,6 +196,19 @@ func (e *ErrQuestionTimeout) Error() string {
 	return fmt.Sprintf("question timed out: %s", e.ToolUseID)
 }
 
+// ErrGoalAchieved signals that the session terminated because the goal condition was met.
+type ErrGoalAchieved struct {
+	Condition  string
+	Iterations int
+	DurationMs int64
+	Tokens     int
+}
+
+// Error implements the error interface.
+func (e *ErrGoalAchieved) Error() string {
+	return fmt.Sprintf("goal achieved after %d iteration(s): %s", e.Iterations, e.Condition)
+}
+
 // ErrNoQuestionHandler indicates that an AskUserQuestion tool call was
 // received but no handler was configured and no Questions() iterator is active.
 //
