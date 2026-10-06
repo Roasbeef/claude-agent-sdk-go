@@ -528,7 +528,7 @@ func (c *Client) Stream(ctx context.Context) (*Stream, error) {
 		client:    c,
 		ctx:       ctx,
 		sessionID: c.options.SessionOptions.SessionID,
-		sendCh:    make(chan string, 4),
+		sendCh:    make(chan UserMessage, 4),
 		closeCh:   make(chan struct{}),
 	}, nil
 }
@@ -661,7 +661,7 @@ type Stream struct {
 	client    *Client
 	ctx       context.Context
 	sessionID string
-	sendCh    chan string
+	sendCh    chan UserMessage
 	closeCh   chan struct{}
 	closeOnce sync.Once
 }
@@ -671,12 +671,27 @@ type Stream struct {
 // Messages are queued and sent asynchronously. The response will appear
 // in the Messages() iterator.
 func (s *Stream) Send(ctx context.Context, prompt string) error {
+	return s.SendMessage(ctx, UserMessage{
+		Message: APIUserMessage{
+			Content: []UserContentBlock{{Type: "text", Text: prompt}},
+		},
+	})
+}
+
+// SendMessage submits a fully formed user message to the stream, the Go
+// analogue of handing an SDKUserMessage to the TS SDK's streamInput. Use it
+// for the fields Send can't express: PastedContent, InlinePastes, a
+// per-message ClientComposed, a client UUID, or a Priority.
+//
+// Type, SessionID and Message.Role are filled in when left empty. Like Send,
+// the message is queued and written asynchronously.
+func (s *Stream) SendMessage(ctx context.Context, msg UserMessage) error {
 	select {
 	case <-s.closeCh:
 		return &ErrTransportClosed{}
 	case <-ctx.Done():
 		return ctx.Err()
-	case s.sendCh <- prompt:
+	case s.sendCh <- msg:
 		return nil
 	}
 }
@@ -732,17 +747,15 @@ func (s *Stream) handleSends() {
 			return
 		case <-s.ctx.Done():
 			return
-		case prompt := <-s.sendCh:
-			userMsg := UserMessage{
-				Type:      "user",
-				SessionID: s.sessionID,
-				Message: APIUserMessage{
-					Role: "user",
-					Content: []UserContentBlock{
-						{Type: "text", Text: prompt},
-					},
-				},
-				ParentToolUseID: nil,
+		case userMsg := <-s.sendCh:
+			if userMsg.Type == "" {
+				userMsg.Type = "user"
+			}
+			if userMsg.SessionID == "" {
+				userMsg.SessionID = s.sessionID
+			}
+			if userMsg.Message.Role == "" {
+				userMsg.Message.Role = "user"
 			}
 
 			if err := s.client.protocol.SendMessage(s.ctx, userMsg); err != nil {
