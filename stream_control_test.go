@@ -111,7 +111,7 @@ func newStreamControlTest(
 	stream := &Stream{
 		client:  client,
 		ctx:     context.Background(),
-		sendCh:  make(chan string),
+		sendCh:  make(chan UserMessage),
 		closeCh: make(chan struct{}),
 	}
 	return stream, transport, protocol
@@ -544,4 +544,55 @@ func TestStreamControlRequestRespectsContextCancel(t *testing.T) {
 
 	_, exists = protocol.pendingReqs.Load(req.RequestID)
 	assert.False(t, exists, "pending request should be cleaned up after cancellation")
+}
+
+// TestStreamSendMessage checks SendMessage writes the caller's fields through
+// untouched and fills in only the envelope defaults it leaves empty.
+func TestStreamSendMessage(t *testing.T) {
+	stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+	stream.sessionID = "sess_send"
+	go stream.handleSends()
+	defer stream.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	require.NoError(t, stream.SendMessage(ctx, UserMessage{
+		UUID: "550e8400-e29b-41d4-a716-446655440900",
+		Message: APIUserMessage{
+			Content: []UserContentBlock{{Type: "text", Text: "explain: boom"}},
+		},
+		PastedContent:  []PastedContentEntry{{Text: "stack trace"}},
+		InlinePastes:   []string{"boom"},
+		ClientComposed: true,
+	}))
+	require.NoError(t, stream.Send(ctx, "plain"))
+
+	var written []Message
+	require.Eventually(t, func() bool {
+		written = transport.writtenMessages()
+		return len(written) == 2
+	}, time.Second, 5*time.Millisecond)
+
+	full := written[0].(UserMessage)
+	assert.Equal(t, "user", full.Type)
+	assert.Equal(t, "sess_send", full.SessionID)
+	assert.Equal(t, "user", full.Message.Role)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440900", full.UUID)
+	assert.Equal(t, []string{"boom"}, full.InlinePastes)
+	assert.Equal(t, "stack trace", full.PastedContent[0].Text)
+	assert.True(t, full.ClientComposed)
+
+	plain := written[1].(UserMessage)
+	assert.Equal(t, "plain", plain.Message.Content[0].Text)
+	assert.False(t, plain.ClientComposed)
+}
+
+func TestStreamSendMessageAfterClose(t *testing.T) {
+	stream, _, _ := newStreamControlTest(successSDKControlResponse)
+	require.NoError(t, stream.Close())
+
+	err := stream.SendMessage(context.Background(), UserMessage{})
+	var closed *ErrTransportClosed
+	assert.ErrorAs(t, err, &closed)
 }
