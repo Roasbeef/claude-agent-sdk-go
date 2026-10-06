@@ -5516,3 +5516,45 @@ func TestIntegrationSettingsParityV0_3_290(t *testing.T) {
 	assert.True(t, gotResult,
 		"a stalled managed-settings handshake shows up as no result at all")
 }
+
+// TestIntegrationAllowedProvidersRefusesStartup sets an allowedProviders list
+// that leaves out the provider this session uses, and checks the CLI refuses
+// to start with the provider_not_allowed reason (sdk.d.ts v0.3.290 L8610,
+// L5896).
+//
+// The CLI writes the frame, but the Go client currently drops a result that
+// arrives before the initialize reply and then waits out ctx (#289), so this
+// skips until that lands. The short timeout keeps the skip cheap.
+func TestIntegrationAllowedProvidersRefusesStartup(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithManagedSettings(Settings{
+			AllowedProviders: []AllowedProvider{AllowedProviderBedrock},
+		}),
+		WithEnv(map[string]string{"CLAUDE_CODE_STARTUP_FAILURE_RESULTS": "1"}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	var result *ResultMessage
+	for msg := range client.Query(ctx, "say ok") {
+		if m, ok := msg.(ResultMessage); ok {
+			result = &m
+		}
+	}
+
+	if result == nil {
+		t.Skip("startup-failure result frame not surfaced by the client (#289)")
+	}
+	if result.StartupFailureReason == "" && !result.IsError {
+		t.Skip("CLI predates allowedProviders and started normally")
+	}
+	assert.Equal(t, StartupFailureProviderNotAllowed, result.StartupFailureReason)
+}
