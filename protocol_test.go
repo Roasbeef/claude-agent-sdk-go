@@ -5232,3 +5232,57 @@ func TestHookMCPServerProvenance(t *testing.T) {
 		assert.True(t, got.IsSDK())
 	})
 }
+
+// TestSendMessageVerbatimPrompts asserts Options.VerbatimPrompts stamps
+// client_composed on every user message the protocol writes, and that a
+// per-message ClientComposed still goes out when the option is off.
+func TestSendMessageVerbatimPrompts(t *testing.T) {
+	prompt := UserMessage{
+		Type: "user",
+		Message: APIUserMessage{
+			Role:    "user",
+			Content: []UserContentBlock{{Type: "text", Text: "/cost"}},
+		},
+	}
+
+	tests := []struct {
+		name     string
+		verbatim bool
+		msg      UserMessage
+		want     bool
+	}{
+		{name: "off", msg: prompt, want: false},
+		{name: "on", verbatim: true, msg: prompt, want: true},
+		{
+			name: "per-message opt-in",
+			msg: func() UserMessage {
+				m := prompt
+				m.ClientComposed = true
+				return m
+			}(),
+			want: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			transport := newMockTransport(1)
+			p := NewProtocol(transport, &Options{
+				VerbatimPrompts: tc.verbatim,
+			})
+			require.NoError(t, p.SendMessage(context.Background(), tc.msg))
+
+			require.Len(t, transport.written, 1)
+			data, err := json.Marshal(transport.written[0])
+			require.NoError(t, err)
+
+			var got map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(data, &got))
+			if !tc.want {
+				assert.NotContains(t, got, "client_composed")
+				return
+			}
+			assert.JSONEq(t, `true`, string(got["client_composed"]))
+		})
+	}
+}
