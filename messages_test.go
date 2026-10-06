@@ -6428,3 +6428,62 @@ func TestUserMessageInlinePastes(t *testing.T) {
 	}`), &decoded))
 	assert.Equal(t, []string{"a", "b"}, decoded.InlinePastes)
 }
+
+// TestAssortedParityV0_3_290 covers the small v0.3.290 decode-side adds:
+// init view_mode, informational tag, the task-notification session-inbox
+// subkind and fireReason, provider_not_allowed, and the first-text-post
+// queue timings.
+func TestAssortedParityV0_3_290(t *testing.T) {
+	t.Run("init view_mode", func(t *testing.T) {
+		msg, err := ParseMessage([]byte(`{
+			"type": "system", "subtype": "init",
+			"uuid": "550e8400-e29b-41d4-a716-446655440800",
+			"session_id": "s", "apiKeySource": "env", "cwd": "/w",
+			"tools": [], "mcp_servers": [], "model": "m",
+			"permissionMode": "default", "slash_commands": [],
+			"output_style": "default", "view_mode": "focus"
+		}`))
+		require.NoError(t, err)
+		assert.Equal(t, ViewModeFocus, msg.(SystemMessage).ViewMode)
+	})
+
+	t.Run("informational tag", func(t *testing.T) {
+		var got InformationalMessage
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"type": "system", "subtype": "informational",
+			"content": "Compacted", "level": "notice",
+			"tag": "some_feature", "uuid": "u", "session_id": "s"
+		}`), &got))
+		assert.Equal(t, "some_feature", got.Tag)
+	})
+
+	t.Run("scheduled trigger fire reason and session inbox", func(t *testing.T) {
+		var origin MessageOrigin
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"kind": "task-notification",
+			"subkind": "scheduled-trigger",
+			"fireReason": "catch_up"
+		}`), &origin))
+		assert.Equal(t, MessageOriginSubkindScheduledTrigger, origin.Subkind)
+		assert.Equal(t, "catch_up", origin.FireReason)
+
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"kind": "task-notification", "subkind": "session-inbox"
+		}`), &origin))
+		assert.Equal(t, MessageOriginSubkindSessionInbox, origin.Subkind)
+	})
+
+	t.Run("result startup reason and text post queue", func(t *testing.T) {
+		var got ResultMessage
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"type": "result", "subtype": "success",
+			"startup_failure_reason": "provider_not_allowed",
+			"first_text_post_queue_wait_ms": 42,
+			"first_text_post_queued_behind": "durable_post"
+		}`), &got))
+		assert.Equal(t, StartupFailureProviderNotAllowed, got.StartupFailureReason)
+		require.NotNil(t, got.FirstTextPostQueueWaitMs)
+		assert.Equal(t, int64(42), *got.FirstTextPostQueueWaitMs)
+		assert.Equal(t, FirstPostQueuedBehind("durable_post"), got.FirstTextPostQueuedBehind)
+	})
+}
