@@ -5370,3 +5370,58 @@ func TestIntegrationConversationResetTrigger(t *testing.T) {
 	// typed /clear.
 	assert.NotEmpty(t, reset.UserMessageUUID)
 }
+
+// TestIntegrationSettingsAttributionFalse sends attribution as a bare false
+// through --settings and reads the effective settings back: the CLI expands
+// it to the hide-everything object form (sdk.d.ts v0.3.290 L6773). The Go
+// SDK has no get_settings wrapper yet, so this goes through the raw control
+// request.
+func TestIntegrationSettingsAttributionFalse(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSettings(Settings{
+			Attribution: &SettingsAttribution{HideAll: true},
+		}),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	resp, err := stream.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "get_settings",
+	})
+	require.NoError(t, err)
+
+	raw, err := json.Marshal(resp.Response.Response)
+	require.NoError(t, err)
+	var got struct {
+		Effective Settings `json:"effective"`
+		Errors    []struct {
+			Path    string `json:"path"`
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &got))
+
+	for _, e := range got.Errors {
+		assert.NotEqual(t, "attribution", e.Path,
+			"CLI rejected the boolean form: %s", e.Message)
+	}
+	require.NotNil(t, got.Effective.Attribution)
+	attr := *got.Effective.Attribution
+	require.NotNil(t, attr.Commit)
+	require.NotNil(t, attr.PR)
+	require.NotNil(t, attr.SessionURL)
+	assert.Empty(t, *attr.Commit)
+	assert.Empty(t, *attr.PR)
+	assert.False(t, *attr.SessionURL)
+}
