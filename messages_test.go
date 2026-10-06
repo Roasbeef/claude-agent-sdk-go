@@ -6319,3 +6319,40 @@ func TestResultFirstPostTimings(t *testing.T) {
 			res.FirstStreamPostQueuedBehind)
 	})
 }
+
+// TestUserMessageInlinePastes covers the submit path and decode of
+// inline_pastes, the sibling of pasted_content for pastes left in place.
+func TestUserMessageInlinePastes(t *testing.T) {
+	msg := UserMessage{
+		Type: "user",
+		Message: APIUserMessage{
+			Role: "user",
+			Content: []UserContentBlock{
+				{Type: "text", Text: "fix this: panic: nil map"},
+			},
+		},
+		InlinePastes: []string{"panic: nil map"},
+	}
+
+	data, err := json.Marshal(msg)
+	require.NoError(t, err)
+
+	var got map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.JSONEq(t, `["panic: nil map"]`, string(got["inline_pastes"]))
+
+	data, err = json.Marshal(UserMessage{Type: "user"})
+	require.NoError(t, err)
+	got = nil
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.NotContains(t, got, "inline_pastes")
+
+	var decoded UserMessage
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"type": "user",
+		"message": {"role": "user", "content": []},
+		"parent_tool_use_id": null,
+		"inline_pastes": ["a", "b"]
+	}`), &decoded))
+	assert.Equal(t, []string{"a", "b"}, decoded.InlinePastes)
+}

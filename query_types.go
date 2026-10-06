@@ -717,6 +717,19 @@ const (
 	PermissionRuleEditabilityReadonly PermissionRuleEditability = "readonly"
 )
 
+// SDKControlGetTaskOutputResponse answers get_task_output with the tail of a
+// background shell or Monitor task's output (sdk.d.ts v0.3.290 L4222).
+type SDKControlGetTaskOutputResponse struct {
+	// Output is the end of the output decoded as UTF-8; empty when the
+	// command has written nothing yet.
+	Output string `json:"output"`
+	// TotalBytes is the size of the whole output in bytes.
+	TotalBytes int64 `json:"total_bytes"`
+	// Truncated reports that Output holds only the last 8 KiB of a longer
+	// output.
+	Truncated bool `json:"truncated"`
+}
+
 // SDKControlGetHooksListingResponse is the read-only snapshot of the CLI's
 // /hooks menu — settings-file, session and plugin hooks grouped by event and
 // matcher, with display-ready strings and the policy/safe-mode state the menu

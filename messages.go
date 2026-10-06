@@ -41,6 +41,13 @@ type UserMessage struct {
 	// send images and documents in Message.Content instead (sdk.d.ts v0.3.278
 	// L5943).
 	PastedContent []PastedContentEntry `json:"pasted_content,omitempty"`
+	// InlinePastes is text the user pasted that still sits in
+	// Message.Content where they put it, one entry per paste. The host leaves
+	// the prompt as is; the CLI may wrap each entry in <pasted_content> tags
+	// where it still stands in the last text block. A paste the host took out
+	// of the message belongs in PastedContent instead (sdk.d.ts v0.3.290
+	// L6307).
+	InlinePastes []string `json:"inline_pastes,omitempty"`
 	// ClientComposed marks a turn the client assembled from content the user
 	// did not type: the CLI delivers its text as written, with no @path
 	// expansion and no slash-command dispatch. Current CLIs also skip the
@@ -1075,7 +1082,7 @@ type SDKControlRequestBody struct {
 	RenameSessionID   string                      `json:"session_id,omitempty"`           // For rename_session
 	Description       string                      `json:"description,omitempty"`          // For submit_feedback
 	Surface           string                      `json:"surface,omitempty"`              // For submit_feedback
-	TaskID            string                      `json:"task_id,omitempty"`              // For stop_task
+	TaskID            string                      `json:"task_id,omitempty"`              // For stop_task/get_task_output
 	ServerName        string                      `json:"server_name,omitempty"`          // For mcp_message (snake_case)
 	MCPServerName     string                      `json:"serverName,omitempty"`           // For mcp_reconnect/mcp_toggle/mcp_set_servers (camelCase)
 	Enabled           *bool                       `json:"enabled,omitempty"`              // For mcp_toggle (pointer so explicit false serializes)

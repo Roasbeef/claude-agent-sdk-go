@@ -1432,6 +1432,38 @@ func (s *Stream) GetHooksListing(
 	return &out, nil
 }
 
+// GetTaskOutput reads the end of one background shell or Monitor task's
+// output: at most the last 8 KiB the command wrote, the same tail the
+// terminal's /tasks view shows. It's read-only and starts no model turn, so a
+// host can poll it while the task runs and read it once more after it ends.
+//
+// The output is whatever the command printed, escape sequences included;
+// render it as plain text. The CLI refuses a taskID that is not a shell or
+// Monitor task of this session, and lanes that redact what they persist
+// (Remote Control bridge and tenant workers) refuse the request outright.
+//
+// Only available in streaming input mode.
+func (s *Stream) GetTaskOutput(
+	ctx context.Context, taskID string,
+) (*SDKControlGetTaskOutputResponse, error) {
+	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "get_task_output",
+		TaskID:  taskID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return nil, fmt.Errorf("get_task_output: marshal: %w", err)
+	}
+	var out SDKControlGetTaskOutputResponse
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return nil, fmt.Errorf("get_task_output: unmarshal: %w", err)
+	}
+	return &out, nil
+}
+
 // StopTask asks the CLI to stop a running task.
 func (s *Stream) StopTask(ctx context.Context, taskID string) error {
 	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
