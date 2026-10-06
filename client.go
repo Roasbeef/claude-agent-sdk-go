@@ -1432,6 +1432,38 @@ func (s *Stream) GetHooksListing(
 	return &out, nil
 }
 
+// GetTaskOutput reads the end of one background shell or Monitor task's
+// output: at most the last 8 KiB the command wrote, the same tail the
+// terminal's /tasks view shows. It's read-only and starts no model turn, so a
+// host can poll it while the task runs and read it once more after it ends.
+//
+// The output is whatever the command printed, escape sequences included;
+// render it as plain text. The CLI refuses a taskID that is not a shell or
+// Monitor task of this session, and lanes that redact what they persist
+// (Remote Control bridge and tenant workers) refuse the request outright.
+//
+// Only available in streaming input mode.
+func (s *Stream) GetTaskOutput(
+	ctx context.Context, taskID string,
+) (*SDKControlGetTaskOutputResponse, error) {
+	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "get_task_output",
+		TaskID:  taskID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return nil, fmt.Errorf("get_task_output: marshal: %w", err)
+	}
+	var out SDKControlGetTaskOutputResponse
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return nil, fmt.Errorf("get_task_output: unmarshal: %w", err)
+	}
+	return &out, nil
+}
+
 // StopTask asks the CLI to stop a running task.
 func (s *Stream) StopTask(ctx context.Context, taskID string) error {
 	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
@@ -1734,6 +1766,40 @@ func (s *Stream) ReconnectMcpServer(ctx context.Context, serverName string) erro
 		MCPServerName: serverName,
 	})
 	return err
+}
+
+// ReadMcpResource reads one MCP Apps (SEP-1865) UI resource from a connected
+// MCP server the CLI itself dialed, so the host can render a tool's widget.
+// uri must use the ui:// scheme, typically McpServerStatusTool.UIResourceURI.
+// It's read-only and starts no model turn.
+//
+// The contents are untrusted third-party HTML: render them sandboxed. The CLI
+// refuses in-process SDK servers (the host can read those itself), servers
+// that policy blocks, are disabled or unapproved, and servers that are not
+// connected (send ReconnectMcpServer first). Requires a CLI that advertises
+// mcp_read_resource_v1 in the init capabilities.
+//
+// Only available in streaming input mode.
+func (s *Stream) ReadMcpResource(
+	ctx context.Context, serverName, uri string,
+) (*SDKControlMcpReadResourceResponse, error) {
+	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype:       "mcp_read_resource",
+		MCPServerName: serverName,
+		URI:           uri,
+	})
+	if err != nil {
+		return nil, err
+	}
+	bytes, err := json.Marshal(resp.Response.Response)
+	if err != nil {
+		return nil, fmt.Errorf("mcp_read_resource: marshal: %w", err)
+	}
+	var out SDKControlMcpReadResourceResponse
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return nil, fmt.Errorf("mcp_read_resource: unmarshal: %w", err)
+	}
+	return &out, nil
 }
 
 // ToggleMcpServer enables or disables the named MCP server.

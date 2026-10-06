@@ -169,3 +169,61 @@ func TestHooksListingPolicyUnreadable(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &raw))
 	assert.NotContains(t, raw, "policyUnreadable")
 }
+
+// TestMcpServerStatusTools covers the tools list on an mcp_status row,
+// including the MCP Apps _meta v0.3.290 adds (sdk.d.ts L1280).
+func TestMcpServerStatusTools(t *testing.T) {
+	var got McpServerStatus
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"name": "widgets",
+		"status": "connected",
+		"scope": "project",
+		"tools": [
+			{
+				"name": "show_chart",
+				"description": "draw a chart",
+				"annotations": {"readOnly": true},
+				"_meta": {
+					"ui": {
+						"resourceUri": "ui://widgets/chart.html",
+						"visibility": ["app"],
+						"prefersBorder": true
+					}
+				}
+			},
+			{"name": "legacy", "_meta": {"ui/resourceUri": "ui://widgets/old.html"}},
+			{"name": "plain"}
+		]
+	}`), &got))
+
+	assert.Equal(t, "project", got.Scope)
+	require.Len(t, got.Tools, 3)
+
+	chart := got.Tools[0]
+	assert.Equal(t, "draw a chart", chart.Description)
+	require.NotNil(t, chart.Annotations)
+	require.NotNil(t, chart.Annotations.ReadOnly)
+	assert.True(t, *chart.Annotations.ReadOnly)
+	assert.Nil(t, chart.Annotations.Destructive)
+	assert.Equal(t, "ui://widgets/chart.html", chart.UIResourceURI())
+	// Members the server added beyond resourceUri/visibility survive.
+	ui := chart.Meta["ui"].(map[string]interface{})
+	assert.Equal(t, true, ui["prefersBorder"])
+
+	assert.Equal(t, "ui://widgets/old.html", got.Tools[1].UIResourceURI(),
+		"the deprecated flat key still resolves")
+	assert.Empty(t, got.Tools[2].UIResourceURI())
+	assert.Nil(t, got.Tools[2].Meta)
+}
+
+func TestMcpServerStatusDisabledAndError(t *testing.T) {
+	var got []McpServerStatus
+	require.NoError(t, json.Unmarshal([]byte(`[
+		{"name": "off", "status": "disabled"},
+		{"name": "broken", "status": "failed", "error": "spawn ENOENT"}
+	]`), &got))
+
+	assert.Equal(t, McpServerStateDisabled, got[0].Status)
+	assert.Equal(t, McpServerStateFailed, got[1].Status)
+	assert.Equal(t, "spawn ENOENT", got[1].Error)
+}

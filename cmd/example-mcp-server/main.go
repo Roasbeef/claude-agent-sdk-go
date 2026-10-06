@@ -46,6 +46,28 @@ func main() {
 		nil,
 	)
 
+	// Resource: the MCP Apps (SEP-1865) widget a host renders for
+	// show_greeting.
+	server.AddResource(&mcp.Resource{
+		URI:      "ui://example/greeting.html",
+		Name:     "greeting-widget",
+		MIMEType: "text/html;profile=mcp-app",
+	}, func(
+		ctx context.Context,
+		req *mcp.ReadResourceRequest,
+	) (*mcp.ReadResourceResult, error) {
+		return &mcp.ReadResourceResult{
+			Contents: []*mcp.ResourceContents{{
+				URI:      req.Params.URI,
+				MIMEType: "text/html;profile=mcp-app",
+				Text:     "<!doctype html><p>Hello from example-mcp-server</p>",
+				Meta: mcp.Meta{
+					"ui": map[string]any{"prefersBorder": true},
+				},
+			}},
+		}, nil
+	})
+
 	// Tool: add_numbers - Adds two integers.
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "add_numbers",
@@ -116,6 +138,32 @@ func main() {
 		return &mcp.CallToolResult{
 			Content: []mcp.Content{
 				&mcp.TextContent{Text: result},
+			},
+		}, nil, nil
+	})
+
+	// Tool: show_greeting - Declares an MCP Apps (SEP-1865) UI resource in
+	// its _meta, so a host that renders ui:// widgets can show one for it.
+	type ShowGreetingArgs struct {
+		Name string `json:"name" jsonschema:"Who to greet"`
+	}
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "show_greeting",
+		Description: "Greet someone, with an HTML widget for hosts that render one",
+		Meta: mcp.Meta{
+			"ui": map[string]any{
+				"resourceUri": "ui://example/greeting.html",
+				"visibility":  []string{"model", "app"},
+			},
+		},
+	}, func(
+		ctx context.Context,
+		req *mcp.CallToolRequest,
+		args ShowGreetingArgs,
+	) (*mcp.CallToolResult, any, error) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: "Hello, " + args.Name},
 			},
 		}, nil, nil
 	})
