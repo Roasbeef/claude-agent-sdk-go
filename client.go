@@ -1016,9 +1016,13 @@ type SetMaxThinkingTokensOption func(*setMaxThinkingTokensOptions)
 //
 // This is the only path that accepts ThinkingDisplayHighlights; the
 // spawn-time ThinkingConfig.Display does not. Note that highlights is honored
-// by the API only for Anthropic-hosted Claude Code sessions. Elsewhere the
-// request still succeeds and the session quietly falls back to
-// ThinkingDisplayOmitted, with nothing on the response to say so.
+// by the API only for Anthropic-hosted Claude Code sessions. Where the session
+// cannot send it (Bedrock, Vertex and other providers without first-party
+// betas, experimental betas switched off, a Claude 3 model, or after the API
+// has already rejected it once) the request returns an error naming the cause
+// and the display stays as it was; the token budget still applies. Older
+// CLIs instead accepted the request and quietly fell back to
+// ThinkingDisplayOmitted.
 func WithThinkingDisplay(mode ThinkingDisplay) SetMaxThinkingTokensOption {
 	return func(o *setMaxThinkingTokensOptions) {
 		o.display = &ThinkingDisplayOverride{Mode: &mode}

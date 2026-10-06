@@ -108,7 +108,10 @@ type Options struct {
 	Env map[string]string
 
 	// PermissionMode controls tool execution permissions.
-	// Default: PermissionModeDefault
+	// Default: PermissionModeDefault, which keeps manual approvals through
+	// CanUseTool. Set "" to omit --permission-mode and let the CLI pick its
+	// starting mode as it does for claude -p: the settings'
+	// permissions.defaultMode, else auto where auto mode is available.
 	PermissionMode PermissionMode
 
 	// AllowDangerouslySkipPermissions enables bypassing permissions.
@@ -705,7 +708,10 @@ type Settings struct {
 	// those applies, and it is ignored in .claude/settings.json and
 	// .claude/settings.local.json (sdk.d.ts v0.3.241 L7381).
 	Spellcheck *SettingsSpellcheck `json:"spellcheck,omitempty"`
-	// Ultracode enables session-scoped workflow orchestration, typically via --settings or apply_flag_settings. Mirrors sdk.d.ts v0.3.168 L5413.
+	// Ultracode enables standing dynamic-workflow orchestration for the
+	// session at any effort level (it no longer implies xhigh), typically via
+	// --settings or apply_flag_settings. Requires workflows to be enabled and
+	// a model that supports ultracode (sdk.d.ts v0.3.290 L8987).
 	Ultracode                    *bool  `json:"ultracode,omitempty"`
 	AutoCompactWindow            *int   `json:"autoCompactWindow,omitempty"`
 	AdvisorModel                 string `json:"advisorModel,omitempty"`
@@ -4066,12 +4072,14 @@ type MCPServerConfig struct {
 	// or the default.
 	Timeout *int `json:"timeout,omitempty"`
 	// AlwaysLoad, when true, forces every tool from this server to be included
-	// in the prompt instead of deferred behind tool search. Equivalent to
-	// setting defer_loading: false on the API. Default: tools are deferred
-	// when tool search is enabled. Side effect: setting this blocks startup
-	// until the server is connected (capped at the standard 5s connect
-	// timeout), even though MCP startup is otherwise non-blocking; the tools
-	// must be present when the turn-1 prompt is built.
+	// in the prompt instead of deferred behind tool search, except a tool the
+	// server itself lists with _meta anthropic/alwaysLoad set to false.
+	// Equivalent to setting defer_loading: false on the API. When false, all
+	// of the server's tools are deferred behind tool search. Default: tools
+	// are deferred when tool search is enabled. Side effect: true blocks
+	// startup until the server is connected (capped at the standard 5s
+	// connect timeout), even though MCP startup is otherwise non-blocking;
+	// the tools must be present when the turn-1 prompt is built.
 	AlwaysLoad *bool `json:"alwaysLoad,omitempty"`
 }
 
