@@ -1084,7 +1084,8 @@ type SDKControlRequestBody struct {
 	Surface           string                      `json:"surface,omitempty"`              // For submit_feedback
 	TaskID            string                      `json:"task_id,omitempty"`              // For stop_task/get_task_output
 	ServerName        string                      `json:"server_name,omitempty"`          // For mcp_message (snake_case)
-	MCPServerName     string                      `json:"serverName,omitempty"`           // For mcp_reconnect/mcp_toggle/mcp_set_servers (camelCase)
+	MCPServerName     string                      `json:"serverName,omitempty"`           // For mcp_reconnect/mcp_toggle/mcp_set_servers/mcp_read_resource (camelCase)
+	URI               string                      `json:"uri,omitempty"`                  // For mcp_read_resource
 	Enabled           *bool                       `json:"enabled,omitempty"`              // For mcp_toggle (pointer so explicit false serializes)
 	Servers           *map[string]MCPServerConfig `json:"servers,omitempty"`              // For mcp_set_servers (pointer so nil/empty round-trips as {})
 	Message           map[string]interface{}      `json:"message,omitempty"`              // For mcp_message (JSONRPC)
