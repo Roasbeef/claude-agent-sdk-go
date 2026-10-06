@@ -101,6 +101,52 @@ type McpServerStatus struct {
 	// the field, which means unknown rather than "not an SDK server"
 	// (sdk.d.ts v0.3.278 L1197).
 	Source MCPServerSource `json:"source,omitempty"`
+	// Error describes why the server failed to connect.
+	Error string `json:"error,omitempty"`
+	// Scope is the configuration scope the server was loaded from (project,
+	// user, local, claudeai, managed, ...).
+	Scope string `json:"scope,omitempty"`
+	// Tools are the tools the server provides; populated once it is
+	// connected.
+	Tools []McpServerStatusTool `json:"tools,omitempty"`
+}
+
+// McpServerStatusTool is one tool a connected MCP server provides, as
+// mcp_status reports it.
+type McpServerStatusTool struct {
+	Name        string                    `json:"name"`
+	Description string                    `json:"description,omitempty"`
+	Annotations *McpServerToolAnnotations `json:"annotations,omitempty"`
+	// Meta carries the MCP Apps (SEP-1865) members of the tool's _meta, for a
+	// host that renders the tool's ui:// resource, under the keys the server
+	// used: "ui" (an object with resourceUri, a ui:// string, visibility, an
+	// array of "model" | "app", and any other member the server sent) and the
+	// deprecated flat "ui/resourceUri". The CLI validates and size-bounds
+	// them and withholds every other _meta key. Present only on a tool that
+	// declares one, from CLIs advertising the mcp_tool_ui_meta_v1 capability
+	// (sdk.d.ts v0.3.290 L1280).
+	Meta map[string]interface{} `json:"_meta,omitempty"`
+}
+
+// UIResourceURI returns the ui:// resource the tool declares for MCP Apps
+// rendering, preferring the nested ui.resourceUri over the deprecated flat
+// ui/resourceUri key. Empty when the tool declares neither.
+func (t McpServerStatusTool) UIResourceURI() string {
+	if ui, ok := t.Meta["ui"].(map[string]interface{}); ok {
+		if uri, ok := ui["resourceUri"].(string); ok {
+			return uri
+		}
+	}
+	uri, _ := t.Meta["ui/resourceUri"].(string)
+	return uri
+}
+
+// McpServerToolAnnotations are the behavior hints a server declares for one
+// of its tools.
+type McpServerToolAnnotations struct {
+	ReadOnly    *bool `json:"readOnly,omitempty"`
+	Destructive *bool `json:"destructive,omitempty"`
+	OpenWorld   *bool `json:"openWorld,omitempty"`
 }
 
 // IsSDK reports whether the server is an in-process one this SDK host
@@ -122,6 +168,9 @@ const (
 	McpServerStateNeedsAuth McpServerState = "needs-auth"
 	// McpServerStatePending indicates connection in progress.
 	McpServerStatePending McpServerState = "pending"
+	// McpServerStateDisabled indicates the server is configured but turned
+	// off.
+	McpServerStateDisabled McpServerState = "disabled"
 )
 
 // McpServerInfo contains metadata about a connected MCP server.

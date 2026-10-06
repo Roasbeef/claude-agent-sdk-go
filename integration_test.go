@@ -5205,3 +5205,65 @@ func TestIntegrationGetTaskOutput(t *testing.T) {
 	assert.GreaterOrEqual(t, got.TotalBytes, int64(len(got.Output)))
 	assert.False(t, got.Truncated, "a few bytes of output is not truncated")
 }
+
+// TestIntegrationMCPToolUIMeta asserts mcp_status lists a configured
+// server's tools and passes through the MCP Apps ui metadata the example
+// server's show_greeting tool declares (sdk.d.ts v0.3.290 L1280).
+func TestIntegrationMCPToolUIMeta(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	mcpServerPath := filepath.Join(t.TempDir(), "example-mcp-server")
+	buildCmd := exec.Command("go", "build", "-o", mcpServerPath, "./cmd/example-mcp-server")
+	out, err := buildCmd.CombinedOutput()
+	require.NoError(t, err, "failed to build MCP server: %s", out)
+
+	opts := append(isolatedClientOptions(t),
+		WithMCPServers(map[string]MCPServerConfig{
+			"example": {Type: "stdio", Command: mcpServerPath},
+		}),
+		WithStrictMCPConfig(true),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	// MCP startup is non-blocking, so the server may still be pending on the
+	// first poll.
+	var found *McpServerStatus
+	deadline := time.Now().Add(30 * time.Second)
+	for found == nil && time.Now().Before(deadline) {
+		statuses, err := stream.McpServerStatus(ctx)
+		require.NoError(t, err)
+		for i := range statuses {
+			s := statuses[i]
+			if s.Name == "example" && s.Status == McpServerStateConnected {
+				found = &s
+			}
+		}
+		if found == nil {
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+	require.NotNil(t, found, "example server never connected")
+
+	var greeting *McpServerStatusTool
+	for i := range found.Tools {
+		if found.Tools[i].Name == "show_greeting" {
+			greeting = &found.Tools[i]
+		}
+	}
+	require.NotNil(t, greeting, "tools: %+v", found.Tools)
+
+	if greeting.Meta == nil {
+		t.Skip("CLI predates mcp_tool_ui_meta_v1")
+	}
+	assert.Equal(t, "ui://example/greeting.html", greeting.UIResourceURI())
+}
