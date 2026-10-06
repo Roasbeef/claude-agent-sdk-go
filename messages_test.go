@@ -2487,6 +2487,47 @@ func TestParseMessageSystemInitCapabilities(t *testing.T) {
 	assert.Equal(t, []string{"interrupt_receipt_v1", "some_future_cap"}, systemMsg.Capabilities)
 }
 
+func TestParseMessageSystemInitPluginErrors(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "init",
+		"uuid": "550e8400-e29b-41d4-a716-446655440701",
+		"session_id": "sess_plugins_001",
+		"apiKeySource": "env",
+		"cwd": "/workspace/project",
+		"tools": [],
+		"mcp_servers": [],
+		"model": "claude-opus-4-8",
+		"permissionMode": "default",
+		"slash_commands": [],
+		"output_style": "default",
+		"plugins": [{"name": "lint", "path": "/plugins/lint", "version": "1.2.0"}],
+		"plugin_errors": [
+			{"plugin": "inline[1]", "type": "path-not-found",
+			 "message": "no such directory", "path": "/workspace/project/missing"},
+			{"plugin": "lint@local", "type": "hook-load-failed",
+			 "message": "hooks.json is not valid JSON"}
+		]
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	init := msg.(SystemMessage)
+	require.Len(t, init.Plugins, 1)
+	assert.Equal(t, "1.2.0", init.Plugins[0].Version)
+
+	require.Len(t, init.PluginErrors, 2)
+	assert.Equal(t, SystemPluginError{
+		Plugin:  "inline[1]",
+		Type:    "path-not-found",
+		Message: "no such directory",
+		Path:    "/workspace/project/missing",
+	}, init.PluginErrors[0])
+	assert.Empty(t, init.PluginErrors[1].Path,
+		"a plugin that loaded with a broken component carries no path")
+}
+
 func TestParseMessageCompactBoundary(t *testing.T) {
 	input := `{
 		"type": "system",
@@ -4320,6 +4361,37 @@ func TestParseMessageConversationReset(t *testing.T) {
 	assert.Equal(t, "conversation_reset", reset.MessageType())
 	assert.Equal(t, "conv_9f00", reset.NewConversationID)
 	assert.Equal(t, "sess_reset_001", reset.SessionID)
+}
+
+func TestParseMessageConversationResetTrigger(t *testing.T) {
+	msg, err := ParseMessage([]byte(`{
+		"type": "conversation_reset",
+		"new_conversation_id": "conv_9f01",
+		"uuid": "550e8400-e29b-41d4-a716-446655440601",
+		"session_id": "sess_reset_002",
+		"trigger": "clear",
+		"user_message_uuid": "550e8400-e29b-41d4-a716-446655440602",
+		"timestamp": "2026-10-05T18:15:52.814Z"
+	}`))
+	require.NoError(t, err)
+
+	reset := msg.(ConversationResetMessage)
+	assert.Equal(t, ConversationResetTriggerClear, reset.Trigger)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440602", reset.UserMessageUUID)
+	assert.Equal(t, "2026-10-05T18:15:52.814Z", reset.Timestamp)
+
+	// An unknown trigger from a newer CLI must still decode.
+	msg, err = ParseMessage([]byte(`{
+		"type": "conversation_reset",
+		"new_conversation_id": "conv_9f02",
+		"uuid": "550e8400-e29b-41d4-a716-446655440603",
+		"session_id": "sess_reset_002",
+		"trigger": "some_future_flow"
+	}`))
+	require.NoError(t, err)
+	reset = msg.(ConversationResetMessage)
+	assert.Equal(t, ConversationResetTrigger("some_future_flow"), reset.Trigger)
+	assert.Empty(t, reset.UserMessageUUID)
 }
 
 func TestParseMessageActiveGoal(t *testing.T) {
@@ -6355,4 +6427,63 @@ func TestUserMessageInlinePastes(t *testing.T) {
 		"inline_pastes": ["a", "b"]
 	}`), &decoded))
 	assert.Equal(t, []string{"a", "b"}, decoded.InlinePastes)
+}
+
+// TestAssortedParityV0_3_290 covers the small v0.3.290 decode-side adds:
+// init view_mode, informational tag, the task-notification session-inbox
+// subkind and fireReason, provider_not_allowed, and the first-text-post
+// queue timings.
+func TestAssortedParityV0_3_290(t *testing.T) {
+	t.Run("init view_mode", func(t *testing.T) {
+		msg, err := ParseMessage([]byte(`{
+			"type": "system", "subtype": "init",
+			"uuid": "550e8400-e29b-41d4-a716-446655440800",
+			"session_id": "s", "apiKeySource": "env", "cwd": "/w",
+			"tools": [], "mcp_servers": [], "model": "m",
+			"permissionMode": "default", "slash_commands": [],
+			"output_style": "default", "view_mode": "focus"
+		}`))
+		require.NoError(t, err)
+		assert.Equal(t, ViewModeFocus, msg.(SystemMessage).ViewMode)
+	})
+
+	t.Run("informational tag", func(t *testing.T) {
+		var got InformationalMessage
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"type": "system", "subtype": "informational",
+			"content": "Compacted", "level": "notice",
+			"tag": "some_feature", "uuid": "u", "session_id": "s"
+		}`), &got))
+		assert.Equal(t, "some_feature", got.Tag)
+	})
+
+	t.Run("scheduled trigger fire reason and session inbox", func(t *testing.T) {
+		var origin MessageOrigin
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"kind": "task-notification",
+			"subkind": "scheduled-trigger",
+			"fireReason": "catch_up"
+		}`), &origin))
+		assert.Equal(t, MessageOriginSubkindScheduledTrigger, origin.Subkind)
+		assert.Equal(t, "catch_up", origin.FireReason)
+
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"kind": "task-notification", "subkind": "session-inbox"
+		}`), &origin))
+		assert.Equal(t, MessageOriginSubkindSessionInbox, origin.Subkind)
+	})
+
+	t.Run("result startup reason and text post queue", func(t *testing.T) {
+		var got ResultMessage
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"type": "result", "subtype": "success",
+			"startup_failure_reason": "provider_not_allowed",
+			"first_text_post_queue_wait_ms": 42,
+			"first_text_post_queued_behind": "durable_post"
+		}`), &got))
+		assert.Equal(t, StartupFailureProviderNotAllowed, got.StartupFailureReason)
+		require.NotNil(t, got.FirstTextPostQueueWaitMs)
+		assert.Equal(t, int64(42), *got.FirstTextPostQueueWaitMs)
+		assert.Equal(t, FirstPostQueuedBehind("durable_post"), got.FirstTextPostQueuedBehind)
+	})
 }

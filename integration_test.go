@@ -5326,6 +5326,144 @@ func TestIntegrationReadMcpResource(t *testing.T) {
 	assert.Error(t, err, "a non-ui:// URI must be refused")
 }
 
+// TestIntegrationConversationResetTrigger runs /clear in a streaming session
+// and checks the conversation_reset frame names it (sdk.d.ts v0.3.290
+// L5132).
+func TestIntegrationConversationResetTrigger(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	client, err := NewClient(isolatedClientOptions(t)...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx, "/clear"))
+
+	var reset *ConversationResetMessage
+	for msg := range stream.Messages() {
+		if m, ok := msg.(ConversationResetMessage); ok {
+			reset = &m
+			break
+		}
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+	if reset == nil {
+		t.Skip("CLI did not emit conversation_reset for /clear on this lane")
+	}
+
+	assert.NotEmpty(t, reset.NewConversationID)
+	if reset.Trigger == "" {
+		t.Skip("CLI predates conversation_reset trigger")
+	}
+	assert.Equal(t, ConversationResetTriggerClear, reset.Trigger)
+	assert.NotEmpty(t, reset.Timestamp)
+	// We sent no uuid of our own, so this is the one the CLI assigned to the
+	// typed /clear.
+	assert.NotEmpty(t, reset.UserMessageUUID)
+}
+
+// TestIntegrationInitPluginErrors configures one loadable plugin and one
+// missing plugin directory, and checks the init message reports the second
+// under plugin_errors with its path (sdk.d.ts v0.3.290 L5958).
+func TestIntegrationInitPluginErrors(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	const pluginName = "daedalus-probe"
+	goodDir := writeProbePlugin(t, pluginName)
+	missingDir := filepath.Join(t.TempDir(), "no-such-plugin")
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithPlugins([]PluginConfig{
+			{Type: PluginTypeLocal, Path: goodDir},
+			{Type: PluginTypeLocal, Path: missingDir},
+		}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var init *SystemMessage
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(SystemMessage); ok && m.Subtype == "init" {
+			init = &m
+			break
+		}
+	}
+	require.NotNil(t, init, "no init message")
+
+	var probe *SystemPlugin
+	for i := range init.Plugins {
+		if init.Plugins[i].Name == pluginName {
+			probe = &init.Plugins[i]
+		}
+	}
+	require.NotNil(t, probe, "probe plugin did not load: %+v", init.Plugins)
+	assert.Equal(t, "0.0.1", probe.Version)
+
+	if len(init.PluginErrors) == 0 {
+		t.Skip("CLI predates plugin_errors on init")
+	}
+	var found bool
+	for _, e := range init.PluginErrors {
+		t.Logf("plugin_error: %+v", e)
+		if e.Path == missingDir {
+			found = true
+			assert.NotEmpty(t, e.Type)
+			assert.NotEmpty(t, e.Message)
+		}
+	}
+	assert.True(t, found, "no plugin_errors entry for %s", missingDir)
+}
+
+// TestIntegrationInitViewMode checks the per-turn init frame of a headless
+// stream-json session reports the transcript view (sdk.d.ts v0.3.290 L5982).
+// Only the default is reachable here: a headless session answers /focus with
+// "isn't available here yet", so the focus value is covered by the unit test.
+func TestIntegrationInitViewMode(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var init *SystemMessage
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(SystemMessage); ok && m.Subtype == "init" {
+			init = &m
+			break
+		}
+	}
+	require.NotNil(t, init, "no init message")
+
+	if init.ViewMode == "" {
+		t.Skip("CLI predates view_mode on init")
+	}
+	assert.Equal(t, ViewModeDefault, init.ViewMode)
+}
+
 // TestIntegrationSettingsParityV0_3_290 pushes the v0.3.290 settings through
 // the managed tier and completes a turn. allowedProviders names the provider
 // this session actually uses, so a correctly-shaped list must let it start;

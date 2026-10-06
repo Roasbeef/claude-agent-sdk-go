@@ -623,12 +623,20 @@ type ResultMessage struct {
 	FirstTextPostMs *int64 `json:"first_text_post_ms,omitempty"`
 	// FirstTextPostWallMs is the wall-clock time of that first text post, ms
 	// since epoch (success only; sdk.d.ts v0.3.278 L5441).
-	FirstTextPostWallMs      *int64 `json:"first_text_post_wall_ms,omitempty"`
-	TimeToRequestFromSpawnMs *int64 `json:"time_to_request_from_spawn_ms,omitempty"` // Time to request from spawn in milliseconds
-	WarmSpareClaimed         *bool  `json:"warm_spare_claimed,omitempty"`            // Whether a warm spare was claimed
-	TimeOriginMs             *int64 `json:"time_origin_ms,omitempty"`                // Wall-clock origin for the above timings, in milliseconds (success only)
-	IsError                  bool   `json:"is_error,omitempty"`                      // Whether this is an error result
-	NumTurns                 int    `json:"num_turns,omitempty"`                     // Number of conversation turns
+	FirstTextPostWallMs *int64 `json:"first_text_post_wall_ms,omitempty"`
+	// FirstTextPostQueueWaitMs is how long the first text post waited in the
+	// queue before being sent; the FirstTextPostMs counterpart of
+	// FirstStreamPostQueueWaitMs (success only; sdk.d.ts v0.3.290 L5772).
+	FirstTextPostQueueWaitMs *int64 `json:"first_text_post_queue_wait_ms,omitempty"`
+	// FirstTextPostQueuedBehind says what the first text post waited on,
+	// with the same values and the same "none" versus absent distinction as
+	// FirstStreamPostQueuedBehind (success only; sdk.d.ts v0.3.290 L5773).
+	FirstTextPostQueuedBehind FirstPostQueuedBehind `json:"first_text_post_queued_behind,omitempty"`
+	TimeToRequestFromSpawnMs  *int64                `json:"time_to_request_from_spawn_ms,omitempty"` // Time to request from spawn in milliseconds
+	WarmSpareClaimed          *bool                 `json:"warm_spare_claimed,omitempty"`            // Whether a warm spare was claimed
+	TimeOriginMs              *int64                `json:"time_origin_ms,omitempty"`                // Wall-clock origin for the above timings, in milliseconds (success only)
+	IsError                   bool                  `json:"is_error,omitempty"`                      // Whether this is an error result
+	NumTurns                  int                   `json:"num_turns,omitempty"`                     // Number of conversation turns
 
 	// TotalCostUSD is the cumulative estimated cost in USD for this query()
 	// call, covering the same calls as ModelUsage and sharing its lifecycle:
@@ -738,6 +746,10 @@ const (
 	// token is configured instead.
 	// #nosec G101 -- a startup-failure enum value, not a credential.
 	StartupFailureOrgPinAPIKeyConflict StartupFailureReason = "org_pin_api_key_conflict"
+	// StartupFailureProviderNotAllowed means managed settings list the API
+	// providers this machine may use (allowedProviders) and the session is
+	// set up for one that isn't listed.
+	StartupFailureProviderNotAllowed StartupFailureReason = "provider_not_allowed"
 	// StartupFailureOrgVerifyFailed means the sign-in's organization could
 	// not be verified against the pin, through a network failure or a revoked
 	// token.
@@ -746,7 +758,9 @@ const (
 	// organization the pin does not allow.
 	StartupFailureOrgPinMismatch StartupFailureReason = "org_pin_mismatch"
 	// StartupFailureManagedSettingsInvalid means managed policy settings
-	// could not be read, or the pin names no organization.
+	// could not be read, the pin names no organization, or managed model
+	// settings (deniedModels, or an availableModels list matched exactly)
+	// block the default model and leave no allowed model to step down to.
 	StartupFailureManagedSettingsInvalid StartupFailureReason = "managed_settings_invalid"
 	// StartupFailureRemoteSettingsRequiredUnavailable means managed settings
 	// the organization requires could not be loaded.
@@ -852,10 +866,17 @@ type MessageOrigin struct {
 	// instead of re-parsing the message text (sdk.d.ts v0.3.207).
 	Body string `json:"body,omitempty"`
 	// Subkind refines the "task-notification" kind: a scheduled trigger, a
-	// coordinator co-member SendMessage delivery, or a Claude Code Projects
-	// relay. Absent on webhook, PR-steward, plugin, and background-event
-	// deliveries (sdk.d.ts v0.3.241 L4377).
+	// coordinator co-member SendMessage delivery, a Claude Code Projects
+	// relay, or a session-inbox delivery. Absent on webhook, PR-steward,
+	// plugin, and background-event deliveries (sdk.d.ts v0.3.290 L5379).
 	Subkind MessageOriginSubkind `json:"subkind,omitempty"`
+	// FireReason says why a "scheduled-trigger" delivery fired: a short
+	// lowercase token such as "scheduled", "manual", "retry", "catch_up" or
+	// "api". Set by the server for cloud routines, or declared by a local
+	// host for its own scheduled runs (honored only in a process started
+	// with CLAUDE_CODE_HOST_SCHEDULED_RUN=1). Open set; empty when neither
+	// sent one (sdk.d.ts v0.3.290 L5383).
+	FireReason string `json:"fireReason,omitempty"`
 }
 
 // MessageOriginSubkind refines a MessageOrigin's kind.
@@ -886,6 +907,10 @@ const (
 	// keeps the generic background-notification frame (sdk.d.ts v0.3.241
 	// L4377).
 	MessageOriginSubkindProjectsRelay MessageOriginSubkind = "projects-relay"
+	// MessageOriginSubkindSessionInbox marks a "task-notification" origin
+	// delivered through the session's inbox. sdk.d.ts v0.3.290 L5379 adds
+	// the value without describing it.
+	MessageOriginSubkindSessionInbox MessageOriginSubkind = "session-inbox"
 )
 
 // PeerFromMode is the sending session's permission class on a "peer" origin.
@@ -1239,15 +1264,49 @@ type ActiveGoalValue struct {
 // MessageType implements Message.
 func (m ActiveGoalMessage) MessageType() string { return "active_goal" }
 
-// ConversationResetMessage is emitted by /clear, plan-mode exit, and
-// fresh-session flows. The surface should mount a fresh transcript under
-// NewConversationID and reset any cached session title.
+// ConversationResetMessage is emitted by /clear, plan-mode exit,
+// fresh-session, and onboarding flows. The surface should mount a fresh
+// transcript under NewConversationID and reset any cached session title.
 type ConversationResetMessage struct {
 	Type              string `json:"type"`                // Always "conversation_reset"
 	NewConversationID string `json:"new_conversation_id"` // Conversation ID to mount the fresh transcript under
 	UUID              string `json:"uuid"`                // Unique message ID
 	SessionID         string `json:"session_id"`          // Session identifier
+	// Trigger says what discarded the conversation. It's informational: a
+	// consumer resets on every conversation_reset whatever it says, and
+	// treats an empty (older CLI) or unknown value as an unspecified reset
+	// (sdk.d.ts v0.3.290 L5132).
+	Trigger ConversationResetTrigger `json:"trigger,omitempty"`
+	// UserMessageUUID is set only for ConversationResetTriggerClear: the uuid
+	// of the user message whose /clear ran (the client's own uuid when it
+	// sent one). It lets a consumer match this frame to a /clear it already
+	// saw and wipe once, whichever arrives first, instead of relying on
+	// arrival order. Empty when that uuid is not canonical.
+	UserMessageUUID string `json:"user_message_uuid,omitempty"`
+	// Timestamp is when the reset happened, as an ISO 8601 UTC string from
+	// the clock of the process that performed it. For display only, not for
+	// ordering frames; fall back to receive time when empty.
+	Timestamp string `json:"timestamp,omitempty"`
 }
+
+// ConversationResetTrigger names what discarded a conversation. Open set:
+// compare against the constants, but expect values beyond them.
+type ConversationResetTrigger string
+
+const (
+	// ConversationResetTriggerClear is /clear, or its /reset and /new
+	// aliases.
+	ConversationResetTriggerClear ConversationResetTrigger = "clear"
+	// ConversationResetTriggerPlanModeExit is leaving plan mode with the
+	// clear-context option.
+	ConversationResetTriggerPlanModeExit ConversationResetTrigger = "plan_mode_exit"
+	// ConversationResetTriggerFreshSession is a flow that starts a fresh
+	// session to implement an approved plan.
+	ConversationResetTriggerFreshSession ConversationResetTrigger = "fresh_session"
+	// ConversationResetTriggerOnboarding is an onboarding flow re-run inside
+	// an existing session.
+	ConversationResetTriggerOnboarding ConversationResetTrigger = "onboarding"
+)
 
 // MessageType implements Message.
 func (m ConversationResetMessage) MessageType() string { return "conversation_reset" }
@@ -1495,13 +1554,20 @@ type SystemMessage struct {
 	// cases, showing everything is the safe fallback (sdk.d.ts v0.3.233
 	// L4712).
 	TerminalSlashCommands []string       `json:"terminal_slash_commands,omitempty"`
-	OutputStyle           string         `json:"output_style"`              // Output formatting style
-	ClaudeCodeVersion     string         `json:"claude_code_version"`       // Claude Code version
-	Skills                []string       `json:"skills"`                    // Available skills
-	Plugins               []SystemPlugin `json:"plugins"`                   // Available plugins
-	Agents                []string       `json:"agents,omitempty"`          // Available agents
-	Betas                 []string       `json:"betas,omitempty"`           // Enabled beta flags
-	FastModeState         *FastModeState `json:"fast_mode_state,omitempty"` // Fast mode state
+	OutputStyle           string         `json:"output_style"`        // Output formatting style
+	ClaudeCodeVersion     string         `json:"claude_code_version"` // Claude Code version
+	Skills                []string       `json:"skills"`              // Available skills
+	Plugins               []SystemPlugin `json:"plugins"`             // Available plugins
+	// PluginErrors lists plugin load-time errors. A plugin that did not load
+	// at all is absent from Plugins; one that loaded without some component
+	// keeps its row and also gets an entry here. Absent when there are no
+	// errors, but also always absent on sessions whose frames are persisted
+	// server-side (Remote Control workers), so an empty slice does not assert
+	// a clean load (sdk.d.ts v0.3.290 L5958).
+	PluginErrors  []SystemPluginError `json:"plugin_errors,omitempty"`
+	Agents        []string            `json:"agents,omitempty"`          // Available agents
+	Betas         []string            `json:"betas,omitempty"`           // Enabled beta flags
+	FastModeState *FastModeState      `json:"fast_mode_state,omitempty"` // Fast mode state
 	// FastModeDisabledReason explains why fast mode could not serve, when
 	// FastModeState is not "on". Absent when nothing blocks it.
 	FastModeDisabledReason *FastModeDisabledReason `json:"fast_mode_disabled_reason,omitempty"`
@@ -1516,6 +1582,14 @@ type SystemMessage struct {
 	// accepts inbound queued_notification stream messages and drains them via
 	// the ReadNotifications tool. Absent on older CLIs.
 	Capabilities []string `json:"capabilities,omitempty"`
+	// ViewMode says whether the transcript is in focus view: "focus" means
+	// the model is told the user sees only its final message per turn, so a
+	// client may collapse each turn to the prompt and the final response.
+	// Toggled by /focus. Published on Remote Control bridge inits and on the
+	// per-turn init of headless stream-json runs; empty on hosts that don't
+	// publish it and on older CLIs. Re-emitted inits carry the current value,
+	// so the newest frame wins (sdk.d.ts v0.3.290 L5982).
+	ViewMode ViewMode `json:"view_mode,omitempty"`
 	// Effort is the effort level the session will send on its next request,
 	// after env overrides, session state, org caps and model-support
 	// downgrades — the same value get_settings reports as applied.effort.
@@ -1532,6 +1606,17 @@ type SystemMessage struct {
 	// value, so the newest frame wins (sdk.d.ts v0.3.241 L4816).
 	Effort NullableEffortLevel `json:"effort,omitzero"`
 }
+
+// ViewMode is the transcript view the init message reports.
+type ViewMode string
+
+const (
+	// ViewModeFocus means the model is told the user sees only its final
+	// message per turn.
+	ViewModeFocus ViewMode = "focus"
+	// ViewModeDefault is the ordinary transcript view.
+	ViewModeDefault ViewMode = "default"
+)
 
 // NullableEffortLevel carries a wire field where an explicit JSON null means
 // something other than "absent".
@@ -1593,6 +1678,28 @@ func (i MCPServerInfo) IsSDK() bool {
 type SystemPlugin struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
+	// Version is the version the plugin's plugin.json declares, verbatim.
+	// It's plugin-author-controlled, so validate before trusting it. Empty
+	// when the manifest declares none.
+	Version string `json:"version,omitempty"`
+}
+
+// SystemPluginError is one plugin load-time error on the init message.
+type SystemPluginError struct {
+	// Plugin is name@marketplace, or the positional inline[N] / synced[N]
+	// tag for a directory entry that failed before it had a name.
+	Plugin string `json:"plugin"`
+	// Type is a category from an open set (path-not-found, generic-error,
+	// manifest-validation-error, dependency-unsatisfied, hook-load-failed,
+	// ...); treat a value you don't recognize as a generic failure.
+	Type string `json:"type"`
+	// Message is display text.
+	Message string `json:"message"`
+	// Path is set only when a --plugin-dir, SDK plugins or synced directory
+	// entry did not load at all: that entry's path resolved against the cwd,
+	// which is how a host mounting several directories pairs the error with
+	// its own entry.
+	Path string `json:"path,omitempty"`
 }
 
 // PartialAssistantMessage represents a streaming partial message.
@@ -2415,9 +2522,13 @@ type InformationalMessage struct {
 	ToolUseID string `json:"tool_use_id,omitempty"`
 	// PreventContinuation, when true, stops execution after this message
 	// (e.g. a Stop hook denied continuation).
-	PreventContinuation bool   `json:"prevent_continuation,omitempty"`
-	UUID                string `json:"uuid"`       // Unique message ID
-	SessionID           string `json:"session_id"` // Session identifier
+	PreventContinuation bool `json:"prevent_continuation,omitempty"`
+	// Tag is an opaque feature tag on a line a host may treat specially;
+	// empty on ordinary lines. Ignore values you don't know (sdk.d.ts
+	// v0.3.290 L5261).
+	Tag       string `json:"tag,omitempty"`
+	UUID      string `json:"uuid"`       // Unique message ID
+	SessionID string `json:"session_id"` // Session identifier
 }
 
 // MessageType implements Message.
