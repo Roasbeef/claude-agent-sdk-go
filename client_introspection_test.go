@@ -1165,3 +1165,43 @@ func TestUpdateSettingsSources(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamGetTaskOutput(t *testing.T) {
+	t.Run("request wire shape and parse", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"output":      "line 2\nline 3\n",
+				"total_bytes": 20000,
+				"truncated":   true,
+			}),
+		)
+
+		var got *SDKControlGetTaskOutputResponse
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			var err error
+			got, err = stream.GetTaskOutput(ctx, "bash_1")
+			return err
+		})
+		require.NoError(t, err)
+
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1","request":{"subtype":"get_task_output","task_id":"bash_1"}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+		assert.Equal(t, "line 2\nline 3\n", got.Output)
+		assert.Equal(t, int64(20000), got.TotalBytes)
+		assert.True(t, got.Truncated)
+	})
+
+	t.Run("error", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(
+			controlErrorResponse("unknown task bash_9"))
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.GetTaskOutput(ctx, "bash_9")
+			return err
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unknown task")
+	})
+}
