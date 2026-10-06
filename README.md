@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.278 catchup work, using Go idioms where the API shape differs.
+v0.3.290 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -929,6 +929,66 @@ Deferred in v0.3.278:
 - `bridge.d.ts` and `browser-sdk.d.ts` — no Go bridge/WebSocket transport exists.
 - `sdkMcpServerManifests` on initialize — tracked in #256.
 
+The v0.3.290 catchup added:
+
+- `Options.VerbatimPrompts` and `UserMessage.ClientComposed`. With the flag
+  set, the CLI delivers prompt text as written: no `@path` expansion and no
+  slash-command dispatch. Current CLIs also skip the turn-start attachment
+  pass for such a turn, so nested `CLAUDE.md`, skill listings and the like
+  arrive after the first tool call instead of with the prompt.
+- `Stream.SendMessage` — send a caller-built `UserMessage`, the analogue of
+  handing an `SDKUserMessage` to `streamInput`. It's the only way to set
+  `PastedContent`, the new `InlinePastes`, a per-message `ClientComposed`, a
+  client `UUID` or a `Priority`.
+- `Stream.GetTaskOutput` — the `get_task_output` control request: the last
+  8 KiB a background shell or Monitor task wrote, plus total size and a
+  truncated flag, without a model turn.
+- MCP Apps (SEP-1865) support: `McpServerStatus.Tools` with each tool's
+  validated `_meta` (`UIResourceURI()` resolves the `ui://` resource it
+  declares), and `Stream.ReadMcpResource`, the `mcp_read_resource` control
+  request that fetches that resource from a server the CLI dialed. The reply
+  is untrusted third-party HTML; render it sandboxed. The status rows also
+  gained the long-missing `error`, `scope` and `disabled` state.
+- `conversation_reset` gains `trigger` (`clear`, `plan_mode_exit`,
+  `fresh_session`, `onboarding`; open set), the `user_message_uuid` of the
+  `/clear` that caused it, and a display `timestamp`.
+- Init gains `plugin_errors` (load-time plugin failures, with the resolved
+  path of a directory entry that didn't load at all), `view_mode`, and the
+  plugin row's manifest `version`.
+- Small decode-side adds: informational `tag`, the `session-inbox`
+  task-notification subkind and scheduled-trigger `fireReason`, the
+  `provider_not_allowed` startup failure reason, and the first-text-post
+  queue timings on the result.
+- Settings: `availableModelsMatch`, `deniedModels`,
+  `allowClaudeInChromeWithManagedMcp`, `allowedProviders` (an empty list
+  allows *no* provider, so it is tagged `omitzero`), `maxProseWidth`,
+  `idleCompaction`, the per-model `autoCompactWindow` (`"auto"` or a token
+  count), and `attribution: false` via `SettingsAttribution.HideAll`.
+- A wire fix: `SetMaxThinkingTokens(ctx, nil)` now sends an explicit
+  `max_thinking_tokens: null`. Current CLIs read an absent key as "leave the
+  budget alone", so the old omitted encoding had quietly stopped resetting.
+
+PRs in this cycle (squash-merged): #277 `verbatimPrompts`, #278
+`inline_pastes`, #279 `get_task_output`, #280 `mcp_status` tools and `_meta`,
+#281 `mcp_read_resource`, #282 `conversation_reset` trigger, #283
+`plugin_errors`, #284 assorted field adds, #286 Settings parity, #287
+`attribution` boolean, #288 the thinking-tokens null, #290
+`Stream.SendMessage`, plus this docs refresh. #285 fixed a register-after-write
+race in `Initialize` found along the way.
+
+Deferred in v0.3.290:
+
+- `prewarm()` / `SpareProcess` / `ClaimOptions` (alpha). It rides
+  `--await-claim` plus a `claim_session` control request whose shape is not
+  declared in `sdk.d.ts`, and its claim-refused / fall-back-to-`query()`
+  lifecycle is a design call for the Go API rather than a mechanical port.
+- `sdkMcpServerManifestsOrigin` and `sdk_mcp_manifests_parked` — only
+  meaningful alongside `sdkMcpServerManifests`, tracked in #256.
+- Control subtypes `sdk.mjs` emits with no `sdk.d.ts` declaration
+  (`export_conversation`, `get_status`, `get_plan`, the Chrome and dialog
+  getters, `set_prompt_suggestions_paused`), and the `./core` JS entrypoint.
+- `sdk-tools.d.ts` / `bridge.d.ts` churn — the standing deferrals.
+
 ### Porting from the TypeScript SDK - Go-side differences
 
 A short list of places the Go SDK consciously diverges from the TS shape; if
@@ -950,6 +1010,12 @@ you are translating TS code, watch for these:
   currently expose the upstream top-level user-facing `skills` option; the
   existing `Options.Skills` mirrors the control-init system-prompt loading
   allowlist, which is a different surface.
+- **`PermissionMode` defaults to `"default"`.** `DefaultOptions()` sets
+  `PermissionModeDefault`, so the Go SDK always passes `--permission-mode
+  default` and keeps manual approvals through `CanUseTool`. Since v0.3.290 a TS
+  host that omits `permissionMode` gets whatever the CLI picks, which is the
+  settings' `permissions.defaultMode` or else `auto` where auto mode is
+  available. Set `PermissionMode` to `""` for the TS behavior.
 - **`Effort` `"max"` / `"xhigh"` are model-gated.** `EffortMax` requires Opus
   4.6/4.7 or Sonnet 4.6; `EffortXHigh` requires Opus 4.7. On unsupported
   models the CLI silently downgrades per its own policy. The CLI is the
