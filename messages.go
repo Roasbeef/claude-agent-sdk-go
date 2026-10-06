@@ -1006,6 +1006,37 @@ func (d *ThinkingDisplayOverride) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// MaxThinkingTokensValue is the set_max_thinking_tokens budget. A nil Tokens
+// marshals as an explicit null, which resets thinking to the session default;
+// omitting the whole field (a nil *MaxThinkingTokensValue) leaves the budget
+// as it is. Since v0.3.290 the CLI treats those two differently, where it
+// used to read an absent key as null (sdk.d.ts v0.3.290 L5069).
+type MaxThinkingTokensValue struct {
+	Tokens *int
+}
+
+// MarshalJSON implements json.Marshaler.
+func (v MaxThinkingTokensValue) MarshalJSON() ([]byte, error) {
+	if v.Tokens == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(*v.Tokens)
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (v *MaxThinkingTokensValue) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		v.Tokens = nil
+		return nil
+	}
+	var tokens int
+	if err := json.Unmarshal(data, &tokens); err != nil {
+		return err
+	}
+	v.Tokens = &tokens
+	return nil
+}
+
 // SDKMCPServerConfig carries per-server settings for an in-process MCP server
 // named in SDKControlRequestBody.SDKMCPServers. The name list stays a bare
 // []string; this map sits beside it and is keyed by the same names
@@ -1061,7 +1092,7 @@ type SDKControlRequestBody struct {
 	CallbackID        string                   `json:"callback_id,omitempty"`         // For hook_callback
 	Mode              string                   `json:"mode,omitempty"`                // For set_permission_mode
 	Model             string                   `json:"model,omitempty"`               // For set_model
-	MaxThinkingTokens *int                     `json:"max_thinking_tokens,omitempty"` // For set_max_thinking_tokens
+	MaxThinkingTokens *MaxThinkingTokensValue  `json:"max_thinking_tokens,omitempty"` // For set_max_thinking_tokens
 	ThinkingDisplay   *ThinkingDisplayOverride `json:"thinking_display,omitempty"`    // For set_max_thinking_tokens
 	Directory         string                   `json:"directory,omitempty"`           // For register_repo_root
 	ReloadClaudeMD    *bool                    `json:"reload_claude_md,omitempty"`    // For register_repo_root

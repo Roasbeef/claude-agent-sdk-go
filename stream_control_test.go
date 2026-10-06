@@ -322,15 +322,17 @@ func TestStreamSetMcpPermissionModeOverrideParsesWarning(t *testing.T) {
 }
 
 func TestStreamSetMaxThinkingTokensRoundTrip(t *testing.T) {
+	// The key is always sent. A nil budget must go out as an explicit null:
+	// since v0.3.290 the CLI reads an absent key as "leave the budget as it
+	// is", so omitting it would silently turn the reset into a no-op.
 	tests := []struct {
-		name        string
-		tokens      *int
-		wantPresent bool
-		want        float64
+		name   string
+		tokens *int
+		want   interface{}
 	}{
-		{name: "nil omitted", tokens: nil},
-		{name: "zero present", tokens: intPtr(0), wantPresent: true, want: 0},
-		{name: "nonzero present", tokens: intPtr(4096), wantPresent: true, want: 4096},
+		{name: "nil sends null", tokens: nil, want: nil},
+		{name: "zero present", tokens: intPtr(0), want: float64(0)},
+		{name: "nonzero present", tokens: intPtr(4096), want: float64(4096)},
 	}
 
 	for _, tt := range tests {
@@ -347,10 +349,6 @@ func TestStreamSetMaxThinkingTokensRoundTrip(t *testing.T) {
 			assert.Equal(t, "set_max_thinking_tokens", body["subtype"])
 
 			got, ok := body["max_thinking_tokens"]
-			if !tt.wantPresent {
-				assert.False(t, ok, "max_thinking_tokens should be omitted")
-				return
-			}
 			require.True(t, ok, "max_thinking_tokens should be present")
 			assert.Equal(t, tt.want, got)
 		})

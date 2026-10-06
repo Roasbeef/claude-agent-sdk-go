@@ -5429,3 +5429,27 @@ func TestIntegrationInitPluginErrors(t *testing.T) {
 	}
 	assert.True(t, found, "no plugin_errors entry for %s", missingDir)
 }
+
+// TestIntegrationSetMaxThinkingTokensReset sets a budget and then resets it
+// with nil, which must reach the CLI as an explicit null (sdk.d.ts v0.3.290
+// L5069). The budget itself isn't observable from outside, so this pins that
+// the live CLI accepts both shapes.
+func TestIntegrationSetMaxThinkingTokensReset(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	client, err := NewClient(isolatedClientOptions(t)...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	budget := 5000
+	require.NoError(t, stream.SetMaxThinkingTokens(ctx, &budget))
+	require.NoError(t, stream.SetMaxThinkingTokens(ctx, nil))
+}
