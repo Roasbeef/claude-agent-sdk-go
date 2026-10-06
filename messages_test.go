@@ -4322,6 +4322,37 @@ func TestParseMessageConversationReset(t *testing.T) {
 	assert.Equal(t, "sess_reset_001", reset.SessionID)
 }
 
+func TestParseMessageConversationResetTrigger(t *testing.T) {
+	msg, err := ParseMessage([]byte(`{
+		"type": "conversation_reset",
+		"new_conversation_id": "conv_9f01",
+		"uuid": "550e8400-e29b-41d4-a716-446655440601",
+		"session_id": "sess_reset_002",
+		"trigger": "clear",
+		"user_message_uuid": "550e8400-e29b-41d4-a716-446655440602",
+		"timestamp": "2026-10-05T18:15:52.814Z"
+	}`))
+	require.NoError(t, err)
+
+	reset := msg.(ConversationResetMessage)
+	assert.Equal(t, ConversationResetTriggerClear, reset.Trigger)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440602", reset.UserMessageUUID)
+	assert.Equal(t, "2026-10-05T18:15:52.814Z", reset.Timestamp)
+
+	// An unknown trigger from a newer CLI must still decode.
+	msg, err = ParseMessage([]byte(`{
+		"type": "conversation_reset",
+		"new_conversation_id": "conv_9f02",
+		"uuid": "550e8400-e29b-41d4-a716-446655440603",
+		"session_id": "sess_reset_002",
+		"trigger": "some_future_flow"
+	}`))
+	require.NoError(t, err)
+	reset = msg.(ConversationResetMessage)
+	assert.Equal(t, ConversationResetTrigger("some_future_flow"), reset.Trigger)
+	assert.Empty(t, reset.UserMessageUUID)
+}
+
 func TestParseMessageActiveGoal(t *testing.T) {
 	input := `{
 		"type": "active_goal",
