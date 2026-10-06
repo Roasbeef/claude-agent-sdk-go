@@ -1529,13 +1529,20 @@ type SystemMessage struct {
 	// cases, showing everything is the safe fallback (sdk.d.ts v0.3.233
 	// L4712).
 	TerminalSlashCommands []string       `json:"terminal_slash_commands,omitempty"`
-	OutputStyle           string         `json:"output_style"`              // Output formatting style
-	ClaudeCodeVersion     string         `json:"claude_code_version"`       // Claude Code version
-	Skills                []string       `json:"skills"`                    // Available skills
-	Plugins               []SystemPlugin `json:"plugins"`                   // Available plugins
-	Agents                []string       `json:"agents,omitempty"`          // Available agents
-	Betas                 []string       `json:"betas,omitempty"`           // Enabled beta flags
-	FastModeState         *FastModeState `json:"fast_mode_state,omitempty"` // Fast mode state
+	OutputStyle           string         `json:"output_style"`        // Output formatting style
+	ClaudeCodeVersion     string         `json:"claude_code_version"` // Claude Code version
+	Skills                []string       `json:"skills"`              // Available skills
+	Plugins               []SystemPlugin `json:"plugins"`             // Available plugins
+	// PluginErrors lists plugin load-time errors. A plugin that did not load
+	// at all is absent from Plugins; one that loaded without some component
+	// keeps its row and also gets an entry here. Absent when there are no
+	// errors, but also always absent on sessions whose frames are persisted
+	// server-side (Remote Control workers), so an empty slice does not assert
+	// a clean load (sdk.d.ts v0.3.290 L5958).
+	PluginErrors  []SystemPluginError `json:"plugin_errors,omitempty"`
+	Agents        []string            `json:"agents,omitempty"`          // Available agents
+	Betas         []string            `json:"betas,omitempty"`           // Enabled beta flags
+	FastModeState *FastModeState      `json:"fast_mode_state,omitempty"` // Fast mode state
 	// FastModeDisabledReason explains why fast mode could not serve, when
 	// FastModeState is not "on". Absent when nothing blocks it.
 	FastModeDisabledReason *FastModeDisabledReason `json:"fast_mode_disabled_reason,omitempty"`
@@ -1627,6 +1634,28 @@ func (i MCPServerInfo) IsSDK() bool {
 type SystemPlugin struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
+	// Version is the version the plugin's plugin.json declares, verbatim.
+	// It's plugin-author-controlled, so validate before trusting it. Empty
+	// when the manifest declares none.
+	Version string `json:"version,omitempty"`
+}
+
+// SystemPluginError is one plugin load-time error on the init message.
+type SystemPluginError struct {
+	// Plugin is name@marketplace, or the positional inline[N] / synced[N]
+	// tag for a directory entry that failed before it had a name.
+	Plugin string `json:"plugin"`
+	// Type is a category from an open set (path-not-found, generic-error,
+	// manifest-validation-error, dependency-unsatisfied, hook-load-failed,
+	// ...); treat a value you don't recognize as a generic failure.
+	Type string `json:"type"`
+	// Message is display text.
+	Message string `json:"message"`
+	// Path is set only when a --plugin-dir, SDK plugins or synced directory
+	// entry did not load at all: that entry's path resolved against the cwd,
+	// which is how a host mounting several directories pairs the error with
+	// its own entry.
+	Path string `json:"path,omitempty"`
 }
 
 // PartialAssistantMessage represents a streaming partial message.

@@ -5370,3 +5370,62 @@ func TestIntegrationConversationResetTrigger(t *testing.T) {
 	// typed /clear.
 	assert.NotEmpty(t, reset.UserMessageUUID)
 }
+
+// TestIntegrationInitPluginErrors configures one loadable plugin and one
+// missing plugin directory, and checks the init message reports the second
+// under plugin_errors with its path (sdk.d.ts v0.3.290 L5958).
+func TestIntegrationInitPluginErrors(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	const pluginName = "daedalus-probe"
+	goodDir := writeProbePlugin(t, pluginName)
+	missingDir := filepath.Join(t.TempDir(), "no-such-plugin")
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithPlugins([]PluginConfig{
+			{Type: PluginTypeLocal, Path: goodDir},
+			{Type: PluginTypeLocal, Path: missingDir},
+		}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var init *SystemMessage
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(SystemMessage); ok && m.Subtype == "init" {
+			init = &m
+			break
+		}
+	}
+	require.NotNil(t, init, "no init message")
+
+	var probe *SystemPlugin
+	for i := range init.Plugins {
+		if init.Plugins[i].Name == pluginName {
+			probe = &init.Plugins[i]
+		}
+	}
+	require.NotNil(t, probe, "probe plugin did not load: %+v", init.Plugins)
+	assert.Equal(t, "0.0.1", probe.Version)
+
+	if len(init.PluginErrors) == 0 {
+		t.Skip("CLI predates plugin_errors on init")
+	}
+	var found bool
+	for _, e := range init.PluginErrors {
+		t.Logf("plugin_error: %+v", e)
+		if e.Path == missingDir {
+			found = true
+			assert.NotEmpty(t, e.Type)
+			assert.NotEmpty(t, e.Message)
+		}
+	}
+	assert.True(t, found, "no plugin_errors entry for %s", missingDir)
+}
