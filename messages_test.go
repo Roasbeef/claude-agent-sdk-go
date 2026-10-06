@@ -2487,6 +2487,47 @@ func TestParseMessageSystemInitCapabilities(t *testing.T) {
 	assert.Equal(t, []string{"interrupt_receipt_v1", "some_future_cap"}, systemMsg.Capabilities)
 }
 
+func TestParseMessageSystemInitPluginErrors(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "init",
+		"uuid": "550e8400-e29b-41d4-a716-446655440701",
+		"session_id": "sess_plugins_001",
+		"apiKeySource": "env",
+		"cwd": "/workspace/project",
+		"tools": [],
+		"mcp_servers": [],
+		"model": "claude-opus-4-8",
+		"permissionMode": "default",
+		"slash_commands": [],
+		"output_style": "default",
+		"plugins": [{"name": "lint", "path": "/plugins/lint", "version": "1.2.0"}],
+		"plugin_errors": [
+			{"plugin": "inline[1]", "type": "path-not-found",
+			 "message": "no such directory", "path": "/workspace/project/missing"},
+			{"plugin": "lint@local", "type": "hook-load-failed",
+			 "message": "hooks.json is not valid JSON"}
+		]
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	init := msg.(SystemMessage)
+	require.Len(t, init.Plugins, 1)
+	assert.Equal(t, "1.2.0", init.Plugins[0].Version)
+
+	require.Len(t, init.PluginErrors, 2)
+	assert.Equal(t, SystemPluginError{
+		Plugin:  "inline[1]",
+		Type:    "path-not-found",
+		Message: "no such directory",
+		Path:    "/workspace/project/missing",
+	}, init.PluginErrors[0])
+	assert.Empty(t, init.PluginErrors[1].Path,
+		"a plugin that loaded with a broken component carries no path")
+}
+
 func TestParseMessageCompactBoundary(t *testing.T) {
 	input := `{
 		"type": "system",
