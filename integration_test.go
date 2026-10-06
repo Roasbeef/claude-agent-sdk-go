@@ -5268,6 +5268,168 @@ func TestIntegrationMCPToolUIMeta(t *testing.T) {
 	assert.Equal(t, "ui://example/greeting.html", greeting.UIResourceURI())
 }
 
+// TestIntegrationReadMcpResource reads the example server's MCP Apps widget
+// through mcp_read_resource, and checks the CLI refuses a non-ui:// URI
+// (sdk.d.ts v0.3.290 L3178).
+func TestIntegrationReadMcpResource(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	mcpServerPath := filepath.Join(t.TempDir(), "example-mcp-server")
+	buildCmd := exec.Command("go", "build", "-o", mcpServerPath, "./cmd/example-mcp-server")
+	out, err := buildCmd.CombinedOutput()
+	require.NoError(t, err, "failed to build MCP server: %s", out)
+
+	opts := append(isolatedClientOptions(t),
+		WithMCPServers(map[string]MCPServerConfig{
+			"example": {Type: "stdio", Command: mcpServerPath},
+		}),
+		WithStrictMCPConfig(true),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	const uri = "ui://example/greeting.html"
+
+	// MCP startup is non-blocking; a read before the server connects is
+	// refused as not connected, so retry until it lands.
+	var got *SDKControlMcpReadResourceResponse
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err = stream.ReadMcpResource(ctx, "example", uri)
+		if err != nil && strings.Contains(err.Error(), "Unsupported control request") {
+			t.Skipf("CLI does not support mcp_read_resource: %v", err)
+		}
+		if err == nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	require.NoError(t, err)
+
+	require.Len(t, got.Contents, 1)
+	assert.Equal(t, uri, got.Contents[0].URI)
+	assert.Contains(t, got.Contents[0].Text, "Hello from example-mcp-server")
+	assert.Contains(t, got.Contents[0].MimeType, "text/html")
+	assert.Contains(t, got.Contents[0].Meta, "ui",
+		"the item's own _meta passes through")
+
+	_, err = stream.ReadMcpResource(ctx, "example", "file:///etc/passwd")
+	assert.Error(t, err, "a non-ui:// URI must be refused")
+}
+
+// TestIntegrationConversationResetTrigger runs /clear in a streaming session
+// and checks the conversation_reset frame names it (sdk.d.ts v0.3.290
+// L5132).
+func TestIntegrationConversationResetTrigger(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	client, err := NewClient(isolatedClientOptions(t)...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx, "/clear"))
+
+	var reset *ConversationResetMessage
+	for msg := range stream.Messages() {
+		if m, ok := msg.(ConversationResetMessage); ok {
+			reset = &m
+			break
+		}
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+	if reset == nil {
+		t.Skip("CLI did not emit conversation_reset for /clear on this lane")
+	}
+
+	assert.NotEmpty(t, reset.NewConversationID)
+	if reset.Trigger == "" {
+		t.Skip("CLI predates conversation_reset trigger")
+	}
+	assert.Equal(t, ConversationResetTriggerClear, reset.Trigger)
+	assert.NotEmpty(t, reset.Timestamp)
+	// We sent no uuid of our own, so this is the one the CLI assigned to the
+	// typed /clear.
+	assert.NotEmpty(t, reset.UserMessageUUID)
+}
+
+// TestIntegrationInitPluginErrors configures one loadable plugin and one
+// missing plugin directory, and checks the init message reports the second
+// under plugin_errors with its path (sdk.d.ts v0.3.290 L5958).
+func TestIntegrationInitPluginErrors(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	const pluginName = "daedalus-probe"
+	goodDir := writeProbePlugin(t, pluginName)
+	missingDir := filepath.Join(t.TempDir(), "no-such-plugin")
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithPlugins([]PluginConfig{
+			{Type: PluginTypeLocal, Path: goodDir},
+			{Type: PluginTypeLocal, Path: missingDir},
+		}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var init *SystemMessage
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(SystemMessage); ok && m.Subtype == "init" {
+			init = &m
+			break
+		}
+	}
+	require.NotNil(t, init, "no init message")
+
+	var probe *SystemPlugin
+	for i := range init.Plugins {
+		if init.Plugins[i].Name == pluginName {
+			probe = &init.Plugins[i]
+		}
+	}
+	require.NotNil(t, probe, "probe plugin did not load: %+v", init.Plugins)
+	assert.Equal(t, "0.0.1", probe.Version)
+
+	if len(init.PluginErrors) == 0 {
+		t.Skip("CLI predates plugin_errors on init")
+	}
+	var found bool
+	for _, e := range init.PluginErrors {
+		t.Logf("plugin_error: %+v", e)
+		if e.Path == missingDir {
+			found = true
+			assert.NotEmpty(t, e.Type)
+			assert.NotEmpty(t, e.Message)
+		}
+	}
+	assert.True(t, found, "no plugin_errors entry for %s", missingDir)
+}
+
 // TestIntegrationInitViewMode checks the per-turn init frame of a headless
 // stream-json session reports the transcript view (sdk.d.ts v0.3.290 L5982).
 // Only the default is reachable here: a headless session answers /focus with

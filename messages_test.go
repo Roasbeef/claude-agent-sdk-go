@@ -2487,6 +2487,47 @@ func TestParseMessageSystemInitCapabilities(t *testing.T) {
 	assert.Equal(t, []string{"interrupt_receipt_v1", "some_future_cap"}, systemMsg.Capabilities)
 }
 
+func TestParseMessageSystemInitPluginErrors(t *testing.T) {
+	input := `{
+		"type": "system",
+		"subtype": "init",
+		"uuid": "550e8400-e29b-41d4-a716-446655440701",
+		"session_id": "sess_plugins_001",
+		"apiKeySource": "env",
+		"cwd": "/workspace/project",
+		"tools": [],
+		"mcp_servers": [],
+		"model": "claude-opus-4-8",
+		"permissionMode": "default",
+		"slash_commands": [],
+		"output_style": "default",
+		"plugins": [{"name": "lint", "path": "/plugins/lint", "version": "1.2.0"}],
+		"plugin_errors": [
+			{"plugin": "inline[1]", "type": "path-not-found",
+			 "message": "no such directory", "path": "/workspace/project/missing"},
+			{"plugin": "lint@local", "type": "hook-load-failed",
+			 "message": "hooks.json is not valid JSON"}
+		]
+	}`
+
+	msg, err := ParseMessage([]byte(input))
+	require.NoError(t, err)
+
+	init := msg.(SystemMessage)
+	require.Len(t, init.Plugins, 1)
+	assert.Equal(t, "1.2.0", init.Plugins[0].Version)
+
+	require.Len(t, init.PluginErrors, 2)
+	assert.Equal(t, SystemPluginError{
+		Plugin:  "inline[1]",
+		Type:    "path-not-found",
+		Message: "no such directory",
+		Path:    "/workspace/project/missing",
+	}, init.PluginErrors[0])
+	assert.Empty(t, init.PluginErrors[1].Path,
+		"a plugin that loaded with a broken component carries no path")
+}
+
 func TestParseMessageCompactBoundary(t *testing.T) {
 	input := `{
 		"type": "system",
@@ -4320,6 +4361,37 @@ func TestParseMessageConversationReset(t *testing.T) {
 	assert.Equal(t, "conversation_reset", reset.MessageType())
 	assert.Equal(t, "conv_9f00", reset.NewConversationID)
 	assert.Equal(t, "sess_reset_001", reset.SessionID)
+}
+
+func TestParseMessageConversationResetTrigger(t *testing.T) {
+	msg, err := ParseMessage([]byte(`{
+		"type": "conversation_reset",
+		"new_conversation_id": "conv_9f01",
+		"uuid": "550e8400-e29b-41d4-a716-446655440601",
+		"session_id": "sess_reset_002",
+		"trigger": "clear",
+		"user_message_uuid": "550e8400-e29b-41d4-a716-446655440602",
+		"timestamp": "2026-10-05T18:15:52.814Z"
+	}`))
+	require.NoError(t, err)
+
+	reset := msg.(ConversationResetMessage)
+	assert.Equal(t, ConversationResetTriggerClear, reset.Trigger)
+	assert.Equal(t, "550e8400-e29b-41d4-a716-446655440602", reset.UserMessageUUID)
+	assert.Equal(t, "2026-10-05T18:15:52.814Z", reset.Timestamp)
+
+	// An unknown trigger from a newer CLI must still decode.
+	msg, err = ParseMessage([]byte(`{
+		"type": "conversation_reset",
+		"new_conversation_id": "conv_9f02",
+		"uuid": "550e8400-e29b-41d4-a716-446655440603",
+		"session_id": "sess_reset_002",
+		"trigger": "some_future_flow"
+	}`))
+	require.NoError(t, err)
+	reset = msg.(ConversationResetMessage)
+	assert.Equal(t, ConversationResetTrigger("some_future_flow"), reset.Trigger)
+	assert.Empty(t, reset.UserMessageUUID)
 }
 
 func TestParseMessageActiveGoal(t *testing.T) {

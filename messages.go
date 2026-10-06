@@ -1109,7 +1109,8 @@ type SDKControlRequestBody struct {
 	Surface           string                      `json:"surface,omitempty"`              // For submit_feedback
 	TaskID            string                      `json:"task_id,omitempty"`              // For stop_task/get_task_output
 	ServerName        string                      `json:"server_name,omitempty"`          // For mcp_message (snake_case)
-	MCPServerName     string                      `json:"serverName,omitempty"`           // For mcp_reconnect/mcp_toggle/mcp_set_servers (camelCase)
+	MCPServerName     string                      `json:"serverName,omitempty"`           // For mcp_reconnect/mcp_toggle/mcp_set_servers/mcp_read_resource (camelCase)
+	URI               string                      `json:"uri,omitempty"`                  // For mcp_read_resource
 	Enabled           *bool                       `json:"enabled,omitempty"`              // For mcp_toggle (pointer so explicit false serializes)
 	Servers           *map[string]MCPServerConfig `json:"servers,omitempty"`              // For mcp_set_servers (pointer so nil/empty round-trips as {})
 	Message           map[string]interface{}      `json:"message,omitempty"`              // For mcp_message (JSONRPC)
@@ -1263,15 +1264,49 @@ type ActiveGoalValue struct {
 // MessageType implements Message.
 func (m ActiveGoalMessage) MessageType() string { return "active_goal" }
 
-// ConversationResetMessage is emitted by /clear, plan-mode exit, and
-// fresh-session flows. The surface should mount a fresh transcript under
-// NewConversationID and reset any cached session title.
+// ConversationResetMessage is emitted by /clear, plan-mode exit,
+// fresh-session, and onboarding flows. The surface should mount a fresh
+// transcript under NewConversationID and reset any cached session title.
 type ConversationResetMessage struct {
 	Type              string `json:"type"`                // Always "conversation_reset"
 	NewConversationID string `json:"new_conversation_id"` // Conversation ID to mount the fresh transcript under
 	UUID              string `json:"uuid"`                // Unique message ID
 	SessionID         string `json:"session_id"`          // Session identifier
+	// Trigger says what discarded the conversation. It's informational: a
+	// consumer resets on every conversation_reset whatever it says, and
+	// treats an empty (older CLI) or unknown value as an unspecified reset
+	// (sdk.d.ts v0.3.290 L5132).
+	Trigger ConversationResetTrigger `json:"trigger,omitempty"`
+	// UserMessageUUID is set only for ConversationResetTriggerClear: the uuid
+	// of the user message whose /clear ran (the client's own uuid when it
+	// sent one). It lets a consumer match this frame to a /clear it already
+	// saw and wipe once, whichever arrives first, instead of relying on
+	// arrival order. Empty when that uuid is not canonical.
+	UserMessageUUID string `json:"user_message_uuid,omitempty"`
+	// Timestamp is when the reset happened, as an ISO 8601 UTC string from
+	// the clock of the process that performed it. For display only, not for
+	// ordering frames; fall back to receive time when empty.
+	Timestamp string `json:"timestamp,omitempty"`
 }
+
+// ConversationResetTrigger names what discarded a conversation. Open set:
+// compare against the constants, but expect values beyond them.
+type ConversationResetTrigger string
+
+const (
+	// ConversationResetTriggerClear is /clear, or its /reset and /new
+	// aliases.
+	ConversationResetTriggerClear ConversationResetTrigger = "clear"
+	// ConversationResetTriggerPlanModeExit is leaving plan mode with the
+	// clear-context option.
+	ConversationResetTriggerPlanModeExit ConversationResetTrigger = "plan_mode_exit"
+	// ConversationResetTriggerFreshSession is a flow that starts a fresh
+	// session to implement an approved plan.
+	ConversationResetTriggerFreshSession ConversationResetTrigger = "fresh_session"
+	// ConversationResetTriggerOnboarding is an onboarding flow re-run inside
+	// an existing session.
+	ConversationResetTriggerOnboarding ConversationResetTrigger = "onboarding"
+)
 
 // MessageType implements Message.
 func (m ConversationResetMessage) MessageType() string { return "conversation_reset" }
@@ -1519,13 +1554,20 @@ type SystemMessage struct {
 	// cases, showing everything is the safe fallback (sdk.d.ts v0.3.233
 	// L4712).
 	TerminalSlashCommands []string       `json:"terminal_slash_commands,omitempty"`
-	OutputStyle           string         `json:"output_style"`              // Output formatting style
-	ClaudeCodeVersion     string         `json:"claude_code_version"`       // Claude Code version
-	Skills                []string       `json:"skills"`                    // Available skills
-	Plugins               []SystemPlugin `json:"plugins"`                   // Available plugins
-	Agents                []string       `json:"agents,omitempty"`          // Available agents
-	Betas                 []string       `json:"betas,omitempty"`           // Enabled beta flags
-	FastModeState         *FastModeState `json:"fast_mode_state,omitempty"` // Fast mode state
+	OutputStyle           string         `json:"output_style"`        // Output formatting style
+	ClaudeCodeVersion     string         `json:"claude_code_version"` // Claude Code version
+	Skills                []string       `json:"skills"`              // Available skills
+	Plugins               []SystemPlugin `json:"plugins"`             // Available plugins
+	// PluginErrors lists plugin load-time errors. A plugin that did not load
+	// at all is absent from Plugins; one that loaded without some component
+	// keeps its row and also gets an entry here. Absent when there are no
+	// errors, but also always absent on sessions whose frames are persisted
+	// server-side (Remote Control workers), so an empty slice does not assert
+	// a clean load (sdk.d.ts v0.3.290 L5958).
+	PluginErrors  []SystemPluginError `json:"plugin_errors,omitempty"`
+	Agents        []string            `json:"agents,omitempty"`          // Available agents
+	Betas         []string            `json:"betas,omitempty"`           // Enabled beta flags
+	FastModeState *FastModeState      `json:"fast_mode_state,omitempty"` // Fast mode state
 	// FastModeDisabledReason explains why fast mode could not serve, when
 	// FastModeState is not "on". Absent when nothing blocks it.
 	FastModeDisabledReason *FastModeDisabledReason `json:"fast_mode_disabled_reason,omitempty"`
@@ -1636,6 +1678,28 @@ func (i MCPServerInfo) IsSDK() bool {
 type SystemPlugin struct {
 	Name string `json:"name"`
 	Path string `json:"path"`
+	// Version is the version the plugin's plugin.json declares, verbatim.
+	// It's plugin-author-controlled, so validate before trusting it. Empty
+	// when the manifest declares none.
+	Version string `json:"version,omitempty"`
+}
+
+// SystemPluginError is one plugin load-time error on the init message.
+type SystemPluginError struct {
+	// Plugin is name@marketplace, or the positional inline[N] / synced[N]
+	// tag for a directory entry that failed before it had a name.
+	Plugin string `json:"plugin"`
+	// Type is a category from an open set (path-not-found, generic-error,
+	// manifest-validation-error, dependency-unsatisfied, hook-load-failed,
+	// ...); treat a value you don't recognize as a generic failure.
+	Type string `json:"type"`
+	// Message is display text.
+	Message string `json:"message"`
+	// Path is set only when a --plugin-dir, SDK plugins or synced directory
+	// entry did not load at all: that entry's path resolved against the cwd,
+	// which is how a host mounting several directories pairs the error with
+	// its own entry.
+	Path string `json:"path,omitempty"`
 }
 
 // PartialAssistantMessage represents a streaming partial message.

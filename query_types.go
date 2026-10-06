@@ -179,6 +179,26 @@ type McpServerInfo struct {
 	Version string `json:"version"` // Server version
 }
 
+// SDKControlMcpReadResourceResponse is the server's resources/read result for
+// an mcp_read_resource request (sdk.d.ts v0.3.290 L4733).
+type SDKControlMcpReadResourceResponse struct {
+	Contents []McpResourceContents `json:"contents"`
+}
+
+// McpResourceContents is one content item of a resources/read result. Exactly
+// one of Text or Blob is normally set.
+type McpResourceContents struct {
+	URI      string `json:"uri"`
+	MimeType string `json:"mimeType,omitempty"`
+	Text     string `json:"text,omitempty"`
+	// Blob is base64, for a binary item.
+	Blob string `json:"blob,omitempty"`
+	// Meta is the item's own _meta as the server sent it (MCP Apps puts the
+	// resource's ui.csp and ui.permissions here), minus keys under the
+	// CLI-reserved com.anthropic/ prefix.
+	Meta map[string]interface{} `json:"_meta,omitempty"`
+}
+
 // McpSetServersResult is the response from Stream.SetMcpServers.
 type McpSetServersResult struct {
 	Added   []string          `json:"added"`
