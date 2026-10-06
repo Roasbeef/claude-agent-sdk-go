@@ -969,6 +969,13 @@ type SettingsPolicyHelper struct {
 	RefreshIntervalMs *int   `json:"refreshIntervalMs,omitempty"`
 }
 
+// SettingsAttribution customizes the attribution Claude Code adds to commits
+// and PRs.
+//
+// On the wire attribution is a boolean | object union (sdk.d.ts v0.3.290
+// L6773): the object customizes each piece, while a bare false hides all
+// attribution. HideAll selects the bare false; a bare true means the same as
+// leaving attribution out and decodes as the zero value.
 type SettingsAttribution struct {
 	Commit *string `json:"commit,omitempty"`
 	PR     *string `json:"pr,omitempty"`
@@ -977,6 +984,36 @@ type SettingsAttribution struct {
 	// true). Set false to omit the Claude-Session trailer and PR-body link.
 	// Mirrors sdk.d.ts v0.3.185 L4551.
 	SessionURL *bool `json:"sessionUrl,omitempty"`
+	// HideAll encodes attribution as a bare false, hiding all attribution;
+	// the other fields are then ignored. Claude Code versions before the
+	// boolean form reject it, so for settings shared with older CLIs set
+	// Commit and PR to "" and SessionURL to false instead.
+	HideAll bool `json:"-"`
+}
+
+// MarshalJSON emits a bare false for HideAll, else the object form.
+func (a SettingsAttribution) MarshalJSON() ([]byte, error) {
+	if a.HideAll {
+		return []byte("false"), nil
+	}
+	type plain SettingsAttribution
+	return json.Marshal(plain(a))
+}
+
+// UnmarshalJSON accepts the boolean or the object form.
+func (a *SettingsAttribution) UnmarshalJSON(data []byte) error {
+	var b bool
+	if err := json.Unmarshal(data, &b); err == nil {
+		*a = SettingsAttribution{HideAll: !b}
+		return nil
+	}
+	type plain SettingsAttribution
+	var p plain
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err
+	}
+	*a = SettingsAttribution(p)
+	return nil
 }
 
 type SettingsPermissions struct {
