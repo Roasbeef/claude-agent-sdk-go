@@ -226,6 +226,9 @@ func (p *Protocol) initResult() *SDKControlInitializeResponse {
 // SendMessage sends a user message to the CLI.
 // Note: Initialize() should be called before SendMessage().
 func (p *Protocol) SendMessage(ctx context.Context, msg UserMessage) error {
+	if p.options != nil && p.options.VerbatimPrompts {
+		msg.ClientComposed = true
+	}
 	return p.transport.Write(ctx, msg)
 }
 

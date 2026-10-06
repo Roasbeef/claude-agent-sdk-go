@@ -48,6 +48,14 @@ type UserMessage struct {
 	// of the message belongs in PastedContent instead (sdk.d.ts v0.3.290
 	// L6307).
 	InlinePastes []string `json:"inline_pastes,omitempty"`
+	// ClientComposed marks a turn the client assembled from content the user
+	// did not type: the CLI delivers its text as written, with no @path
+	// expansion and no slash-command dispatch. Current CLIs also skip the
+	// whole turn-start attachment pass (nested CLAUDE.md, skill and tool
+	// listings, reminders), so that context arrives after the first tool call
+	// instead. Options.VerbatimPrompts sets it on every message (sdk.d.ts
+	// v0.3.290 L6284).
+	ClientComposed bool `json:"client_composed,omitempty"`
 }
 
 // PastedContentEntry is one entry of UserMessage.PastedContent, the union

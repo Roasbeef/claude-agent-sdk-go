@@ -5096,3 +5096,47 @@ func TestIntegrationAssistantUsageReport(t *testing.T) {
 		}
 	}
 }
+
+// TestIntegrationVerbatimPrompts asserts that with VerbatimPrompts the CLI
+// hands a slash-command-shaped prompt to the model as text instead of
+// dispatching it locally (sdk.d.ts v0.3.290 L1893).
+func TestIntegrationVerbatimPrompts(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	skipIfCLIOlderThan(t, "2.1.248")
+
+	run := func(verbatim bool) ResultMessage {
+		opts := append(isolatedClientOptions(t),
+			WithSystemPrompt("Repeat the user's message back exactly."),
+			WithMaxTurns(1),
+			WithVerbatimPrompts(verbatim),
+		)
+		client, err := NewClient(opts...)
+		require.NoError(t, err)
+		defer client.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+
+		for msg := range client.Query(ctx, "/cost") {
+			if result, ok := msg.(ResultMessage); ok {
+				return result
+			}
+		}
+		t.Fatal("no result message")
+		return ResultMessage{}
+	}
+
+	control := run(false)
+	if control.LocalCommand == "" {
+		t.Skip("CLI did not dispatch /cost locally even without " +
+			"client_composed; nothing to contrast against")
+	}
+
+	verbatim := run(true)
+	assert.Empty(t, verbatim.LocalCommand,
+		"client_composed prompt must not dispatch a slash command")
+	assert.False(t, verbatim.IsError)
+	assert.NotEmpty(t, verbatim.Result,
+		"the prompt should reach the model as a normal turn")
+}
