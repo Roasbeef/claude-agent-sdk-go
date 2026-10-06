@@ -1027,7 +1027,8 @@ func WithThinkingDisplayAPIDefault() SetMaxThinkingTokensOption {
 }
 
 // SetMaxThinkingTokens dynamically changes the max thinking tokens limit.
-// Pass nil tokens to remove the limit.
+// Pass nil tokens to reset thinking to the session default: any mid-session
+// override is cleared, back to the spawn-time budget if one was set.
 //
 // An optional WithThinkingDisplay / WithThinkingDisplayAPIDefault controls the
 // thinking display mode for the rest of the session; when no display option is
@@ -1043,7 +1044,7 @@ func (s *Stream) SetMaxThinkingTokens(ctx context.Context, tokens *int, opts ...
 	}
 	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
 		Subtype:           "set_max_thinking_tokens",
-		MaxThinkingTokens: tokens,
+		MaxThinkingTokens: &MaxThinkingTokensValue{Tokens: tokens},
 		ThinkingDisplay:   cfg.display,
 	})
 	return err

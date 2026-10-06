@@ -2635,3 +2635,38 @@ func TestAutoCompactWindowToleratesUnknownString(t *testing.T) {
 	require.NotNil(t, m.AutoCompactWindow)
 	assert.Equal(t, AutoCompactWindow{}, *m.AutoCompactWindow)
 }
+
+// TestSettingsAttributionBoolean covers the boolean arm v0.3.290 adds to
+// attribution (sdk.d.ts L6773).
+func TestSettingsAttributionBoolean(t *testing.T) {
+	data, err := json.Marshal(Settings{
+		Attribution: &SettingsAttribution{HideAll: true, Commit: stringPtr("x")},
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"attribution":false}`, string(data),
+		"HideAll wins over the object fields")
+
+	data, err = json.Marshal(Settings{
+		Attribution: &SettingsAttribution{PR: stringPtr("")},
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"attribution":{"pr":""}}`, string(data))
+
+	tests := []struct {
+		in   string
+		want SettingsAttribution
+	}{
+		{`false`, SettingsAttribution{HideAll: true}},
+		{`true`, SettingsAttribution{}},
+		{`{"commit":"","sessionUrl":false}`, SettingsAttribution{
+			Commit: stringPtr(""), SessionURL: boolPtr(false),
+		}},
+	}
+	for _, tc := range tests {
+		var s Settings
+		require.NoError(t, json.Unmarshal(
+			[]byte(`{"attribution":`+tc.in+`}`), &s), tc.in)
+		require.NotNil(t, s.Attribution, tc.in)
+		assert.Equal(t, tc.want, *s.Attribution, tc.in)
+	}
+}
