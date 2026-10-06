@@ -141,7 +141,7 @@ func (t McpServerStatusTool) UIResourceURI() string {
 	return uri
 }
 
-// McpServerToolAnnotations are the behaviour hints a server declares for one
+// McpServerToolAnnotations are the behavior hints a server declares for one
 // of its tools.
 type McpServerToolAnnotations struct {
 	ReadOnly    *bool `json:"readOnly,omitempty"`
