@@ -1082,7 +1082,7 @@ type SDKControlRequestBody struct {
 	RenameSessionID   string                      `json:"session_id,omitempty"`           // For rename_session
 	Description       string                      `json:"description,omitempty"`          // For submit_feedback
 	Surface           string                      `json:"surface,omitempty"`              // For submit_feedback
-	TaskID            string                      `json:"task_id,omitempty"`              // For stop_task
+	TaskID            string                      `json:"task_id,omitempty"`              // For stop_task/get_task_output
 	ServerName        string                      `json:"server_name,omitempty"`          // For mcp_message (snake_case)
 	MCPServerName     string                      `json:"serverName,omitempty"`           // For mcp_reconnect/mcp_toggle/mcp_set_servers/mcp_read_resource (camelCase)
 	URI               string                      `json:"uri,omitempty"`                  // For mcp_read_resource

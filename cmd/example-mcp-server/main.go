@@ -142,6 +142,32 @@ func main() {
 		}, nil, nil
 	})
 
+	// Tool: show_greeting - Declares an MCP Apps (SEP-1865) UI resource in
+	// its _meta, so a host that renders ui:// widgets can show one for it.
+	type ShowGreetingArgs struct {
+		Name string `json:"name" jsonschema:"Who to greet"`
+	}
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "show_greeting",
+		Description: "Greet someone, with an HTML widget for hosts that render one",
+		Meta: mcp.Meta{
+			"ui": map[string]any{
+				"resourceUri": "ui://example/greeting.html",
+				"visibility":  []string{"model", "app"},
+			},
+		},
+	}, func(
+		ctx context.Context,
+		req *mcp.CallToolRequest,
+		args ShowGreetingArgs,
+	) (*mcp.CallToolResult, any, error) {
+		return &mcp.CallToolResult{
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: "Hello, " + args.Name},
+			},
+		}, nil, nil
+	})
+
 	// Run the server on stdio transport.
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		log.Fatalf("Server failed: %v", err)

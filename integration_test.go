@@ -5141,6 +5141,133 @@ func TestIntegrationVerbatimPrompts(t *testing.T) {
 		"the prompt should reach the model as a normal turn")
 }
 
+// TestIntegrationGetTaskOutput starts a background Bash task and reads its
+// output tail with get_task_output while it runs (sdk.d.ts v0.3.290 L4211).
+func TestIntegrationGetTaskOutput(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithCwd(t.TempDir()),
+		WithSystemPrompt(
+			"When asked to run a shell command, use Bash immediately "+
+				"with exactly the parameters given and do not describe it.",
+		),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(3),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx,
+		"Run this Bash command with run_in_background set to true: "+
+			"for i in 1 2 3; do echo tick-$i; done; sleep 20",
+	))
+
+	var got *SDKControlGetTaskOutputResponse
+	for msg := range stream.Messages() {
+		started, ok := msg.(TaskStartedMessage)
+		if !ok {
+			if _, done := msg.(ResultMessage); done && got == nil {
+				t.Skip("model did not start a background Bash task")
+			}
+			continue
+		}
+
+		// The command writes its output right away, but the file the CLI
+		// tails may lag the task_started frame by a beat.
+		deadline := time.Now().Add(20 * time.Second)
+		for time.Now().Before(deadline) {
+			got, err = stream.GetTaskOutput(ctx, started.TaskID)
+			if err != nil && strings.Contains(err.Error(), "get_task_output") {
+				t.Skipf("CLI does not support get_task_output: %v", err)
+			}
+			require.NoError(t, err)
+			if strings.Contains(got.Output, "tick-3") {
+				break
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+		break
+	}
+
+	require.NotNil(t, got, "never saw task_started for the background task")
+	assert.Contains(t, got.Output, "tick-1\ntick-2\ntick-3")
+	assert.GreaterOrEqual(t, got.TotalBytes, int64(len(got.Output)))
+	assert.False(t, got.Truncated, "a few bytes of output is not truncated")
+}
+
+// TestIntegrationMCPToolUIMeta asserts mcp_status lists a configured
+// server's tools and passes through the MCP Apps ui metadata the example
+// server's show_greeting tool declares (sdk.d.ts v0.3.290 L1280).
+func TestIntegrationMCPToolUIMeta(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	mcpServerPath := filepath.Join(t.TempDir(), "example-mcp-server")
+	buildCmd := exec.Command("go", "build", "-o", mcpServerPath, "./cmd/example-mcp-server")
+	out, err := buildCmd.CombinedOutput()
+	require.NoError(t, err, "failed to build MCP server: %s", out)
+
+	opts := append(isolatedClientOptions(t),
+		WithMCPServers(map[string]MCPServerConfig{
+			"example": {Type: "stdio", Command: mcpServerPath},
+		}),
+		WithStrictMCPConfig(true),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	// MCP startup is non-blocking, so the server may still be pending on the
+	// first poll.
+	var found *McpServerStatus
+	deadline := time.Now().Add(30 * time.Second)
+	for found == nil && time.Now().Before(deadline) {
+		statuses, err := stream.McpServerStatus(ctx)
+		require.NoError(t, err)
+		for i := range statuses {
+			s := statuses[i]
+			if s.Name == "example" && s.Status == McpServerStateConnected {
+				found = &s
+			}
+		}
+		if found == nil {
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+	require.NotNil(t, found, "example server never connected")
+
+	var greeting *McpServerStatusTool
+	for i := range found.Tools {
+		if found.Tools[i].Name == "show_greeting" {
+			greeting = &found.Tools[i]
+		}
+	}
+	require.NotNil(t, greeting, "tools: %+v", found.Tools)
+
+	if greeting.Meta == nil {
+		t.Skip("CLI predates mcp_tool_ui_meta_v1")
+	}
+	assert.Equal(t, "ui://example/greeting.html", greeting.UIResourceURI())
+}
+
 // TestIntegrationReadMcpResource reads the example server's MCP Apps widget
 // through mcp_read_resource, and checks the CLI refuses a non-ui:// URI
 // (sdk.d.ts v0.3.290 L3178).
