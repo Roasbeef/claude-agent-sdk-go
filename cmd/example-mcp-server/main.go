@@ -46,6 +46,28 @@ func main() {
 		nil,
 	)
 
+	// Resource: the MCP Apps (SEP-1865) widget a host renders for
+	// show_greeting.
+	server.AddResource(&mcp.Resource{
+		URI:      "ui://example/greeting.html",
+		Name:     "greeting-widget",
+		MIMEType: "text/html;profile=mcp-app",
+	}, func(
+		ctx context.Context,
+		req *mcp.ReadResourceRequest,
+	) (*mcp.ReadResourceResult, error) {
+		return &mcp.ReadResourceResult{
+			Contents: []*mcp.ResourceContents{{
+				URI:      req.Params.URI,
+				MIMEType: "text/html;profile=mcp-app",
+				Text:     "<!doctype html><p>Hello from example-mcp-server</p>",
+				Meta: mcp.Meta{
+					"ui": map[string]any{"prefersBorder": true},
+				},
+			}},
+		}, nil
+	})
+
 	// Tool: add_numbers - Adds two integers.
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "add_numbers",

@@ -5140,3 +5140,61 @@ func TestIntegrationVerbatimPrompts(t *testing.T) {
 	assert.NotEmpty(t, verbatim.Result,
 		"the prompt should reach the model as a normal turn")
 }
+
+// TestIntegrationReadMcpResource reads the example server's MCP Apps widget
+// through mcp_read_resource, and checks the CLI refuses a non-ui:// URI
+// (sdk.d.ts v0.3.290 L3178).
+func TestIntegrationReadMcpResource(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	mcpServerPath := filepath.Join(t.TempDir(), "example-mcp-server")
+	buildCmd := exec.Command("go", "build", "-o", mcpServerPath, "./cmd/example-mcp-server")
+	out, err := buildCmd.CombinedOutput()
+	require.NoError(t, err, "failed to build MCP server: %s", out)
+
+	opts := append(isolatedClientOptions(t),
+		WithMCPServers(map[string]MCPServerConfig{
+			"example": {Type: "stdio", Command: mcpServerPath},
+		}),
+		WithStrictMCPConfig(true),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	const uri = "ui://example/greeting.html"
+
+	// MCP startup is non-blocking; a read before the server connects is
+	// refused as not connected, so retry until it lands.
+	var got *SDKControlMcpReadResourceResponse
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err = stream.ReadMcpResource(ctx, "example", uri)
+		if err != nil && strings.Contains(err.Error(), "Unsupported control request") {
+			t.Skipf("CLI does not support mcp_read_resource: %v", err)
+		}
+		if err == nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	require.NoError(t, err)
+
+	require.Len(t, got.Contents, 1)
+	assert.Equal(t, uri, got.Contents[0].URI)
+	assert.Contains(t, got.Contents[0].Text, "Hello from example-mcp-server")
+	assert.Contains(t, got.Contents[0].MimeType, "text/html")
+	assert.Contains(t, got.Contents[0].Meta, "ui",
+		"the item's own _meta passes through")
+
+	_, err = stream.ReadMcpResource(ctx, "example", "file:///etc/passwd")
+	assert.Error(t, err, "a non-ui:// URI must be refused")
+}

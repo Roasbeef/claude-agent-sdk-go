@@ -1165,3 +1165,63 @@ func TestUpdateSettingsSources(t *testing.T) {
 		})
 	}
 }
+
+func TestStreamReadMcpResource(t *testing.T) {
+	t.Run("request wire shape and parse", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(
+			successSDKControlResponseWithPayload(map[string]interface{}{
+				"contents": []interface{}{
+					map[string]interface{}{
+						"uri":      "ui://widgets/chart.html",
+						"mimeType": "text/html;profile=mcp-app",
+						"text":     "<p>chart</p>",
+						"_meta": map[string]interface{}{
+							"ui": map[string]interface{}{
+								"csp": map[string]interface{}{
+									"connectDomains": []interface{}{"api.example.com"},
+								},
+							},
+						},
+					},
+					map[string]interface{}{
+						"uri":  "ui://widgets/logo.png",
+						"blob": "iVBORw0KGgo=",
+					},
+				},
+			}),
+		)
+
+		var got *SDKControlMcpReadResourceResponse
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			var err error
+			got, err = stream.ReadMcpResource(ctx, "widgets", "ui://widgets/chart.html")
+			return err
+		})
+		require.NoError(t, err)
+
+		// serverName is camelCase on the wire, like mcp_reconnect/mcp_toggle.
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1","request":{"subtype":"mcp_read_resource","serverName":"widgets","uri":"ui://widgets/chart.html"}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+
+		require.Len(t, got.Contents, 2)
+		assert.Equal(t, "<p>chart</p>", got.Contents[0].Text)
+		assert.Equal(t, "text/html;profile=mcp-app", got.Contents[0].MimeType)
+		assert.Contains(t, got.Contents[0].Meta, "ui")
+		assert.Equal(t, "iVBORw0KGgo=", got.Contents[1].Blob)
+		assert.Empty(t, got.Contents[1].Text)
+	})
+
+	t.Run("error", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(
+			controlErrorResponse("uri must use the ui:// scheme"))
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.ReadMcpResource(ctx, "widgets", "file:///etc/passwd")
+			return err
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "ui://")
+	})
+}
