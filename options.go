@@ -202,6 +202,15 @@ type Options struct {
 	// ForwardSubagentText surfaces subagent text in the main stream.
 	ForwardSubagentText *bool
 
+	// VerbatimPrompts sends every user message with client_composed set, so
+	// the CLI delivers prompt text as written: no @path expansion and no
+	// slash-command dispatch. Use it when prompts are assembled from content
+	// the end user did not type. There is no per-message opt-out while it is
+	// on; for per-turn control leave it off and set
+	// UserMessage.ClientComposed on individual messages. Requires Claude Code
+	// 2.1.248 or later; older CLIs ignore the field (sdk.d.ts v0.3.290 L1893).
+	VerbatimPrompts bool
+
 	// ToolAliases maps a tool name to a redirect target. When the model
 	// emits a `tool_use` whose name is a key in the map, the execution path
 	// resolves the mapped value instead. Single-hop (cycles do not loop).
@@ -1916,6 +1925,13 @@ func WithAgentProgressSummaries(enable bool) Option {
 func WithForwardSubagentText(enable bool) Option {
 	return func(o *Options) {
 		o.ForwardSubagentText = &enable
+	}
+}
+
+// WithVerbatimPrompts enables or disables Options.VerbatimPrompts.
+func WithVerbatimPrompts(enable bool) Option {
+	return func(o *Options) {
+		o.VerbatimPrompts = enable
 	}
 }
 
