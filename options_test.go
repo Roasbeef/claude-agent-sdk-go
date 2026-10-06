@@ -2574,6 +2574,68 @@ func TestWithProjectConfigRoot(t *testing.T) {
 	assert.Empty(t, NewOptions().ProjectConfigRoot)
 }
 
+func TestSettingsParityV0_3_290(t *testing.T) {
+	width := 100
+	idle := false
+	chrome := true
+	s := Settings{
+		AvailableModels:                   []string{"opus"},
+		AvailableModelsMatch:              AvailableModelsMatchExact,
+		DeniedModels:                      []string{"claude-opus-5-5"},
+		AllowClaudeInChromeWithManagedMcp: &chrome,
+		AllowedProviders: []AllowedProvider{
+			AllowedProviderAnthropic, AllowedProviderBedrock,
+		},
+		MaxProseWidth:  &width,
+		IdleCompaction: &idle,
+		ModelSettings: map[string]SettingsModel{
+			"claude-opus-5":   {AutoCompactWindow: &AutoCompactWindow{Auto: true}},
+			"claude-sonnet-5": {AutoCompactWindow: &AutoCompactWindow{Tokens: 400000}},
+		},
+	}
+
+	data, err := json.Marshal(s)
+	require.NoError(t, err)
+
+	var got map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.JSONEq(t, `"exact"`, string(got["availableModelsMatch"]))
+	assert.JSONEq(t, `["claude-opus-5-5"]`, string(got["deniedModels"]))
+	assert.JSONEq(t, `true`, string(got["allowClaudeInChromeWithManagedMcp"]))
+	assert.JSONEq(t, `["anthropic","bedrock"]`, string(got["allowedProviders"]))
+	assert.JSONEq(t, `100`, string(got["maxProseWidth"]))
+	assert.JSONEq(t, `false`, string(got["idleCompaction"]))
+	assert.JSONEq(t, `{
+		"claude-opus-5": {"autoCompactWindow": "auto"},
+		"claude-sonnet-5": {"autoCompactWindow": 400000}
+	}`, string(got["modelSettings"]))
+
+	var back Settings
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, s, back)
+}
+
+// An empty allowedProviders list allows no provider at all, so it must reach
+// the wire; only a nil list means "every provider".
+func TestSettingsAllowedProvidersEmptyVersusNil(t *testing.T) {
+	data, err := json.Marshal(Settings{AllowedProviders: []AllowedProvider{}})
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"allowedProviders":[]`)
+
+	data, err = json.Marshal(Settings{})
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "allowedProviders")
+}
+
+func TestAutoCompactWindowToleratesUnknownString(t *testing.T) {
+	var m SettingsModel
+	require.NoError(t, json.Unmarshal(
+		[]byte(`{"effortLevel":"high","autoCompactWindow":"huge"}`), &m))
+	assert.Equal(t, EffortLevel("high"), m.EffortLevel)
+	require.NotNil(t, m.AutoCompactWindow)
+	assert.Equal(t, AutoCompactWindow{}, *m.AutoCompactWindow)
+}
+
 // TestSettingsAttributionBoolean covers the boolean arm v0.3.290 adds to
 // attribution (sdk.d.ts L6773).
 func TestSettingsAttributionBoolean(t *testing.T) {
