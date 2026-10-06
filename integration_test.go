@@ -5325,3 +5325,56 @@ func TestIntegrationReadMcpResource(t *testing.T) {
 	_, err = stream.ReadMcpResource(ctx, "example", "file:///etc/passwd")
 	assert.Error(t, err, "a non-ui:// URI must be refused")
 }
+
+// TestIntegrationSettingsParityV0_3_290 pushes the v0.3.290 settings through
+// the managed tier and completes a turn. allowedProviders names the provider
+// this session actually uses, so a correctly-shaped list must let it start;
+// the per-model autoCompactWindow exercises both arms of its union.
+func TestIntegrationSettingsParityV0_3_290(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	width := 100
+	idle := false
+	chrome := false
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithManagedSettings(Settings{
+			AvailableModelsMatch:              AvailableModelsMatchExact,
+			DeniedModels:                      []string{"claude-3-opus"},
+			AllowClaudeInChromeWithManagedMcp: &chrome,
+			AllowedProviders: []AllowedProvider{
+				AllowedProviderAnthropic,
+			},
+			MaxProseWidth:  &width,
+			IdleCompaction: &idle,
+			ModelSettings: map[string]SettingsModel{
+				"claude-opus-5": {
+					AutoCompactWindow: &AutoCompactWindow{Auto: true},
+				},
+				"claude-sonnet-5": {
+					AutoCompactWindow: &AutoCompactWindow{Tokens: 400000},
+				},
+			},
+		}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var gotResult bool
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(ResultMessage); ok {
+			assert.False(t, m.IsError,
+				"the v0.3.290 settings must not fail the session: %s", m.Result)
+			gotResult = true
+			break
+		}
+	}
+	assert.True(t, gotResult,
+		"a stalled managed-settings handshake shows up as no result at all")
+}
