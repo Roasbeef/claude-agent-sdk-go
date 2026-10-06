@@ -679,7 +679,7 @@ func (s *Stream) Send(ctx context.Context, prompt string) error {
 }
 
 // SendMessage submits a fully formed user message to the stream, the Go
-// analogue of handing an SDKUserMessage to the TS SDK's streamInput. Use it
+// analog of handing an SDKUserMessage to the TS SDK's streamInput. Use it
 // for the fields Send can't express: PastedContent, InlinePastes, a
 // per-message ClientComposed, a client UUID, or a Priority.
 //
