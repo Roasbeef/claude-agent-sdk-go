@@ -191,13 +191,16 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 		},
 	}
 
-	// Send request.
+	// Register before writing: a CLI that answers before the entry exists
+	// would have its response dropped as unmatched, and we'd wait out ctx.
+	ch := make(chan SDKControlResponse, 1)
+	p.pendingReqs.Store(requestID, ch)
 	if err := p.transport.Write(ctx, req); err != nil {
+		p.pendingReqs.Delete(requestID)
 		return fmt.Errorf("failed to send initialize request: %w", err)
 	}
 
-	// Wait for response.
-	resp, err := p.waitForSDKResponse(ctx, requestID)
+	resp, err := p.waitForSDKResponse(ctx, requestID, ch)
 	if err != nil {
 		return fmt.Errorf("initialization failed: %w", err)
 	}
@@ -1567,11 +1570,12 @@ func (p *Protocol) handleSDKControlResponse(resp SDKControlResponse) error {
 	return nil
 }
 
-// waitForSDKResponse waits for an SDK control response with the given request ID.
-func (p *Protocol) waitForSDKResponse(ctx context.Context, requestID string) (SDKControlResponse, error) {
-	ch := make(chan SDKControlResponse, 1)
-	p.pendingReqs.Store(requestID, ch)
-
+// waitForSDKResponse waits for the SDK control response to requestID on ch,
+// which the caller must have registered in pendingReqs before writing the
+// request.
+func (p *Protocol) waitForSDKResponse(
+	ctx context.Context, requestID string, ch chan SDKControlResponse,
+) (SDKControlResponse, error) {
 	select {
 	case <-ctx.Done():
 		p.pendingReqs.Delete(requestID)
