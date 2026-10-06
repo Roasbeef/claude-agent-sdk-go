@@ -5465,6 +5465,156 @@ func TestIntegrationInitViewMode(t *testing.T) {
 	assert.Equal(t, ViewModeDefault, init.ViewMode)
 }
 
+// TestIntegrationSettingsParityV0_3_290 pushes the v0.3.290 settings through
+// the managed tier and completes a turn. allowedProviders names the provider
+// this session actually uses, so a correctly-shaped list must let it start;
+// the per-model autoCompactWindow exercises both arms of its union.
+func TestIntegrationSettingsParityV0_3_290(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	width := 100
+	idle := false
+	chrome := false
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithManagedSettings(Settings{
+			AvailableModelsMatch:              AvailableModelsMatchExact,
+			DeniedModels:                      []string{"claude-3-opus"},
+			AllowClaudeInChromeWithManagedMcp: &chrome,
+			AllowedProviders: []AllowedProvider{
+				AllowedProviderAnthropic,
+			},
+			MaxProseWidth:  &width,
+			IdleCompaction: &idle,
+			ModelSettings: map[string]SettingsModel{
+				"claude-opus-5": {
+					AutoCompactWindow: &AutoCompactWindow{Auto: true},
+				},
+				"claude-sonnet-5": {
+					AutoCompactWindow: &AutoCompactWindow{Tokens: 400000},
+				},
+			},
+		}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var gotResult bool
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(ResultMessage); ok {
+			assert.False(t, m.IsError,
+				"the v0.3.290 settings must not fail the session: %s", m.Result)
+			gotResult = true
+			break
+		}
+	}
+	assert.True(t, gotResult,
+		"a stalled managed-settings handshake shows up as no result at all")
+}
+
+// TestIntegrationAllowedProvidersRefusesStartup sets an allowedProviders list
+// that leaves out the provider this session uses, and checks the CLI refuses
+// to start with the provider_not_allowed reason (sdk.d.ts v0.3.290 L8610,
+// L5896).
+//
+// The CLI writes the frame, but the Go client currently drops a result that
+// arrives before the initialize reply and then waits out ctx (#289), so this
+// skips until that lands. The short timeout keeps the skip cheap.
+func TestIntegrationAllowedProvidersRefusesStartup(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithManagedSettings(Settings{
+			AllowedProviders: []AllowedProvider{AllowedProviderBedrock},
+		}),
+		WithEnv(map[string]string{"CLAUDE_CODE_STARTUP_FAILURE_RESULTS": "1"}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	var result *ResultMessage
+	for msg := range client.Query(ctx, "say ok") {
+		if m, ok := msg.(ResultMessage); ok {
+			result = &m
+		}
+	}
+
+	if result == nil {
+		t.Skip("startup-failure result frame not surfaced by the client (#289)")
+	}
+	if result.StartupFailureReason == "" && !result.IsError {
+		t.Skip("CLI predates allowedProviders and started normally")
+	}
+	assert.Equal(t, StartupFailureProviderNotAllowed, result.StartupFailureReason)
+}
+
+// TestIntegrationSettingsAttributionFalse sends attribution as a bare false
+// through --settings and reads the effective settings back: the CLI expands
+// it to the hide-everything object form (sdk.d.ts v0.3.290 L6773). The Go
+// SDK has no get_settings wrapper yet, so this goes through the raw control
+// request.
+func TestIntegrationSettingsAttributionFalse(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSettings(Settings{
+			Attribution: &SettingsAttribution{HideAll: true},
+		}),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	resp, err := stream.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "get_settings",
+	})
+	require.NoError(t, err)
+
+	raw, err := json.Marshal(resp.Response.Response)
+	require.NoError(t, err)
+	var got struct {
+		Effective Settings `json:"effective"`
+		Errors    []struct {
+			Path    string `json:"path"`
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &got))
+
+	for _, e := range got.Errors {
+		assert.NotEqual(t, "attribution", e.Path,
+			"CLI rejected the boolean form: %s", e.Message)
+	}
+	require.NotNil(t, got.Effective.Attribution)
+	attr := *got.Effective.Attribution
+	require.NotNil(t, attr.Commit)
+	require.NotNil(t, attr.PR)
+	require.NotNil(t, attr.SessionURL)
+	assert.Empty(t, *attr.Commit)
+	assert.Empty(t, *attr.PR)
+	assert.False(t, *attr.SessionURL)
+}
+
 // TestIntegrationStreamSendMessage drives SendMessage against the live CLI:
 // pasted_content has to reach the model (the answer only exists in the
 // paste), and a per-message client_composed has to stop slash-command

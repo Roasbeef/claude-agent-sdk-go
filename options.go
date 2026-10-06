@@ -636,9 +636,17 @@ type Settings struct {
 	// Honored only from admin-controlled managed settings (MDM,
 	// managed-settings.json, policy helper); ignored in user, project and
 	// remote-delivered settings (sdk.d.ts v0.3.270 L7992).
-	GatewayInternalNetworks    []string                     `json:"gatewayInternalNetworks,omitempty"`
-	ForceLoginGatewayURL       string                       `json:"forceLoginGatewayUrl,omitempty"`
-	ForceLoginOrgUUID          interface{}                  `json:"forceLoginOrgUUID,omitempty"`
+	GatewayInternalNetworks []string    `json:"gatewayInternalNetworks,omitempty"`
+	ForceLoginGatewayURL    string      `json:"forceLoginGatewayUrl,omitempty"`
+	ForceLoginOrgUUID       interface{} `json:"forceLoginOrgUUID,omitempty"`
+	// AllowedProviders lists the API providers Claude Code may use on this
+	// machine; a session on any other is refused at startup, at login, and
+	// on its next API contact. Nil allows every provider, while an empty
+	// non-nil slice allows none, hence omitzero rather than omitempty. Only
+	// a list in managed-settings.json or MDM is enforcement on the machine;
+	// one set only server-side reaches only sessions that fetch it (sdk.d.ts
+	// v0.3.290 L8610).
+	AllowedProviders           []AllowedProvider            `json:"allowedProviders,omitzero"`
 	ForceRemoteSettingsRefresh *bool                        `json:"forceRemoteSettingsRefresh,omitempty"`
 	OtelHeadersHelper          string                       `json:"otelHeadersHelper,omitempty"`
 	OutputStyle                string                       `json:"outputStyle,omitempty"`
@@ -651,7 +659,12 @@ type Settings struct {
 	SpinnerVerbs               *SettingsSpinnerVerbs        `json:"spinnerVerbs,omitempty"`
 	SpinnerTipsOverride        *SettingsSpinnerTipsOverride `json:"spinnerTipsOverride,omitempty"`
 	SyntaxHighlightingDisabled *bool                        `json:"syntaxHighlightingDisabled,omitempty"`
-	TerminalTitleFromRename    *bool                        `json:"terminalTitleFromRename,omitempty"`
+	// MaxProseWidth caps, in terminal columns, the width of prose in
+	// Claude's responses; tables and code blocks keep the full width, and
+	// only the display wraps. Minimum 40; unset uses the full terminal
+	// width (sdk.d.ts v0.3.290 L8917).
+	MaxProseWidth           *int  `json:"maxProseWidth,omitempty"`
+	TerminalTitleFromRename *bool `json:"terminalTitleFromRename,omitempty"`
 	// PromptCacheTTL is the prompt-cache lifetime for the main conversation —
 	// interactive, -p and SDK turns, plus the helpers running inline with
 	// them. Empty means automatic: one hour on a Claude subscription within
@@ -773,6 +786,10 @@ type Settings struct {
 	// background before it is needed. Only applies when auto-compact is on.
 	// Mirrors sdk.d.ts v0.3.220 L6545.
 	PrecomputeCompactionEnabled *bool `json:"precomputeCompactionEnabled,omitempty"`
+	// IdleCompaction set to false stops Claude Code from compacting a long
+	// conversation while the session is idle. True does not turn idle
+	// compaction on (sdk.d.ts v0.3.290 L9235).
+	IdleCompaction *bool `json:"idleCompaction,omitempty"`
 	// SwitchModelsOnFlag switches models automatically when safety measures flag a message. Mirrors sdk.d.ts v0.3.168 L5620.
 	SwitchModelsOnFlag *bool `json:"switchModelsOnFlag,omitempty"`
 	// AutoContinueAtUsageLimit waits for a claude.ai usage limit to reset and
@@ -819,6 +836,12 @@ type Settings struct {
 	WorkflowKeywordTriggerEnabled *bool `json:"workflowKeywordTriggerEnabled,omitempty"`
 	// AllowAllClaudeAiMcps lets claude.ai cloud MCP connectors load alongside managed-mcp.json. Mirrors sdk.d.ts v0.3.150 L4411.
 	AllowAllClaudeAiMcps *bool `json:"allowAllClaudeAiMcps,omitempty"`
+	// AllowClaudeInChromeWithManagedMcp lets the built-in Claude in Chrome
+	// MCP server run alongside managed-mcp.json instead of being blocked by
+	// its exclusive-control lockdown. deniedMcpServers and the
+	// organization's Claude in Chrome setting still block it. Honored only
+	// from device managed settings (sdk.d.ts v0.3.290 L7280).
+	AllowClaudeInChromeWithManagedMcp *bool `json:"allowClaudeInChromeWithManagedMcp,omitempty"`
 	// ManagedMCPServers are MCP servers the organization provides to every
 	// user, keyed by server name, each value carrying the .mcp.json entry
 	// shape. Only "http" and "sse" servers are accepted: nothing that names
@@ -877,6 +900,22 @@ type Settings struct {
 	DefaultView string `json:"defaultView,omitempty"`
 	// EnforceAvailableModels restricts model selection to AvailableModels. Mirrors sdk.d.ts v0.3.177 L4608.
 	EnforceAvailableModels *bool `json:"enforceAvailableModels,omitempty"`
+	// AvailableModelsMatch picks how AvailableModels entries match model
+	// IDs. Prefix (the default) lets an entry also allow any ID extending it,
+	// so "claude-opus-5" allows "claude-opus-5-5"; exact stops a model ID
+	// entry from allowing other versions, and with a non-empty list also
+	// confines the Default option to listed models, refusing to start if
+	// none is usable. Read from managed settings only (sdk.d.ts v0.3.290
+	// L6849).
+	AvailableModelsMatch AvailableModelsMatch `json:"availableModelsMatch,omitempty"`
+	// DeniedModels are models users cannot select even when AvailableModels
+	// allows them. A family alias blocks the family; a model ID blocks that
+	// version in every spelling (dates, -fast and provider prefixes are
+	// ignored), and an ID with no minor version also blocks later minors.
+	// The Default option steps down past a blocked model, and Claude Code
+	// refuses to start when nothing allowed is left. Read from managed
+	// settings only (sdk.d.ts v0.3.290 L6853).
+	DeniedModels []string `json:"deniedModels,omitempty"`
 	// DisableBundledSkills removes the skills and workflows that ship with Claude Code: bundled skills/workflows are removed entirely and built-in slash commands stay typable but hidden from the model. Plugins, .claude/skills/, and .claude/commands/ are unaffected. Equivalent to CLAUDE_CODE_DISABLE_BUNDLED_SKILLS=1. Mirrors sdk.d.ts v0.3.177 L4636.
 	DisableBundledSkills *bool `json:"disableBundledSkills,omitempty"`
 	// DisableArtifact disables the artifact view. Mirrors sdk.d.ts v0.3.177 L4905.
@@ -930,6 +969,13 @@ type SettingsPolicyHelper struct {
 	RefreshIntervalMs *int   `json:"refreshIntervalMs,omitempty"`
 }
 
+// SettingsAttribution customizes the attribution Claude Code adds to commits
+// and PRs.
+//
+// On the wire attribution is a boolean | object union (sdk.d.ts v0.3.290
+// L6773): the object customizes each piece, while a bare false hides all
+// attribution. HideAll selects the bare false; a bare true means the same as
+// leaving attribution out and decodes as the zero value.
 type SettingsAttribution struct {
 	Commit *string `json:"commit,omitempty"`
 	PR     *string `json:"pr,omitempty"`
@@ -938,6 +984,36 @@ type SettingsAttribution struct {
 	// true). Set false to omit the Claude-Session trailer and PR-body link.
 	// Mirrors sdk.d.ts v0.3.185 L4551.
 	SessionURL *bool `json:"sessionUrl,omitempty"`
+	// HideAll encodes attribution as a bare false, hiding all attribution;
+	// the other fields are then ignored. Claude Code versions before the
+	// boolean form reject it, so for settings shared with older CLIs set
+	// Commit and PR to "" and SessionURL to false instead.
+	HideAll bool `json:"-"`
+}
+
+// MarshalJSON emits a bare false for HideAll, else the object form.
+func (a SettingsAttribution) MarshalJSON() ([]byte, error) {
+	if a.HideAll {
+		return []byte("false"), nil
+	}
+	type plain SettingsAttribution
+	return json.Marshal(plain(a))
+}
+
+// UnmarshalJSON accepts the boolean or the object form.
+func (a *SettingsAttribution) UnmarshalJSON(data []byte) error {
+	var b bool
+	if err := json.Unmarshal(data, &b); err == nil {
+		*a = SettingsAttribution{HideAll: !b}
+		return nil
+	}
+	type plain SettingsAttribution
+	var p plain
+	if err := json.Unmarshal(data, &p); err != nil {
+		return err
+	}
+	*a = SettingsAttribution(p)
+	return nil
 }
 
 type SettingsPermissions struct {
@@ -1114,7 +1190,83 @@ type SettingsModel struct {
 	// Keyed like EffortLevel: the canonical model name also matches its
 	// dated, [1m], Bedrock and Vertex spellings (sdk.d.ts v0.3.270 L8342).
 	MaxEffortLevel EffortLevel `json:"maxEffortLevel,omitempty"`
+	// AutoCompactWindow is this model's auto-compact window. Within one
+	// settings file it replaces the top-level Settings.AutoCompactWindow for
+	// the model; /autocompact saves here (sdk.d.ts v0.3.290 L8980).
+	AutoCompactWindow *AutoCompactWindow `json:"autoCompactWindow,omitempty"`
 }
+
+// AutoCompactWindow is the per-model auto-compact window union: a token count
+// (100000 to 1000000), or "auto" for the window tuned for the model. Auto
+// takes precedence when both are set.
+type AutoCompactWindow struct {
+	Auto   bool
+	Tokens int
+}
+
+// MarshalJSON emits "auto" or the token count.
+func (w AutoCompactWindow) MarshalJSON() ([]byte, error) {
+	if w.Auto {
+		return json.Marshal("auto")
+	}
+	return json.Marshal(w.Tokens)
+}
+
+// UnmarshalJSON accepts either wire form of the union.
+func (w *AutoCompactWindow) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		// A string other than "auto" from a newer CLI decodes as unset
+		// rather than failing the whole settings document around it.
+		*w = AutoCompactWindow{Auto: s == "auto"}
+		return nil
+	}
+	var tokens int
+	if err := json.Unmarshal(data, &tokens); err != nil {
+		return err
+	}
+	*w = AutoCompactWindow{Tokens: tokens}
+	return nil
+}
+
+// AvailableModelsMatch is how Settings.AvailableModels entries match model
+// IDs.
+type AvailableModelsMatch string
+
+const (
+	// AvailableModelsMatchPrefix lets an entry allow any model ID extending
+	// it. The default.
+	AvailableModelsMatchPrefix AvailableModelsMatch = "prefix"
+	// AvailableModelsMatchExact stops a model ID entry from allowing other
+	// versions; family aliases still allow the whole family.
+	AvailableModelsMatchExact AvailableModelsMatch = "exact"
+)
+
+// AllowedProvider is one entry of Settings.AllowedProviders.
+type AllowedProvider string
+
+const (
+	// AllowedProviderAnthropic is the Anthropic API on Anthropic's own host,
+	// via a claude.ai or Console sign-in or an API key.
+	AllowedProviderAnthropic AllowedProvider = "anthropic"
+	// AllowedProviderCustomEndpoint is the Anthropic API or a cloud
+	// provider's API sent to some other host, such as an LLM gateway;
+	// admitted only for the base URL pinned in the same managed source's env
+	// block.
+	AllowedProviderCustomEndpoint AllowedProvider = "customEndpoint"
+	// AllowedProviderBedrock is Amazon Bedrock.
+	AllowedProviderBedrock AllowedProvider = "bedrock"
+	// AllowedProviderVertex is Google Vertex AI.
+	AllowedProviderVertex AllowedProvider = "vertex"
+	// AllowedProviderFoundry is Microsoft Foundry.
+	AllowedProviderFoundry AllowedProvider = "foundry"
+	// AllowedProviderAnthropicAws is the anthropicAws provider.
+	AllowedProviderAnthropicAws AllowedProvider = "anthropicAws"
+	// AllowedProviderMantle is the mantle provider.
+	AllowedProviderMantle AllowedProvider = "mantle"
+	// AllowedProviderGateway is the Cloud gateway sign-in.
+	AllowedProviderGateway AllowedProvider = "gateway"
+)
 
 // SettingsModelPicker curates the rows shown in the /model picker.
 type SettingsModelPicker struct {
