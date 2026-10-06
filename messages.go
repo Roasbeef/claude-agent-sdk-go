@@ -1238,15 +1238,49 @@ type ActiveGoalValue struct {
 // MessageType implements Message.
 func (m ActiveGoalMessage) MessageType() string { return "active_goal" }
 
-// ConversationResetMessage is emitted by /clear, plan-mode exit, and
-// fresh-session flows. The surface should mount a fresh transcript under
-// NewConversationID and reset any cached session title.
+// ConversationResetMessage is emitted by /clear, plan-mode exit,
+// fresh-session, and onboarding flows. The surface should mount a fresh
+// transcript under NewConversationID and reset any cached session title.
 type ConversationResetMessage struct {
 	Type              string `json:"type"`                // Always "conversation_reset"
 	NewConversationID string `json:"new_conversation_id"` // Conversation ID to mount the fresh transcript under
 	UUID              string `json:"uuid"`                // Unique message ID
 	SessionID         string `json:"session_id"`          // Session identifier
+	// Trigger says what discarded the conversation. It's informational: a
+	// consumer resets on every conversation_reset whatever it says, and
+	// treats an empty (older CLI) or unknown value as an unspecified reset
+	// (sdk.d.ts v0.3.290 L5132).
+	Trigger ConversationResetTrigger `json:"trigger,omitempty"`
+	// UserMessageUUID is set only for ConversationResetTriggerClear: the uuid
+	// of the user message whose /clear ran (the client's own uuid when it
+	// sent one). It lets a consumer match this frame to a /clear it already
+	// saw and wipe once, whichever arrives first, instead of relying on
+	// arrival order. Empty when that uuid is not canonical.
+	UserMessageUUID string `json:"user_message_uuid,omitempty"`
+	// Timestamp is when the reset happened, as an ISO 8601 UTC string from
+	// the clock of the process that performed it. For display only, not for
+	// ordering frames; fall back to receive time when empty.
+	Timestamp string `json:"timestamp,omitempty"`
 }
+
+// ConversationResetTrigger names what discarded a conversation. Open set:
+// compare against the constants, but expect values beyond them.
+type ConversationResetTrigger string
+
+const (
+	// ConversationResetTriggerClear is /clear, or its /reset and /new
+	// aliases.
+	ConversationResetTriggerClear ConversationResetTrigger = "clear"
+	// ConversationResetTriggerPlanModeExit is leaving plan mode with the
+	// clear-context option.
+	ConversationResetTriggerPlanModeExit ConversationResetTrigger = "plan_mode_exit"
+	// ConversationResetTriggerFreshSession is a flow that starts a fresh
+	// session to implement an approved plan.
+	ConversationResetTriggerFreshSession ConversationResetTrigger = "fresh_session"
+	// ConversationResetTriggerOnboarding is an onboarding flow re-run inside
+	// an existing session.
+	ConversationResetTriggerOnboarding ConversationResetTrigger = "onboarding"
+)
 
 // MessageType implements Message.
 func (m ConversationResetMessage) MessageType() string { return "conversation_reset" }

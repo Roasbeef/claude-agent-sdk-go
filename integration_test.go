@@ -5140,3 +5140,48 @@ func TestIntegrationVerbatimPrompts(t *testing.T) {
 	assert.NotEmpty(t, verbatim.Result,
 		"the prompt should reach the model as a normal turn")
 }
+
+// TestIntegrationConversationResetTrigger runs /clear in a streaming session
+// and checks the conversation_reset frame names it (sdk.d.ts v0.3.290
+// L5132).
+func TestIntegrationConversationResetTrigger(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	client, err := NewClient(isolatedClientOptions(t)...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx, "/clear"))
+
+	var reset *ConversationResetMessage
+	for msg := range stream.Messages() {
+		if m, ok := msg.(ConversationResetMessage); ok {
+			reset = &m
+			break
+		}
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+	if reset == nil {
+		t.Skip("CLI did not emit conversation_reset for /clear on this lane")
+	}
+
+	assert.NotEmpty(t, reset.NewConversationID)
+	if reset.Trigger == "" {
+		t.Skip("CLI predates conversation_reset trigger")
+	}
+	assert.Equal(t, ConversationResetTriggerClear, reset.Trigger)
+	assert.NotEmpty(t, reset.Timestamp)
+	// We sent no uuid of our own, so this is the one the CLI assigned to the
+	// typed /clear.
+	assert.NotEmpty(t, reset.UserMessageUUID)
+}
