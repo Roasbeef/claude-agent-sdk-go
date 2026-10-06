@@ -5206,6 +5206,171 @@ func TestIntegrationGetTaskOutput(t *testing.T) {
 	assert.False(t, got.Truncated, "a few bytes of output is not truncated")
 }
 
+// TestIntegrationMCPToolUIMeta asserts mcp_status lists a configured
+// server's tools and passes through the MCP Apps ui metadata the example
+// server's show_greeting tool declares (sdk.d.ts v0.3.290 L1280).
+func TestIntegrationMCPToolUIMeta(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	mcpServerPath := filepath.Join(t.TempDir(), "example-mcp-server")
+	buildCmd := exec.Command("go", "build", "-o", mcpServerPath, "./cmd/example-mcp-server")
+	out, err := buildCmd.CombinedOutput()
+	require.NoError(t, err, "failed to build MCP server: %s", out)
+
+	opts := append(isolatedClientOptions(t),
+		WithMCPServers(map[string]MCPServerConfig{
+			"example": {Type: "stdio", Command: mcpServerPath},
+		}),
+		WithStrictMCPConfig(true),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	// MCP startup is non-blocking, so the server may still be pending on the
+	// first poll.
+	var found *McpServerStatus
+	deadline := time.Now().Add(30 * time.Second)
+	for found == nil && time.Now().Before(deadline) {
+		statuses, err := stream.McpServerStatus(ctx)
+		require.NoError(t, err)
+		for i := range statuses {
+			s := statuses[i]
+			if s.Name == "example" && s.Status == McpServerStateConnected {
+				found = &s
+			}
+		}
+		if found == nil {
+			time.Sleep(500 * time.Millisecond)
+		}
+	}
+	require.NotNil(t, found, "example server never connected")
+
+	var greeting *McpServerStatusTool
+	for i := range found.Tools {
+		if found.Tools[i].Name == "show_greeting" {
+			greeting = &found.Tools[i]
+		}
+	}
+	require.NotNil(t, greeting, "tools: %+v", found.Tools)
+
+	if greeting.Meta == nil {
+		t.Skip("CLI predates mcp_tool_ui_meta_v1")
+	}
+	assert.Equal(t, "ui://example/greeting.html", greeting.UIResourceURI())
+}
+
+// TestIntegrationReadMcpResource reads the example server's MCP Apps widget
+// through mcp_read_resource, and checks the CLI refuses a non-ui:// URI
+// (sdk.d.ts v0.3.290 L3178).
+func TestIntegrationReadMcpResource(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	mcpServerPath := filepath.Join(t.TempDir(), "example-mcp-server")
+	buildCmd := exec.Command("go", "build", "-o", mcpServerPath, "./cmd/example-mcp-server")
+	out, err := buildCmd.CombinedOutput()
+	require.NoError(t, err, "failed to build MCP server: %s", out)
+
+	opts := append(isolatedClientOptions(t),
+		WithMCPServers(map[string]MCPServerConfig{
+			"example": {Type: "stdio", Command: mcpServerPath},
+		}),
+		WithStrictMCPConfig(true),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	const uri = "ui://example/greeting.html"
+
+	// MCP startup is non-blocking; a read before the server connects is
+	// refused as not connected, so retry until it lands.
+	var got *SDKControlMcpReadResourceResponse
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		got, err = stream.ReadMcpResource(ctx, "example", uri)
+		if err != nil && strings.Contains(err.Error(), "Unsupported control request") {
+			t.Skipf("CLI does not support mcp_read_resource: %v", err)
+		}
+		if err == nil {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	require.NoError(t, err)
+
+	require.Len(t, got.Contents, 1)
+	assert.Equal(t, uri, got.Contents[0].URI)
+	assert.Contains(t, got.Contents[0].Text, "Hello from example-mcp-server")
+	assert.Contains(t, got.Contents[0].MimeType, "text/html")
+	assert.Contains(t, got.Contents[0].Meta, "ui",
+		"the item's own _meta passes through")
+
+	_, err = stream.ReadMcpResource(ctx, "example", "file:///etc/passwd")
+	assert.Error(t, err, "a non-ui:// URI must be refused")
+}
+
+// TestIntegrationConversationResetTrigger runs /clear in a streaming session
+// and checks the conversation_reset frame names it (sdk.d.ts v0.3.290
+// L5132).
+func TestIntegrationConversationResetTrigger(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	client, err := NewClient(isolatedClientOptions(t)...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx, "/clear"))
+
+	var reset *ConversationResetMessage
+	for msg := range stream.Messages() {
+		if m, ok := msg.(ConversationResetMessage); ok {
+			reset = &m
+			break
+		}
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+	if reset == nil {
+		t.Skip("CLI did not emit conversation_reset for /clear on this lane")
+	}
+
+	assert.NotEmpty(t, reset.NewConversationID)
+	if reset.Trigger == "" {
+		t.Skip("CLI predates conversation_reset trigger")
+	}
+	assert.Equal(t, ConversationResetTriggerClear, reset.Trigger)
+	assert.NotEmpty(t, reset.Timestamp)
+	// We sent no uuid of our own, so this is the one the CLI assigned to the
+	// typed /clear.
+	assert.NotEmpty(t, reset.UserMessageUUID)
+}
+
 // TestIntegrationInitPluginErrors configures one loadable plugin and one
 // missing plugin directory, and checks the init message reports the second
 // under plugin_errors with its path (sdk.d.ts v0.3.290 L5958).
