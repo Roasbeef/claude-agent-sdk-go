@@ -5267,3 +5267,37 @@ func TestIntegrationMCPToolUIMeta(t *testing.T) {
 	}
 	assert.Equal(t, "ui://example/greeting.html", greeting.UIResourceURI())
 }
+
+// TestIntegrationInitViewMode checks the per-turn init frame of a headless
+// stream-json session reports the transcript view (sdk.d.ts v0.3.290 L5982).
+// Only the default is reachable here: a headless session answers /focus with
+// "isn't available here yet", so the focus value is covered by the unit test.
+func TestIntegrationInitViewMode(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var init *SystemMessage
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(SystemMessage); ok && m.Subtype == "init" {
+			init = &m
+			break
+		}
+	}
+	require.NotNil(t, init, "no init message")
+
+	if init.ViewMode == "" {
+		t.Skip("CLI predates view_mode on init")
+	}
+	assert.Equal(t, ViewModeDefault, init.ViewMode)
+}
