@@ -436,6 +436,31 @@ func TestParseMessageAssistantMessage(t *testing.T) {
 	assert.Equal(t, 0.0025, assistantMsg.Usage.Cost)
 }
 
+func TestMessageAgentID(t *testing.T) {
+	msg, err := ParseMessage([]byte(`{"type":"assistant","agent_id":"a1",` +
+		`"message":{"role":"assistant","content":[]},` +
+		`"parent_tool_use_id":"tu","uuid":"u","session_id":"s"}`))
+	require.NoError(t, err)
+	assistant, ok := msg.(AssistantMessage)
+	require.True(t, ok)
+	assert.Equal(t, "a1", assistant.AgentID)
+
+	msg, err = ParseMessage([]byte(`{"type":"user","agent_id":"a1",` +
+		`"message":{"role":"user","content":[{"type":"text","text":"hi"}]},` +
+		`"parent_tool_use_id":"tu","session_id":"s"}`))
+	require.NoError(t, err)
+	user, ok := msg.(UserMessage)
+	require.True(t, ok)
+	assert.Equal(t, "a1", user.AgentID)
+
+	// Main-thread messages carry no agent_id and must not grow one.
+	for _, v := range []interface{}{AssistantMessage{}, UserMessage{}} {
+		data, err := json.Marshal(v)
+		require.NoError(t, err)
+		assert.NotContains(t, string(data), `"agent_id"`, "%T", v)
+	}
+}
+
 func TestParseMessageAssistantMessageSubagentFields(t *testing.T) {
 	input := `{
 		"type": "assistant",

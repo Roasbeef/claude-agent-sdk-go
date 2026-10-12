@@ -19,16 +19,20 @@ type Message interface {
 // This message type initiates or continues a conversation. The ParentToolUseID
 // field links this message to a specific tool call when providing tool results.
 type UserMessage struct {
-	Type            string               `json:"type"`                       // Always "user"
-	UUID            string               `json:"uuid,omitempty"`             // Unique message ID
-	SessionID       string               `json:"session_id"`                 // Session identifier
-	Message         APIUserMessage       `json:"message"`                    // Message content
-	ParentToolUseID *string              `json:"parent_tool_use_id"`         // For tool results (null if not tool result)
-	IsSynthetic     bool                 `json:"isSynthetic,omitempty"`      // True for system-generated messages
-	ToolUseResult   interface{}          `json:"tool_use_result,omitempty"`  // Tool result JSON if applicable
-	Priority        *UserMessagePriority `json:"priority,omitempty"`         // Scheduling priority
-	SubagentType    string               `json:"subagent_type,omitempty"`    // Subagent type that produced this message
-	TaskDescription string               `json:"task_description,omitempty"` // Description of the subagent task that produced this message
+	Type            string               `json:"type"`                      // Always "user"
+	UUID            string               `json:"uuid,omitempty"`            // Unique message ID
+	SessionID       string               `json:"session_id"`                // Session identifier
+	Message         APIUserMessage       `json:"message"`                   // Message content
+	ParentToolUseID *string              `json:"parent_tool_use_id"`        // For tool results (null if not tool result)
+	IsSynthetic     bool                 `json:"isSynthetic,omitempty"`     // True for system-generated messages
+	ToolUseResult   interface{}          `json:"tool_use_result,omitempty"` // Tool result JSON if applicable
+	Priority        *UserMessagePriority `json:"priority,omitempty"`        // Scheduling priority
+	// AgentID is the id of the subagent that produced this message: the
+	// task_id of its task events, unchanged when the subagent is resumed.
+	// Empty on main-thread messages (sdk.d.ts v0.3.296 L6393).
+	AgentID         string `json:"agent_id,omitempty"`
+	SubagentType    string `json:"subagent_type,omitempty"`    // Subagent type that produced this message
+	TaskDescription string `json:"task_description,omitempty"` // Description of the subagent task that produced this message
 	// SenderTaskID is the task id of the in-process background subagent that
 	// sent this message, stamped by the harness from the sending loop (never
 	// from tool input). Absent for cross-session peers. Note: camelCase wire
@@ -219,6 +223,12 @@ type AssistantMessage struct {
 	// received and the content may end mid-word. Absent on normally completed
 	// messages (sdk.d.ts v0.3.215).
 	Aborted bool `json:"aborted,omitempty"`
+
+	// AgentID is the id of the subagent that produced this message: the
+	// task_id of its task events, unchanged when the subagent is resumed, so
+	// it joins this message to TaskStartedMessage.TaskID. Empty for
+	// top-level assistant turns (sdk.d.ts v0.3.296 L3669).
+	AgentID string `json:"agent_id,omitempty"`
 
 	// SubagentType is the subagent type that produced this message, when
 	// the message originated from a subagent task. Empty for top-level
