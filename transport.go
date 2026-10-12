@@ -182,53 +182,53 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	}
 
 	if t.options.Model != "" {
-		args = append(args, "--model", t.options.Model)
+		args = append(args, flagValue("--model", t.options.Model))
 	}
 
 	if t.options.MainAgent != "" {
-		args = append(args, "--agent", t.options.MainAgent)
+		args = append(args, flagValue("--agent", t.options.MainAgent))
 	}
 
 	if t.options.SystemPrompt != "" {
-		args = append(args, "--system-prompt", t.options.SystemPrompt)
+		args = append(args, flagValue("--system-prompt", t.options.SystemPrompt))
 	}
 
 	if t.options.PermissionMode != "" {
-		args = append(args, "--permission-mode", string(t.options.PermissionMode))
+		args = append(args, flagValue("--permission-mode", string(t.options.PermissionMode)))
 	}
 
 	if t.options.Thinking != nil {
 		switch t.options.Thinking.Type {
 		case "enabled":
 			if t.options.Thinking.BudgetTokens == nil {
-				args = append(args, "--thinking", "adaptive")
+				args = append(args, "--thinking=adaptive")
 			} else {
-				args = append(args, "--max-thinking-tokens",
-					fmt.Sprintf("%d", *t.options.Thinking.BudgetTokens))
+				args = append(args, flagValue("--max-thinking-tokens",
+					fmt.Sprintf("%d", *t.options.Thinking.BudgetTokens)))
 			}
 		case "disabled":
-			args = append(args, "--thinking", "disabled")
+			args = append(args, "--thinking=disabled")
 		case "adaptive":
-			args = append(args, "--thinking", "adaptive")
+			args = append(args, "--thinking=adaptive")
 		}
 		if t.options.Thinking.Type != "disabled" && t.options.Thinking.Display != "" {
-			args = append(args, "--thinking-display", string(t.options.Thinking.Display))
+			args = append(args, flagValue("--thinking-display", string(t.options.Thinking.Display)))
 		}
 	} else if t.options.MaxThinkingTokens != nil {
 		if *t.options.MaxThinkingTokens == 0 {
-			args = append(args, "--thinking", "disabled")
+			args = append(args, "--thinking=disabled")
 		} else {
-			args = append(args, "--max-thinking-tokens",
-				fmt.Sprintf("%d", *t.options.MaxThinkingTokens))
+			args = append(args, flagValue("--max-thinking-tokens",
+				fmt.Sprintf("%d", *t.options.MaxThinkingTokens)))
 		}
 	}
 
 	if t.options.Effort != "" {
-		args = append(args, "--effort", string(t.options.Effort))
+		args = append(args, flagValue("--effort", string(t.options.Effort)))
 	}
 
 	if t.options.TaskBudget != nil {
-		args = append(args, "--task-budget", fmt.Sprintf("%d", t.options.TaskBudget.Total))
+		args = append(args, flagValue("--task-budget", fmt.Sprintf("%d", t.options.TaskBudget.Total)))
 	}
 
 	// Add permission bypass flags if configured.
@@ -238,7 +238,7 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 
 	// Route permission prompts through SDK control channel if callback is set.
 	if t.options.CanUseTool != nil {
-		args = append(args, "--permission-prompt-tool", "stdio")
+		args = append(args, "--permission-prompt-tool=stdio")
 	}
 
 	// Declare who answers prompts. Sent even alongside --permission-prompt-tool:
@@ -247,8 +247,8 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	if t.options.PermissionPrompts != "" {
 		switch t.options.PermissionPrompts {
 		case PermissionPromptsHost, PermissionPromptsNone:
-			args = append(args, "--permission-prompts",
-				string(t.options.PermissionPrompts))
+			args = append(args, flagValue("--permission-prompts",
+				string(t.options.PermissionPrompts)))
 		default:
 			return fmt.Errorf(
 				"invalid permission prompts %q: expected %q or %q",
@@ -262,17 +262,17 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	// Add settings sources for Skills
 	if t.options.SkillsConfig.EnableSkills && len(t.options.SkillsConfig.SettingSources) > 0 {
 		// --setting-sources takes a comma-separated list
-		args = append(args, "--setting-sources", strings.Join(t.options.SkillsConfig.SettingSources, ","))
+		args = append(args, flagValue("--setting-sources", strings.Join(t.options.SkillsConfig.SettingSources, ",")))
 	}
 
 	if t.options.SettingsPath != "" {
-		args = append(args, "--settings", t.options.SettingsPath)
+		args = append(args, flagArgs("--settings", t.options.SettingsPath)...)
 	} else if t.options.Settings != nil {
 		settingsJSON, err := json.Marshal(t.options.Settings)
 		if err != nil {
 			return fmt.Errorf("failed to marshal settings: %w", err)
 		}
-		args = append(args, "--settings", string(settingsJSON))
+		args = append(args, flagArgs("--settings", string(settingsJSON))...)
 	}
 
 	if t.options.ManagedSettings != nil {
@@ -280,7 +280,7 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("failed to marshal managed settings: %w", err)
 		}
-		args = append(args, "--managed-settings", string(settingsJSON))
+		args = append(args, flagArgs("--managed-settings", string(settingsJSON))...)
 	}
 
 	// Add MCP server configurations.
@@ -330,7 +330,7 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 
 		jsonBytes, err := json.Marshal(wrapper)
 		if err == nil {
-			args = append(args, "--mcp-config", string(jsonBytes))
+			args = append(args, flagArgs("--mcp-config", string(jsonBytes))...)
 		}
 	}
 
@@ -346,12 +346,12 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 
 	// Add session resume flag if set.
 	if t.options.SessionOptions.Resume != "" {
-		args = append(args, "--resume", t.options.SessionOptions.Resume)
+		args = append(args, flagValue("--resume", t.options.SessionOptions.Resume))
 	}
 
 	// Fork from a parent session: resume the parent then branch to a new ID.
 	if t.options.SessionOptions.ForkFrom != "" {
-		args = append(args, "--resume", t.options.SessionOptions.ForkFrom,
+		args = append(args, flagValue("--resume", t.options.SessionOptions.ForkFrom),
 			"--fork-session")
 	}
 
@@ -362,20 +362,18 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 
 	// Add resume-session-at flag if set (used with --resume to resume from a specific message).
 	if t.options.SessionOptions.ResumeSessionAt != "" {
-		args = append(args, "--resume-session-at", t.options.SessionOptions.ResumeSessionAt)
+		args = append(args, flagValue("--resume-session-at", t.options.SessionOptions.ResumeSessionAt))
 	}
 
 	// Add resume-drops-turn flag if set (arms the fork-point guard for a
 	// truncating --resume-session-at resume).
 	if t.options.SessionOptions.ResumeDropsTurn != "" {
-		args = append(args, "--resume-drops-turn", t.options.SessionOptions.ResumeDropsTurn)
+		args = append(args, flagValue("--resume-drops-turn", t.options.SessionOptions.ResumeDropsTurn))
 	}
 
-	// Name the trusted checkout the cwd is a worktree of. The TS SDK emits
-	// this as a single "=" -joined element rather than a flag/value pair, so
-	// match that exactly.
+	// Name the trusted checkout the cwd is a worktree of.
 	if t.options.ProjectConfigRoot != "" {
-		args = append(args, fmt.Sprintf("--project-config-root=%s",
+		args = append(args, flagValue("--project-config-root",
 			t.options.ProjectConfigRoot))
 	}
 
@@ -383,7 +381,7 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	// temp file writes). Each directory is passed as a separate
 	// --add-dir flag.
 	for _, dir := range t.options.AdditionalDirectories {
-		args = append(args, "--add-dir", dir)
+		args = append(args, flagValue("--add-dir", dir))
 	}
 
 	// Validate every plugin regardless of how the list is delivered. An
@@ -427,7 +425,7 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 			if plugin.SkipMcpDiscovery {
 				flag = "--plugin-dir-no-mcp"
 			}
-			args = append(args, flag, plugin.Path)
+			args = append(args, flagValue(flag, plugin.Path))
 		}
 	}
 
@@ -440,11 +438,11 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	// pass a single comma-separated value to match the Python SDK and keep
 	// parsing unambiguous when additional flags follow.
 	if len(t.options.Betas) > 0 {
-		args = append(args, "--betas", strings.Join(t.options.Betas, ","))
+		args = append(args, flagValue("--betas", strings.Join(t.options.Betas, ",")))
 	}
 
 	if t.options.DebugFile != "" {
-		args = append(args, "--debug-file", t.options.DebugFile)
+		args = append(args, flagValue("--debug-file", t.options.DebugFile))
 	} else if t.options.Debug {
 		args = append(args, "--debug")
 	}
@@ -465,10 +463,12 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		sort.Strings(keys)
 
 		for _, key := range keys {
-			args = append(args, "--"+key)
-			if value := t.options.ExtraArgs[key]; value != nil {
-				args = append(args, *value)
+			value := t.options.ExtraArgs[key]
+			if value == nil {
+				args = append(args, "--"+key)
+				continue
 			}
+			args = append(args, flagArgs("--"+key, *value)...)
 		}
 	}
 
@@ -720,3 +720,21 @@ var (
 	_ Transport  = (*SubprocessTransport)(nil)
 	_ ExitWaiter = (*SubprocessTransport)(nil)
 )
+
+// flagValue joins a flag and its value into one "--flag=value" element, the
+// form the TS SDK emits for every scalar flag. As a separate element a value
+// that begins with "-" would be read by the CLI as the next option.
+func flagValue(flag, value string) string {
+	return flag + "=" + value
+}
+
+// flagArgs returns a flag and its value as two elements unless the value
+// begins with "-", in which case it falls back to flagValue. The TS SDK uses
+// this split form for --settings, --managed-settings, --mcp-config and extra
+// args, and only those.
+func flagArgs(flag, value string) []string {
+	if len(value) > 1 && strings.HasPrefix(value, "-") {
+		return []string{flagValue(flag, value)}
+	}
+	return []string{flag, value}
+}

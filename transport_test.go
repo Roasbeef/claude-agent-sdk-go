@@ -17,24 +17,23 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// assertArgValue checks flag was passed as a single "--flag=value" element,
+// the form the TS SDK uses for scalar flags.
 func assertArgValue(t *testing.T, args []string, flag, value string) {
 	t.Helper()
 
-	for i, arg := range args {
-		if arg == flag {
-			require.Less(t, i+1, len(args), "flag %s missing value", flag)
-			assert.Equal(t, value, args[i+1])
-			return
-		}
-	}
-
-	require.Failf(t, "flag not found", "expected %s %s in args %v", flag, value, args)
+	assert.Contains(t, args, flag+"="+value)
+	assert.NotContains(t, args, flag,
+		"%s must not be passed as a separate element", flag)
 }
 
 func assertArgAbsent(t *testing.T, args []string, flag string) {
 	t.Helper()
 
-	assert.NotContains(t, args, flag)
+	for _, arg := range args {
+		assert.False(t, arg == flag || strings.HasPrefix(arg, flag+"="),
+			"unexpected %s in args %v", flag, args)
+	}
 }
 
 func decodeMCPConfigArgs(t *testing.T, args []string) map[string]map[string]interface{} {
@@ -927,7 +926,7 @@ func TestSubprocessTransportConnectArguments(t *testing.T) {
 
 	// Verify runner was started and captured args.
 	assert.True(t, runner.started)
-	assert.Contains(t, runner.StartArgs, "--model")
+	assert.Contains(t, runner.StartArgs, "--model=claude-sonnet-4-5-20250929")
 	assert.Contains(t, runner.StartArgs, "--verbose")
 }
 
@@ -998,8 +997,35 @@ func TestSubprocessTransportSettingsPath(t *testing.T) {
 	require.NoError(t, err)
 	defer transport.Close()
 
-	assertArgValue(t, runner.StartArgs, "--settings", "/tmp/claude-settings.json")
+	// --settings keeps the flag/value pair form; see flagArgs.
+	assert.Subset(t, runner.StartArgs,
+		[]string{"--settings", "/tmp/claude-settings.json"})
 	assertArgAbsent(t, runner.StartArgs, "--managed-settings")
+}
+
+// TestSubprocessTransportDashLeadingValues pins the two argv forms the TS SDK
+// uses. Scalar flags are always one "--flag=value" element, so a value that
+// begins with "-" can't be read as the next option. --settings,
+// --managed-settings, --mcp-config and extra args stay a pair and switch to
+// the joined form only for such a value.
+func TestSubprocessTransportDashLeadingValues(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	opts.SystemPrompt = "- be terse"
+	opts.AdditionalDirectories = []string{"-scratch"}
+	WithSettingsPath("-settings.json")(opts)
+	dash, plain := "-1", "1"
+	opts.ExtraArgs = map[string]*string{"dash": &dash, "plain": &plain}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	require.NoError(t, transport.Connect(context.Background()))
+	defer transport.Close()
+
+	assert.Contains(t, runner.StartArgs, "--system-prompt=- be terse")
+	assert.Contains(t, runner.StartArgs, "--add-dir=-scratch")
+	assert.Contains(t, runner.StartArgs, "--settings=-settings.json")
+	assert.Contains(t, runner.StartArgs, "--dash=-1")
+	assert.Subset(t, runner.StartArgs, []string{"--plain", "1"})
 }
 
 func TestSubprocessTransportInlineSettings(t *testing.T) {
@@ -1605,7 +1631,7 @@ func TestSubprocessTransportMaxThinkingTokensZeroDisablesThinking(t *testing.T) 
 	require.NoError(t, err)
 	defer transport.Close()
 
-	assertArgValue(t, runner.StartArgs, "--thinking", "disabled")
+	assert.Contains(t, runner.StartArgs, "--thinking=disabled")
 	assertArgAbsent(t, runner.StartArgs, "--max-thinking-tokens")
 }
 
@@ -1622,7 +1648,7 @@ func TestSubprocessTransportThinkingPrecedesMaxThinkingTokens(t *testing.T) {
 	require.NoError(t, err)
 	defer transport.Close()
 
-	assertArgValue(t, runner.StartArgs, "--thinking", "disabled")
+	assert.Contains(t, runner.StartArgs, "--thinking=disabled")
 	assertArgAbsent(t, runner.StartArgs, "--max-thinking-tokens")
 }
 
@@ -1688,28 +1714,14 @@ func TestSubprocessTransportSessionOptions(t *testing.T) {
 
 	// Verify session flags were passed to CLI.
 	assert.True(t, runner.started)
-	assert.Contains(t, runner.StartArgs, "--resume")
-	assert.Contains(t, runner.StartArgs, "session-123")
+	assert.Contains(t, runner.StartArgs, "--resume=session-123")
 	assert.Contains(t, runner.StartArgs, "--fork-session")
-	assert.Contains(t, runner.StartArgs, "--resume-session-at")
-	assert.Contains(t, runner.StartArgs, "msg-uuid-456")
+	assert.Contains(t, runner.StartArgs, "--resume-session-at=msg-uuid-456")
 }
 
 // TestSubprocessTransportResumeDropsTurn verifies the fork-point guard flag is
 // emitted with its UUID only when SessionOptions.ResumeDropsTurn is set.
 func TestSubprocessTransportResumeDropsTurn(t *testing.T) {
-	flagValue := func(t *testing.T, args []string, flag string) (string, bool) {
-		t.Helper()
-		for i, arg := range args {
-			if arg != flag {
-				continue
-			}
-			require.Less(t, i+1, len(args), "expected value after %s in %v", flag, args)
-			return args[i+1], true
-		}
-		return "", false
-	}
-
 	t.Run("set", func(t *testing.T) {
 		runner := NewMockSubprocessRunner()
 		opts := &Options{
@@ -1724,9 +1736,8 @@ func TestSubprocessTransportResumeDropsTurn(t *testing.T) {
 		require.NoError(t, transport.Connect(context.Background()))
 		defer transport.Close()
 
-		value, ok := flagValue(t, runner.StartArgs, "--resume-drops-turn")
-		require.True(t, ok, "expected --resume-drops-turn in %v", runner.StartArgs)
-		assert.Equal(t, "prompt-uuid-789", value)
+		assertArgValue(t, runner.StartArgs, "--resume-drops-turn",
+			"prompt-uuid-789")
 	})
 
 	t.Run("unset", func(t *testing.T) {
@@ -1765,8 +1776,7 @@ func TestSubprocessTransportForkFrom(t *testing.T) {
 	defer transport.Close()
 
 	assert.True(t, runner.started)
-	assert.Contains(t, runner.StartArgs, "--resume")
-	assert.Contains(t, runner.StartArgs, "parent-session-abc")
+	assert.Contains(t, runner.StartArgs, "--resume=parent-session-abc")
 	assert.Contains(t, runner.StartArgs, "--fork-session")
 }
 
@@ -1822,15 +1832,7 @@ func TestSubprocessTransportAdditionalDirectories(t *testing.T) {
 	// Verify each directory is passed as --add-dir flag.
 	assert.True(t, runner.started)
 	for _, dir := range opts.AdditionalDirectories {
-		// Find --add-dir followed by the directory in the args.
-		found := false
-		for i, arg := range runner.StartArgs {
-			if arg == "--add-dir" && i+1 < len(runner.StartArgs) && runner.StartArgs[i+1] == dir {
-				found = true
-				break
-			}
-		}
-		assert.True(t, found, "expected --add-dir %s in args: %v", dir, runner.StartArgs)
+		assert.Contains(t, runner.StartArgs, "--add-dir="+dir)
 	}
 }
 
@@ -1850,21 +1852,9 @@ func TestSubprocessTransportBetas(t *testing.T) {
 	require.NoError(t, err)
 	defer transport.Close()
 
-	// Find --betas followed by the comma-joined value.
 	assert.True(t, runner.started)
-	found := false
-	for i, arg := range runner.StartArgs {
-		if arg == "--betas" && i+1 < len(runner.StartArgs) {
-			assert.Equal(t,
-				"context-1m-2025-08-07,some-other-beta",
-				runner.StartArgs[i+1],
-				"betas should be comma-joined",
-			)
-			found = true
-			break
-		}
-	}
-	assert.True(t, found, "expected --betas in args: %v", runner.StartArgs)
+	assertArgValue(t, runner.StartArgs, "--betas",
+		"context-1m-2025-08-07,some-other-beta")
 }
 
 // TestSubprocessTransportBetasEmpty verifies no --betas flag is emitted when
@@ -2191,15 +2181,7 @@ func TestSubprocessTransportPermissionModeArguments(t *testing.T) {
 			require.NoError(t, err)
 			defer transport.Close()
 
-			found := false
-			for i, arg := range runner.StartArgs {
-				if arg == "--permission-mode" && i+1 < len(runner.StartArgs) {
-					assert.Equal(t, tt.want, runner.StartArgs[i+1])
-					found = true
-					break
-				}
-			}
-			assert.True(t, found, "expected --permission-mode %s in args: %v", tt.want, runner.StartArgs)
+			assertArgValue(t, runner.StartArgs, "--permission-mode", tt.want)
 		})
 	}
 }
@@ -2229,20 +2211,13 @@ func TestSubprocessTransportPlugins(t *testing.T) {
 	defer transport.Close()
 
 	assert.True(t, runner.started)
-	assert.Subset(t, runner.StartArgs,
-		[]string{"--plugin-dir", "/plugins/lint"})
-	assert.Subset(t, runner.StartArgs,
-		[]string{"--plugin-dir-no-mcp", "/plugins/deploy"})
+	assert.Contains(t, runner.StartArgs, "--plugin-dir=/plugins/lint")
+	assert.Contains(t, runner.StartArgs, "--plugin-dir-no-mcp=/plugins/deploy")
 
 	// The two flags are alternatives; a no-mcp plugin must not also produce a
 	// plain --plugin-dir for the same path.
-	for i, arg := range runner.StartArgs {
-		if arg == "--plugin-dir" && i+1 < len(runner.StartArgs) {
-			assert.NotEqual(t, "/plugins/deploy", runner.StartArgs[i+1],
-				"no-mcp plugin leaked a plain --plugin-dir: %v",
-				runner.StartArgs)
-		}
-	}
+	assert.NotContains(t, runner.StartArgs, "--plugin-dir=/plugins/deploy",
+		"no-mcp plugin leaked a plain --plugin-dir")
 }
 
 // Plugin order is meaningful — a later plugin can shadow an earlier one — so
@@ -2265,9 +2240,9 @@ func TestSubprocessTransportPluginsPreserveOrder(t *testing.T) {
 	defer transport.Close()
 
 	var paths []string
-	for i, arg := range runner.StartArgs {
-		if arg == "--plugin-dir" && i+1 < len(runner.StartArgs) {
-			paths = append(paths, runner.StartArgs[i+1])
+	for _, arg := range runner.StartArgs {
+		if path, ok := strings.CutPrefix(arg, "--plugin-dir="); ok {
+			paths = append(paths, path)
 		}
 	}
 	assert.Equal(t, []string{"/plugins/a", "/plugins/b", "/plugins/c"}, paths)
@@ -2367,8 +2342,7 @@ func TestSubprocessTransportPluginDeliveryDefaultsToArgv(t *testing.T) {
 			defer transport.Close()
 
 			assert.NotContains(t, runner.StartArgs, "--await-initialize")
-			assert.Subset(t, runner.StartArgs,
-				[]string{"--plugin-dir", "/plugins/lint"})
+			assert.Contains(t, runner.StartArgs, "--plugin-dir=/plugins/lint")
 		})
 	}
 }
@@ -2417,12 +2391,12 @@ func TestSubprocessTransportPermissionPrompts(t *testing.T) {
 		{
 			name:     "none",
 			prompts:  PermissionPromptsNone,
-			expected: []string{"--permission-prompts", "none"},
+			expected: []string{"--permission-prompts=none"},
 		},
 		{
 			name:     "host",
 			prompts:  PermissionPromptsHost,
-			expected: []string{"--permission-prompts", "host"},
+			expected: []string{"--permission-prompts=host"},
 		},
 		{
 			// Host is the CLI's own default, so an unset option must not
@@ -2445,7 +2419,7 @@ func TestSubprocessTransportPermissionPrompts(t *testing.T) {
 			defer transport.Close()
 
 			if tc.absent {
-				assert.NotContains(t, runner.StartArgs, "--permission-prompts")
+				assertArgAbsent(t, runner.StartArgs, "--permission-prompts")
 				return
 			}
 			assert.Subset(t, runner.StartArgs, tc.expected)
@@ -2472,9 +2446,7 @@ func TestSubprocessTransportPermissionPromptsNoneWithCallback(t *testing.T) {
 	defer transport.Close()
 
 	assert.Subset(t, runner.StartArgs,
-		[]string{"--permission-prompts", "none"})
-	assert.Subset(t, runner.StartArgs,
-		[]string{"--permission-prompt-tool", "stdio"})
+		[]string{"--permission-prompts=none", "--permission-prompt-tool=stdio"})
 }
 
 func TestSubprocessTransportPermissionPromptsRejectsInvalid(t *testing.T) {
@@ -2554,7 +2526,6 @@ func TestSubprocessTransportProjectConfigRoot(t *testing.T) {
 
 		assert.Contains(t, runner.StartArgs,
 			"--project-config-root=/src/trusted-checkout")
-		assert.Contains(t, runner.StartArgs, "--add-dir")
-		assert.Contains(t, runner.StartArgs, "/tmp")
+		assert.Contains(t, runner.StartArgs, "--add-dir=/tmp")
 	})
 }
