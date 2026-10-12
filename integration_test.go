@@ -846,6 +846,79 @@ func TestIntegrationUserMessageSubagentFields(t *testing.T) {
 	t.Skip("requires CLI to emit a user-side tool-result message from a Task-tool subagent (populates user message subagent_type/task_description); tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
+// TestIntegrationMessageAgentID runs one foreground subagent and checks that
+// the subagent frames forwarded on the stream carry agent_id equal to the
+// task_id of its task_started frame, while main-thread messages carry none.
+// CLI 2.1.296 forwards the subagent's prompt as a user message but not its
+// assistant turns, so both kinds are collected. Skips on CLIs that predate
+// agent_id (sdk.d.ts v0.3.296).
+func TestIntegrationMessageAgentID(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithCwd(t.TempDir()),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(3),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx,
+		"Use the Agent tool exactly once, with subagent_type "+
+			"general-purpose, to ask: what is 2+2? Answer in one word. "+
+			"Then reply with the subagent's answer.",
+	))
+
+	var (
+		agentTaskIDs   = map[string]bool{}
+		subagentIDs    []string
+		mainThreadSeen bool
+	)
+	for msg := range stream.Messages() {
+		switch m := msg.(type) {
+		case TaskStartedMessage:
+			if m.TaskType == "local_agent" {
+				agentTaskIDs[m.TaskID] = true
+			}
+		case AssistantMessage:
+			if m.ParentToolUseID == nil {
+				mainThreadSeen = true
+				assert.Empty(t, m.AgentID,
+					"a main-thread assistant message has no agent_id")
+				continue
+			}
+			subagentIDs = append(subagentIDs, m.AgentID)
+		case UserMessage:
+			if m.ParentToolUseID != nil {
+				subagentIDs = append(subagentIDs, m.AgentID)
+			}
+		case ResultMessage:
+			cancel()
+		}
+	}
+
+	require.True(t, mainThreadSeen, "expected a main-thread assistant message")
+	require.NotEmpty(t, agentTaskIDs, "expected a local_agent task_started")
+	require.NotEmpty(t, subagentIDs, "expected forwarded subagent messages")
+	if subagentIDs[0] == "" {
+		t.Skip("not triggerable from CLI: this CLI build predates agent_id")
+	}
+	for _, id := range subagentIDs {
+		assert.True(t, agentTaskIDs[id],
+			"agent_id %q must name a local_agent task_id", id)
+	}
+}
+
 func TestIntegrationAssistantMessageError(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
