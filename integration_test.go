@@ -756,6 +756,88 @@ func TestIntegrationTaskStartedBackgrounding(t *testing.T) {
 	t.Skip("not triggerable from CLI: runner CLI 2.1.222 omits is_backgrounded and spawn_depth from task_started")
 }
 
+// TestIntegrationTaskRunID backgrounds one Bash command and checks that every
+// task frame for it names the same run, and that the run shows up in the
+// background_tasks_changed level. Skips on CLIs that predate run_id
+// (sdk.d.ts v0.3.296).
+func TestIntegrationTaskRunID(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithCwd(t.TempDir()),
+		WithSystemPrompt(
+			"You are a helpful assistant. When asked to run a shell command, "+
+				"use Bash immediately and do not describe it first.",
+		),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(4),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx,
+		"Run the Bash command `sleep 2 && echo ok` with run_in_background "+
+			"set to true. Then wait for its completion notification and "+
+			"reply DONE.",
+	))
+
+	var (
+		started      *TaskStartedMessage
+		notification *TaskNotificationMessage
+		levelRunIDs  = map[string]string{}
+	)
+	for msg := range stream.Messages() {
+		switch m := msg.(type) {
+		case TaskStartedMessage:
+			if started == nil {
+				started = &m
+			}
+		case TaskNotificationMessage:
+			if notification == nil {
+				notification = &m
+			}
+		case BackgroundTasksChangedMessage:
+			for _, task := range m.Tasks {
+				levelRunIDs[task.TaskID] = task.RunID
+			}
+		case ResultMessage:
+			// The notification can land after the first result; stop
+			// once both bookends are in.
+			if notification != nil {
+				cancel()
+			}
+		}
+		if started != nil && notification != nil {
+			break
+		}
+	}
+
+	require.NotNil(t, started, "expected a task_started frame")
+	if started.RunID == "" {
+		t.Skip("not triggerable from CLI: this CLI build predates run_id")
+	}
+	require.NotNil(t, notification, "expected a task_notification frame")
+	assert.Equal(t, started.TaskID, notification.TaskID)
+	assert.Equal(t, started.RunID, notification.RunID,
+		"one run must carry one run_id on every task_* frame")
+	assert.Empty(t, started.ParentTaskID,
+		"a task launched from the main thread has no parent")
+
+	if levelRunID, ok := levelRunIDs[started.TaskID]; ok {
+		assert.Equal(t, started.RunID, levelRunID)
+	}
+}
+
 func TestIntegrationInitEffort(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)

@@ -3032,6 +3032,120 @@ func TestParseMessageTaskStartedSubagentType(t *testing.T) {
 	assert.Equal(t, "reviewer", taskMsg.SubagentType)
 }
 
+// TestParseMessageTaskRunIDs covers run_id on every task_* event, the
+// parent_task_id on task_started, and the three new background_tasks_changed
+// entry fields (sdk.d.ts v0.3.296).
+func TestParseMessageTaskRunIDs(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		check func(t *testing.T, msg Message)
+	}{
+		{
+			name: "task_started",
+			input: `{"type":"system","subtype":"task_started","task_id":"t1",` +
+				`"run_id":"r1","parent_task_id":"t0","description":"d",` +
+				`"uuid":"u","session_id":"s"}`,
+			check: func(t *testing.T, msg Message) {
+				m, ok := msg.(TaskStartedMessage)
+				require.True(t, ok)
+				assert.Equal(t, "r1", m.RunID)
+				assert.Equal(t, "t0", m.ParentTaskID)
+			},
+		},
+		{
+			name: "task_progress",
+			input: `{"type":"system","subtype":"task_progress","task_id":"t1",` +
+				`"run_id":"r1","description":"d","usage":{},` +
+				`"uuid":"u","session_id":"s"}`,
+			check: func(t *testing.T, msg Message) {
+				m, ok := msg.(TaskProgressMessage)
+				require.True(t, ok)
+				assert.Equal(t, "r1", m.RunID)
+			},
+		},
+		{
+			name: "task_updated",
+			input: `{"type":"system","subtype":"task_updated","task_id":"t1",` +
+				`"run_id":"r1","patch":{},"uuid":"u","session_id":"s"}`,
+			check: func(t *testing.T, msg Message) {
+				m, ok := msg.(TaskUpdatedMessage)
+				require.True(t, ok)
+				assert.Equal(t, "r1", m.RunID)
+			},
+		},
+		{
+			name: "task_notification",
+			input: `{"type":"system","subtype":"task_notification",` +
+				`"task_id":"t1","run_id":"r1","status":"completed",` +
+				`"output_file":"","summary":"","uuid":"u","session_id":"s"}`,
+			check: func(t *testing.T, msg Message) {
+				m, ok := msg.(TaskNotificationMessage)
+				require.True(t, ok)
+				assert.Equal(t, "r1", m.RunID)
+			},
+		},
+		{
+			name: "background_tasks_changed",
+			input: `{"type":"system","subtype":"background_tasks_changed",` +
+				`"tasks":[{"task_id":"t1","run_id":"r1",` +
+				`"task_type":"local_agent","subagent_type":"general-purpose",` +
+				`"description":"d","parent_task_id":"t0"}],` +
+				`"uuid":"u","session_id":"s"}`,
+			check: func(t *testing.T, msg Message) {
+				m, ok := msg.(BackgroundTasksChangedMessage)
+				require.True(t, ok)
+				require.Len(t, m.Tasks, 1)
+				assert.Equal(t, BackgroundTask{
+					TaskID:       "t1",
+					RunID:        "r1",
+					TaskType:     "local_agent",
+					SubagentType: "general-purpose",
+					Description:  "d",
+					ParentTaskID: "t0",
+				}, m.Tasks[0])
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg, err := ParseMessage([]byte(tc.input))
+			require.NoError(t, err)
+			tc.check(t, msg)
+		})
+	}
+}
+
+// TestTaskRunIDsOmitEmpty pins that older-CLI frames re-marshal without the
+// new keys.
+func TestTaskRunIDsOmitEmpty(t *testing.T) {
+	for _, v := range []interface{}{
+		TaskStartedMessage{}, TaskProgressMessage{}, TaskUpdatedMessage{},
+		TaskNotificationMessage{}, BackgroundTask{}, MessageOrigin{},
+	} {
+		data, err := json.Marshal(v)
+		require.NoError(t, err)
+		for _, key := range []string{
+			`"run_id"`, `"runId"`, `"parent_task_id"`, `"subagent_type"`,
+		} {
+			assert.NotContains(t, string(data), key, "%T", v)
+		}
+	}
+}
+
+func TestMessageOriginRunIDRoundTrip(t *testing.T) {
+	var origin MessageOrigin
+	require.NoError(t, json.Unmarshal(
+		[]byte(`{"kind":"task-notification","runId":"r1"}`), &origin,
+	))
+	assert.Equal(t, "r1", origin.RunID)
+
+	data, err := json.Marshal(origin)
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"kind":"task-notification","runId":"r1"}`, string(data))
+}
+
 func TestTaskStartedSubagentTypeOmitEmpty(t *testing.T) {
 	msg := TaskStartedMessage{
 		Type:        "system",
