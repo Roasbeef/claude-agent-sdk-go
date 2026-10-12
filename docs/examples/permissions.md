@@ -188,18 +188,24 @@ stream.Send(ctx, "Go ahead and implement that.")
 
 ## Sandbox Settings
 
-Configure sandbox behavior for command execution:
+Configure sandbox behavior for command execution through the `sandbox` block
+of `--settings`. (`WithSandbox` is not sent to the CLI yet, see #301; use
+this form.)
 
 ```go
+yes, no := true, false
 client, _ := goclaude.NewClient(
-    goclaude.WithSandbox(&goclaude.SandboxSettings{
-        Enabled:                  true,
-        AutoAllowBashIfSandboxed: true,
-        ExcludedCommands:         []string{"docker", "kubectl"},
-        Network: &goclaude.NetworkSandboxSettings{
-            AllowLocalBinding:   true,
-            AllowAllUnixSockets: false,
-            AllowUnixSockets:    []string{"/var/run/docker.sock"},
+    goclaude.WithSettings(goclaude.Settings{
+        Sandbox: &goclaude.SettingsSandbox{
+            Enabled:                  &yes,
+            FailIfUnavailable:        &yes,
+            AutoAllowBashIfSandboxed: &yes,
+            ExcludedCommands:         []string{"docker", "kubectl"},
+            Network: &goclaude.SettingsSandboxNetwork{
+                AllowLocalBinding:   &yes,
+                AllowAllUnixSockets: &no,
+                AllowUnixSockets:    []string{"/var/run/docker.sock"},
+            },
         },
     }),
 )
@@ -210,6 +216,7 @@ Settings:
 | Field | Description |
 |-------|-------------|
 | `Enabled` | Enable sandbox mode |
+| `FailIfUnavailable` | Refuse to start rather than run unsandboxed when the sandbox can't be set up |
 | `AutoAllowBashIfSandboxed` | Auto-approve Bash when sandboxed |
 | `ExcludedCommands` | Commands that bypass sandbox |
 | `AllowUnsandboxedCommands` | Allow model to request unsandboxed execution |

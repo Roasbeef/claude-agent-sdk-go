@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.290 catchup work, using Go idioms where the API shape differs.
+v0.3.296 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -989,6 +989,47 @@ Deferred in v0.3.290:
   getters, `set_prompt_suggestions_paused`), and the `./core` JS entrypoint.
 - `sdk-tools.d.ts` / `bridge.d.ts` churn — the standing deferrals.
 
+The v0.3.296 catchup added:
+
+- Per-run task identity: `RunID` on every `task_*` message, on each
+  `BackgroundTask` level entry and on a background task's saved notification
+  (`MessageOrigin.RunID`). A resumed task keeps its `TaskID` and opens a new
+  run, so `RunID` is how a host drops a late frame from an earlier run. One
+  task's run ids sort in open order; nothing else about the format is
+  promised. `ParentTaskID` on `TaskStartedMessage` and `BackgroundTask` names
+  the subagent task that launched this one, and entries gain `SubagentType`.
+- `AgentID` on `AssistantMessage` and `UserMessage`: the `task_id` of the
+  subagent that produced the frame, stable across resume. CLI 2.1.296
+  forwards a subagent's prompt (a user frame) but not its assistant turns by
+  default.
+- `AgentDefinition.AutoCompactWindow`, which can only lower the window a
+  subagent inherits.
+- `SettingsHook.OnFailure`: `"block"` makes a command or http hook that
+  can't start, times out, exits non-0/2 or prints invalid JSON fail closed,
+  as if it exited 2.
+- `SDKControlInitializeResponse.ClaudeCodeVersion`, so a caller can gate
+  features right after `Connect`; the `org_config_required_unavailable`
+  (retryable) and `org_config_refused` (not) startup failure reasons; and
+  `RateLimitInfo.OverageEnabled`.
+- An argv change: scalar flags now go out as one `--flag=value` element, as
+  `sdk.mjs` does, so a value starting with `-` (a system prompt like
+  `"- be terse"`, a dash-leading path) can't be read as the next option.
+  `--settings`, `--managed-settings`, `--mcp-config` and `ExtraArgs` keep the
+  pair and join only for such a value.
+
+PRs in this cycle (squash-merged): #295 task `run_id`/`parent_task_id`, #296
+`agent_id`, #297 `autoCompactWindow`, #298 hook `onFailure`, #299 init
+version and enum parity, #300 `--flag=value` argv, plus this docs refresh.
+
+Deferred in v0.3.296:
+
+- The `sandbox` option's new merge into inline `settings` (key-by-key, with
+  restriction lists unioned). The Go `WithSandbox` has never reached the CLI
+  at all, and its `SandboxSettings` type doesn't match upstream; fixing it
+  means changing a public signature. Tracked in #301.
+- `bridge.d.ts` `claudeCodeVersion` (bridge host side) and `sdk-tools.d.ts`
+  churn — the standing deferrals.
+
 ### Porting from the TypeScript SDK - Go-side differences
 
 A short list of places the Go SDK consciously diverges from the TS shape; if
@@ -1016,6 +1057,12 @@ you are translating TS code, watch for these:
   host that omits `permissionMode` gets whatever the CLI picks, which is the
   settings' `permissions.defaultMode` or else `auto` where auto mode is
   available. Set `PermissionMode` to `""` for the TS behavior.
+- **`WithSandbox` is not sent to the CLI (#301).** `Options.Sandbox` is
+  never read, so it enables nothing. Until that's fixed, put the block in
+  `WithSettings(Settings{Sandbox: &SettingsSandbox{...}})`, which is sent
+  as `--settings`. Note that TS sets `failIfUnavailable: true` when the
+  option enables the sandbox; set it yourself to get the same fail-closed
+  behavior.
 - **`Effort` `"max"` / `"xhigh"` are model-gated.** `EffortMax` requires Opus
   4.6/4.7 or Sonnet 4.6; `EffortXHigh` requires Opus 4.7. On unsupported
   models the CLI silently downgrades per its own policy. The CLI is the

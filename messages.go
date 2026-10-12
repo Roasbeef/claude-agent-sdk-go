@@ -42,15 +42,15 @@ type UserMessage struct {
 	// typed: each entry a string or an array of content blocks. The CLI
 	// appends the text of each entry after the typed text, in order, and may
 	// wrap it in <pasted_content> tags. Blocks other than text are ignored;
-	// send images and documents in Message.Content instead (sdk.d.ts v0.3.278
-	// L5943).
+	// send images and documents in Message.Content instead. A list of over
+	// 1,000 entries and blocks in all is ignored (sdk.d.ts v0.3.296 L6383).
 	PastedContent []PastedContentEntry `json:"pasted_content,omitempty"`
 	// InlinePastes is text the user pasted that still sits in
 	// Message.Content where they put it, one entry per paste. The host leaves
 	// the prompt as is; the CLI may wrap each entry in <pasted_content> tags
-	// where it still stands in the last text block. A paste the host took out
-	// of the message belongs in PastedContent instead (sdk.d.ts v0.3.290
-	// L6307).
+	// where it still stands in the last text block, looking at the first 100
+	// non-blank entries only. A paste the host took out of the message
+	// belongs in PastedContent instead (sdk.d.ts v0.3.296 L6388).
 	InlinePastes []string `json:"inline_pastes,omitempty"`
 	// ClientComposed marks a turn the client assembled from content the user
 	// did not type: the CLI delivers its text as written, with no @path
