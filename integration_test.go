@@ -849,6 +849,69 @@ func TestIntegrationInitEffort(t *testing.T) {
 	t.Skip("not triggerable from CLI: effort is published on Remote Control bridge init frames, not on the subprocess transport's init message")
 }
 
+// TestIntegrationAgentAutoCompactWindow defines a subagent with
+// autoCompactWindow and runs it once. Reaching the window in a test is not
+// practical, so this proves the CLI accepts the key on an agent definition
+// and still runs the agent to completion (sdk.d.ts v0.3.296).
+func TestIntegrationAgentAutoCompactWindow(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithCwd(t.TempDir()),
+		WithAgents(map[string]AgentDefinition{
+			"adder": {
+				Name:              "adder",
+				Description:       "Answers arithmetic questions in one word",
+				Prompt:            "Answer the arithmetic question in one word.",
+				Tools:             []string{},
+				AutoCompactWindow: 100000,
+			},
+		}),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(3),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx,
+		"Use the Agent tool exactly once, with subagent_type adder, to ask: "+
+			"what is 2+2? Then reply with its answer.",
+	))
+
+	var (
+		started *TaskStartedMessage
+		status  TaskNotificationStatus
+	)
+	for msg := range stream.Messages() {
+		switch m := msg.(type) {
+		case TaskStartedMessage:
+			if m.TaskType == "local_agent" && started == nil {
+				started = &m
+			}
+		case TaskNotificationMessage:
+			if started != nil && m.TaskID == started.TaskID {
+				status = m.Status
+			}
+		case ResultMessage:
+			cancel()
+		}
+	}
+
+	require.NotNil(t, started, "expected the adder subagent to start")
+	assert.Equal(t, "adder", started.SubagentType)
+	assert.Equal(t, TaskNotificationStatusCompleted, status)
+}
+
 func TestIntegrationSessionStartReloadSkills(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
