@@ -877,6 +877,10 @@ type MessageOrigin struct {
 	// with CLAUDE_CODE_HOST_SCHEDULED_RUN=1). Open set; empty when neither
 	// sent one (sdk.d.ts v0.3.290 L5383).
 	FireReason string `json:"fireReason,omitempty"`
+	// RunID is, on a background task's own notification, the run_id its
+	// task_* events carried when the notification was queued. Not part of
+	// the text the model reads (sdk.d.ts v0.3.296 L5435).
+	RunID string `json:"runId,omitempty"`
 }
 
 // MessageOriginSubkind refines a MessageOrigin's kind.
@@ -1897,9 +1901,18 @@ const (
 
 // TaskStartedMessage reports that a task has started executing.
 type TaskStartedMessage struct {
-	Type         string `json:"type"`                    // Always "system"
-	Subtype      string `json:"subtype"`                 // "task_started"
-	TaskID       string `json:"task_id"`                 // Task identifier
+	Type    string `json:"type"`    // Always "system"
+	Subtype string `json:"subtype"` // "task_started"
+	TaskID  string `json:"task_id"` // Task identifier
+	// RunID identifies one run of the task: equal on every task_* event,
+	// background_tasks_changed entry and saved notification
+	// (MessageOrigin.RunID) of that run. A resumed task keeps its TaskID and
+	// gets a new RunID. The run ids of one task sort, by plain string
+	// comparison, in the order the runs opened, so a frame naming a run that
+	// sorts before the one a reader shows is late. Nothing else about the
+	// format is promised. Empty for a task this process did not register and
+	// on CLIs that predate the field (sdk.d.ts v0.3.296 L6129).
+	RunID        string `json:"run_id,omitempty"`
 	ToolUseID    string `json:"tool_use_id,omitempty"`   // Related tool use ID
 	Description  string `json:"description"`             // Task description
 	SubagentType string `json:"subagent_type,omitempty"` // Subagent type for Task tool subagents
@@ -1931,9 +1944,17 @@ type TaskStartedMessage struct {
 	// SpawnDepth is the nesting depth of a spawned subagent (local_agent)
 	// task: 1 for a top-level spawn, N+1 when spawned from inside a depth-N
 	// agent. Not set on other task types (sdk.d.ts v0.3.241 L4887).
-	SpawnDepth *int   `json:"spawn_depth,omitempty"`
-	UUID       string `json:"uuid"`       // Unique message ID
-	SessionID  string `json:"session_id"` // Session identifier
+	SpawnDepth *int `json:"spawn_depth,omitempty"`
+	// ParentTaskID is the task_id of the subagent (local_agent) task whose
+	// agent launched this subagent, shell, monitor or workflow task. Empty
+	// when the launcher is the main thread, has no task_id of its own (a
+	// teammate, an agent inside a workflow), or is no longer tracked. A
+	// resumed subagent keeps its original parent. The parent may be a
+	// foreground or already-ended task, so treat an unknown id as no parent
+	// (sdk.d.ts v0.3.296 L6148).
+	ParentTaskID string `json:"parent_task_id,omitempty"`
+	UUID         string `json:"uuid"`       // Unique message ID
+	SessionID    string `json:"session_id"` // Session identifier
 }
 
 // MessageType implements Message.
@@ -1941,9 +1962,12 @@ func (m TaskStartedMessage) MessageType() string { return "system" }
 
 // TaskProgressMessage reports intermediate task progress and usage.
 type TaskProgressMessage struct {
-	Type         string    `json:"type"`                     // Always "system"
-	Subtype      string    `json:"subtype"`                  // "task_progress"
-	TaskID       string    `json:"task_id"`                  // Task identifier
+	Type    string `json:"type"`    // Always "system"
+	Subtype string `json:"subtype"` // "task_progress"
+	TaskID  string `json:"task_id"` // Task identifier
+	// RunID identifies one run of the task; see TaskStartedMessage.RunID
+	// (sdk.d.ts v0.3.296 L6100).
+	RunID        string    `json:"run_id,omitempty"`
 	ToolUseID    string    `json:"tool_use_id,omitempty"`    // Related tool use ID
 	Description  string    `json:"description"`              // Task description
 	SubagentType string    `json:"subagent_type,omitempty"`  // Subagent type for Task tool subagents
@@ -1971,9 +1995,12 @@ type TaskUpdatePatch struct {
 
 // TaskUpdatedMessage reports changes to task state.
 type TaskUpdatedMessage struct {
-	Type      string          `json:"type"`       // Always "system"
-	Subtype   string          `json:"subtype"`    // "task_updated"
-	TaskID    string          `json:"task_id"`    // Task identifier
+	Type    string `json:"type"`    // Always "system"
+	Subtype string `json:"subtype"` // "task_updated"
+	TaskID  string `json:"task_id"` // Task identifier
+	// RunID identifies one run of the task; see TaskStartedMessage.RunID
+	// (sdk.d.ts v0.3.296 L6174).
+	RunID     string          `json:"run_id,omitempty"`
 	Patch     TaskUpdatePatch `json:"patch"`      // Updated task fields
 	UUID      string          `json:"uuid"`       // Unique message ID
 	SessionID string          `json:"session_id"` // Session identifier
@@ -1984,9 +2011,12 @@ func (m TaskUpdatedMessage) MessageType() string { return "system" }
 
 // TaskNotificationMessage reports terminal task output.
 type TaskNotificationMessage struct {
-	Type      string                 `json:"type"`                  // Always "system"
-	Subtype   string                 `json:"subtype"`               // "task_notification"
-	TaskID    string                 `json:"task_id"`               // Task identifier
+	Type    string `json:"type"`    // Always "system"
+	Subtype string `json:"subtype"` // "task_notification"
+	TaskID  string `json:"task_id"` // Task identifier
+	// RunID identifies one run of the task; see TaskStartedMessage.RunID
+	// (sdk.d.ts v0.3.296 L6064).
+	RunID     string                 `json:"run_id,omitempty"`
 	ToolUseID string                 `json:"tool_use_id,omitempty"` // Related tool use ID
 	Status    TaskNotificationStatus `json:"status"`                // Terminal status
 	// Reason is a machine-readable cause, set only when the task did not end
@@ -2475,7 +2505,8 @@ func (m ControlRequestProgressMessage) MessageType() string { return "system" }
 
 // BackgroundTasksChangedMessage carries the full set of live background tasks,
 // emitted whenever membership changes (start, completion, kill, a foreground
-// agent being backgrounded). REPLACE semantics: swap the tracked set for Tasks
+// agent being backgrounded) or an entry's ambient flag or parent_task_id
+// changes. REPLACE semantics: swap the tracked set for Tasks
 // on each message. It is a level signal, not an edge, and is per-process — reset
 // the set to empty whenever the CLI process restarts.
 type BackgroundTasksChangedMessage struct {
@@ -2489,9 +2520,21 @@ type BackgroundTasksChangedMessage struct {
 // BackgroundTask identifies one live background task in a
 // BackgroundTasksChangedMessage.
 type BackgroundTask struct {
-	TaskID      string `json:"task_id"`
-	TaskType    string `json:"task_type"`
-	Description string `json:"description"`
+	TaskID string `json:"task_id"`
+	// RunID identifies the run of the task this entry describes; see
+	// TaskStartedMessage.RunID (sdk.d.ts v0.3.296 L3742).
+	RunID    string `json:"run_id,omitempty"`
+	TaskType string `json:"task_type"`
+	// SubagentType is the agent type of a local_agent task, such as
+	// "general-purpose" or a custom agent's name; "main-session" for a
+	// backgrounded main session. Empty on other tasks (sdk.d.ts v0.3.296
+	// L3746).
+	SubagentType string `json:"subagent_type,omitempty"`
+	Description  string `json:"description"`
+	// ParentTaskID is the launching subagent's task_id; see
+	// TaskStartedMessage.ParentTaskID. A change to it re-emits the level
+	// (sdk.d.ts v0.3.296 L3752).
+	ParentTaskID string `json:"parent_task_id,omitempty"`
 
 	// Ambient marks a housekeeping task the CLI does not surface as user
 	// work — every skip_transcript task, plus auto-started live-update
