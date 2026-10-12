@@ -810,6 +810,17 @@ const (
 	// StartupFailureBypassRoot means bypass permissions mode was requested
 	// while running as root.
 	StartupFailureBypassRoot StartupFailureReason = "bypass_root"
+	// StartupFailureOrgConfigRequiredUnavailable means the organization
+	// requires its policy limits and managed settings before a session
+	// starts, and they could not be loaded (network, proxy, or an Anthropic
+	// error). Retrying may succeed (sdk.d.ts v0.3.296 L5952).
+	StartupFailureOrgConfigRequiredUnavailable StartupFailureReason = "org_config_required_unavailable"
+	// StartupFailureOrgConfigRefused means the organization requires its
+	// policy limits and managed settings, and Anthropic refused them for
+	// this sign-in: an expired or revoked session, or an organization that
+	// does not allow Claude Code for this account. Signing in again or an
+	// admin's change is the fix, not a retry (sdk.d.ts v0.3.296 L5952).
+	StartupFailureOrgConfigRefused StartupFailureReason = "org_config_refused"
 )
 
 // MessageType implements Message.
@@ -1493,7 +1504,11 @@ type RateLimitInfo struct {
 	OverageDisabledReason *RateLimitOverageDisabledReason `json:"overageDisabledReason,omitempty"`
 	IsUsingOverage        *bool                           `json:"isUsingOverage,omitempty"`
 	OverageInUse          *bool                           `json:"overageInUse,omitempty"`
-	SurpassedThreshold    *float64                        `json:"surpassedThreshold,omitempty"`
+	// OverageEnabled reports whether overage is turned on for the account
+	// at all, independent of whether it is in use right now (sdk.d.ts
+	// v0.3.296 L5715).
+	OverageEnabled     *bool    `json:"overageEnabled,omitempty"`
+	SurpassedThreshold *float64 `json:"surpassedThreshold,omitempty"`
 	// LimitScope names which spend limit blocked the request when it is not
 	// the member's own cap. RateLimitScopeGroupPool in particular means a
 	// pooled group budget shared by the member's team is used up — a denial

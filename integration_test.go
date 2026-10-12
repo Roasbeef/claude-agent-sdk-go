@@ -2057,6 +2057,51 @@ func TestIntegrationHookLifecycleMessages(t *testing.T) {
 	t.Logf("Observed hook_progress: %t", sawProgress)
 }
 
+// TestIntegrationInitializeClaudeCodeVersion checks the initialize response
+// reports the same CLI version the first system/init message does, which is
+// the point of the field: gating features before that message arrives.
+// Skips on CLIs that predate it (sdk.d.ts v0.3.296 L4623).
+func TestIntegrationInitializeClaudeCodeVersion(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t), WithMaxTurns(1))
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	init, err := stream.InitializationResult()
+	require.NoError(t, err)
+	if init.ClaudeCodeVersion == "" {
+		t.Skip("not triggerable from CLI: this CLI build predates " +
+			"claude_code_version on the initialize response")
+	}
+
+	require.NoError(t, stream.Send(ctx, "Say OK."))
+
+	var initVersion string
+	for msg := range stream.Messages() {
+		switch m := msg.(type) {
+		case SystemMessage:
+			if m.Subtype == "init" && initVersion == "" {
+				initVersion = m.ClaudeCodeVersion
+			}
+		case ResultMessage:
+			cancel()
+		}
+	}
+
+	require.NotEmpty(t, initVersion, "expected a system/init message")
+	assert.Equal(t, initVersion, init.ClaudeCodeVersion)
+}
+
 // TestIntegrationStreamIntrospection exercises the cached-init readers added
 // in PR 18 against the live CLI. The CLI's initialize response populates
 // commands and models; we assert both are non-empty and that AccountInfo

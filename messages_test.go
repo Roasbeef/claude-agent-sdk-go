@@ -1393,6 +1393,7 @@ func TestRateLimitEventMessageRoundTripAndParse(t *testing.T) {
 			"isUsingOverage",
 			"overageInUse",
 			"surpassedThreshold",
+			"overageEnabled",
 			"limitScope",
 		} {
 			assert.NotContains(t, info, key)
@@ -1418,6 +1419,7 @@ func TestRateLimitEventMessageRoundTripAndParse(t *testing.T) {
 				OverageDisabledReason: rateLimitOverageDisabledReasonPtr(RateLimitOverageDisabledReasonOutOfCredits),
 				IsUsingOverage:        boolPtr(true),
 				OverageInUse:          boolPtr(true),
+				OverageEnabled:        boolPtr(true),
 				SurpassedThreshold:    float64Ptr(0.8),
 			},
 			UUID:      "550e8400-e29b-41d4-a716-446655440033",
@@ -1438,6 +1440,7 @@ func TestRateLimitEventMessageRoundTripAndParse(t *testing.T) {
 				"overageDisabledReason": "out_of_credits",
 				"isUsingOverage": true,
 				"overageInUse": true,
+				"overageEnabled": true,
 				"surpassedThreshold": 0.8
 			},
 			"uuid": "550e8400-e29b-41d4-a716-446655440033",
@@ -6023,6 +6026,24 @@ func TestSystemMessageMCPServerSource(t *testing.T) {
 
 // TestResultStartupFailureReason covers startup_failure_reason and the
 // StartupFailureReason enum added in TS SDK v0.3.278 (sdk.d.ts L5388, L5561).
+func TestResultStartupFailureReasonOrgConfig(t *testing.T) {
+	for _, reason := range []StartupFailureReason{
+		StartupFailureOrgConfigRequiredUnavailable,
+		StartupFailureOrgConfigRefused,
+	} {
+		raw := []byte(`{"type":"result","subtype":"error_during_execution",` +
+			`"session_id":"s","uuid":"u","is_error":true,` +
+			`"startup_failure_reason":"` + string(reason) + `",` +
+			`"duration_ms":0,"num_turns":0,"total_cost_usd":0}`)
+
+		msg, err := ParseMessage(raw)
+		require.NoError(t, err)
+		res, ok := msg.(ResultMessage)
+		require.True(t, ok)
+		assert.Equal(t, reason, res.StartupFailureReason)
+	}
+}
+
 func TestResultStartupFailureReason(t *testing.T) {
 	t.Run("parsed off the zeroed error result", func(t *testing.T) {
 		raw := []byte(`{

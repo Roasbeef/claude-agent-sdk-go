@@ -50,7 +50,14 @@ type SDKControlInitializeResponse struct {
 	AvailableOutputStyles []string       `json:"available_output_styles"`
 	Models                []ModelInfo    `json:"models"`
 	Account               AccountInfo    `json:"account"`
-	FastModeState         string         `json:"fast_mode_state,omitempty"`
+	// ClaudeCodeVersion is the Claude Code version of the process that runs
+	// this session's turns — the same value SystemMessage.ClaudeCodeVersion
+	// carries on system/init, but available before the first turn, so a
+	// caller can gate features straight after Connect. Empty on CLIs that
+	// predate the field, and when the responder is not that process and does
+	// not know its version (sdk.d.ts v0.3.296 L4623).
+	ClaudeCodeVersion string `json:"claude_code_version,omitempty"`
+	FastModeState     string `json:"fast_mode_state,omitempty"`
 	// FastModeDisabledReason explains why fast mode could not serve, when
 	// FastModeState is not "on". Absent when nothing blocks it.
 	FastModeDisabledReason FastModeDisabledReason `json:"fast_mode_disabled_reason,omitempty"`
