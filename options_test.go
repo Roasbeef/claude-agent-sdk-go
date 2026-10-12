@@ -60,6 +60,30 @@ func TestSettingsHookArgsJSON(t *testing.T) {
 	})
 }
 
+func TestSettingsHookOnFailureJSON(t *testing.T) {
+	data, err := json.Marshal(SettingsHook{
+		Type:      "command",
+		Command:   "exit 1",
+		OnFailure: SettingsHookOnFailureBlock,
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t,
+		`{"type":"command","command":"exit 1","onFailure":"block"}`,
+		string(data),
+	)
+
+	var cfg SettingsHook
+	require.NoError(t, json.Unmarshal(
+		[]byte(`{"type":"http","url":"https://x","onFailure":"continue"}`),
+		&cfg,
+	))
+	assert.Equal(t, SettingsHookOnFailureContinue, cfg.OnFailure)
+
+	data, err = json.Marshal(SettingsHook{Type: "command", Command: "true"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "onFailure")
+}
+
 func TestSettingsHookContinueOnBlockJSON(t *testing.T) {
 	t.Run("marshal includes true", func(t *testing.T) {
 		continueOnBlock := true
