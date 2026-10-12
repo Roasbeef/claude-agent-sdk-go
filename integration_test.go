@@ -5715,6 +5715,67 @@ func TestIntegrationAllowedProvidersRefusesStartup(t *testing.T) {
 	assert.Equal(t, StartupFailureProviderNotAllowed, result.StartupFailureReason)
 }
 
+// TestIntegrationSettingsHookOnFailureBlock registers a PreToolUse command
+// hook that always exits 1 with onFailure "block" and checks the Bash call it
+// guards is refused. Without the key an exit 1 is a non-blocking failure and
+// the command runs, which is what CLIs before 2.1.296 still do
+// (sdk.d.ts v0.3.296 L7101).
+func TestIntegrationSettingsHookOnFailureBlock(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	skipIfCLIOlderThan(t, "2.1.296")
+
+	opts := append(isolatedClientOptions(t),
+		WithCwd(t.TempDir()),
+		WithSettings(Settings{
+			Hooks: map[string][]SettingsHookMatcher{
+				"PreToolUse": {{
+					Matcher: "Bash",
+					Hooks: []SettingsHook{{
+						Type:      "command",
+						Command:   "exit 1",
+						OnFailure: SettingsHookOnFailureBlock,
+					}},
+				}},
+			},
+		}),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(2),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx, "Run the Bash command: echo $((6*7))"))
+
+	var toolResults []string
+	for msg := range stream.Messages() {
+		switch m := msg.(type) {
+		case UserMessage:
+			if m.ToolUseResult != nil {
+				toolResults = append(toolResults,
+					fmt.Sprint(m.ToolUseResult))
+			}
+		case ResultMessage:
+			cancel()
+		}
+	}
+
+	require.NotEmpty(t, toolResults, "expected the Bash call to be attempted")
+	assert.Contains(t, toolResults[0], "onFailure",
+		"the failing hook must block the call it guards")
+	assert.NotContains(t, toolResults[0], "42",
+		"the blocked command must not have run")
+}
+
 // TestIntegrationSettingsAttributionFalse sends attribution as a bare false
 // through --settings and reads the effective settings back: the CLI expands
 // it to the hide-everything object form (sdk.d.ts v0.3.290 L6773). The Go

@@ -1085,6 +1085,14 @@ type SettingsMCPServerMatcher struct {
 	ServerURL     string   `json:"serverUrl,omitempty"`
 }
 
+// SettingsHookOnFailure is the SettingsHook.OnFailure policy.
+type SettingsHookOnFailure string
+
+const (
+	SettingsHookOnFailureContinue SettingsHookOnFailure = "continue"
+	SettingsHookOnFailureBlock    SettingsHookOnFailure = "block"
+)
+
 type SettingsHookMatcher struct {
 	Matcher string         `json:"matcher,omitempty"`
 	Hooks   []SettingsHook `json:"hooks"`
@@ -1114,13 +1122,22 @@ type SettingsHook struct {
 	// continue=true lets the turn proceed depends on the event's decision:"block"
 	// semantics: on PostToolUse, the reason is fed back to Claude and the turn
 	// continues.
-	ContinueOnBlock *bool             `json:"continueOnBlock,omitempty"`
-	StatusMessage   string            `json:"statusMessage,omitempty"`
-	Once            *bool             `json:"once,omitempty"`
-	Async           *bool             `json:"async,omitempty"`
-	AsyncRewake     *bool             `json:"asyncRewake,omitempty"`
-	Headers         map[string]string `json:"headers,omitempty"`
-	AllowedEnvVars  []string          `json:"allowedEnvVars,omitempty"`
+	ContinueOnBlock *bool `json:"continueOnBlock,omitempty"`
+	// OnFailure decides what a failure of a command or http hook does: it
+	// could not start, timed out, exited with a code other than 0 or 2, or
+	// printed JSON that is invalid or fails validation. The default,
+	// SettingsHookOnFailureContinue, reports the failure and lets the action
+	// go ahead; SettingsHookOnFailureBlock treats it as exit code 2 and
+	// blocks the tool call, permission request or prompt the event guards.
+	// Ignored for async hooks and on Stop, SubagentStop, TaskCompleted and
+	// TeammateIdle (sdk.d.ts v0.3.296 L7101).
+	OnFailure      SettingsHookOnFailure `json:"onFailure,omitempty"`
+	StatusMessage  string                `json:"statusMessage,omitempty"`
+	Once           *bool                 `json:"once,omitempty"`
+	Async          *bool                 `json:"async,omitempty"`
+	AsyncRewake    *bool                 `json:"asyncRewake,omitempty"`
+	Headers        map[string]string     `json:"headers,omitempty"`
+	AllowedEnvVars []string              `json:"allowedEnvVars,omitempty"`
 }
 
 func (h SettingsHook) MarshalJSON() ([]byte, error) {
