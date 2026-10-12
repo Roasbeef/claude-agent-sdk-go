@@ -3851,7 +3851,12 @@ type AgentDefinition struct {
 	Skills                             []string             `json:"skills,omitempty"`
 	InitialPrompt                      string               `json:"initialPrompt,omitempty"`
 	MaxTurns                           int                  `json:"maxTurns,omitempty"`
-	Background                         *bool                `json:"background,omitempty"`
+	// AutoCompactWindow is the token count at which this agent compacts its
+	// own conversation when it runs as a subagent. It only lowers the window
+	// the subagent would otherwise inherit; zero leaves it unset. No effect
+	// on the main session agent (sdk.d.ts v0.3.296 L79).
+	AutoCompactWindow int   `json:"autoCompactWindow,omitempty"`
+	Background        *bool `json:"background,omitempty"`
 	// OmitClaudeMd runs this agent without the user, project and local
 	// CLAUDE.md instruction files when it runs as a subagent; managed policy
 	// files are kept. For agents that take everything they need from the
@@ -3885,6 +3890,7 @@ func (a AgentDefinition) MarshalJSON() ([]byte, error) {
 		Skills                             []string             `json:"skills,omitempty"`
 		InitialPrompt                      string               `json:"initialPrompt,omitempty"`
 		MaxTurns                           int                  `json:"maxTurns,omitempty"`
+		AutoCompactWindow                  int                  `json:"autoCompactWindow,omitempty"`
 		Background                         *bool                `json:"background,omitempty"`
 		OmitClaudeMd                       bool                 `json:"omitClaudeMd,omitempty"`
 		Memory                             AgentMemoryScope     `json:"memory,omitempty"`
@@ -3905,6 +3911,7 @@ func (a AgentDefinition) MarshalJSON() ([]byte, error) {
 		Skills:                             a.Skills,
 		InitialPrompt:                      a.InitialPrompt,
 		MaxTurns:                           a.MaxTurns,
+		AutoCompactWindow:                  a.AutoCompactWindow,
 		Background:                         a.Background,
 		OmitClaudeMd:                       a.OmitClaudeMd,
 		Memory:                             a.Memory,

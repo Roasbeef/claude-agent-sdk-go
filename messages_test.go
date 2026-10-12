@@ -109,6 +109,7 @@ func TestAgentDefinitionJSON(t *testing.T) {
 		Skills:                             []string{"go"},
 		InitialPrompt:                      "Start here",
 		MaxTurns:                           5,
+		AutoCompactWindow:                  60000,
 		Background:                         &background,
 		OmitClaudeMd:                       true,
 		Memory:                             AgentMemoryProject,
@@ -136,6 +137,7 @@ func TestAgentDefinitionJSON(t *testing.T) {
 	assert.Equal(t, []interface{}{"go"}, got["skills"])
 	assert.Equal(t, "Start here", got["initialPrompt"])
 	assert.Equal(t, float64(5), got["maxTurns"])
+	assert.Equal(t, float64(60000), got["autoCompactWindow"])
 	assert.Equal(t, false, got["background"])
 	assert.Equal(t, true, got["omitClaudeMd"])
 	assert.Equal(t, "project", got["memory"])
@@ -157,6 +159,7 @@ func TestAgentDefinitionJSON(t *testing.T) {
 	assert.Equal(t, agent.Skills, decoded.Skills)
 	assert.Equal(t, agent.InitialPrompt, decoded.InitialPrompt)
 	assert.Equal(t, agent.MaxTurns, decoded.MaxTurns)
+	assert.Equal(t, agent.AutoCompactWindow, decoded.AutoCompactWindow)
 	require.NotNil(t, decoded.Background)
 	assert.Equal(t, false, *decoded.Background)
 	assert.True(t, decoded.OmitClaudeMd)
