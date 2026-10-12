@@ -1108,8 +1108,7 @@ func TestSetMaxThinkingTokensHighlights(t *testing.T) {
 		require.NoError(t, transport.Connect(context.Background()))
 		defer transport.Close()
 
-		assert.Contains(t, runner.StartArgs, "--thinking-display")
-		assert.Contains(t, runner.StartArgs, "summarized")
+		assert.Contains(t, runner.StartArgs, "--thinking-display=summarized")
 		assert.NotContains(t, runner.StartArgs, "highlights")
 	})
 }
