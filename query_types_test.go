@@ -8,6 +8,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSDKControlInitializeResponseClaudeCodeVersion(t *testing.T) {
+	var resp SDKControlInitializeResponse
+	require.NoError(t, json.Unmarshal(
+		[]byte(`{"commands":[],"agents":[],"output_style":"default",`+
+			`"available_output_styles":[],"models":[],"account":{},`+
+			`"claude_code_version":"2.1.296"}`),
+		&resp,
+	))
+	assert.Equal(t, "2.1.296", resp.ClaudeCodeVersion)
+
+	data, err := json.Marshal(SDKControlInitializeResponse{})
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "claude_code_version")
+}
+
 func TestSDKControlInitializeResponseHooksApplied(t *testing.T) {
 	tests := []struct {
 		name string
