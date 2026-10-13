@@ -272,6 +272,56 @@ The CLI then sends a `notifications/initialized` notification (no response
 required, but the SDK should acknowledge it) and a `tools/list` request to
 enumerate available tools.
 
+### Interrupting an In-Flight Turn
+
+A running turn can be aborted without killing the CLI process or losing
+session state, by sending a `control_request` with subtype `interrupt`:
+
+```json
+{
+  "type": "control_request",
+  "request": {
+    "subtype": "interrupt",
+    "request_id": "int_1"
+  }
+}
+```
+
+Verified directly against the CLI (not documented elsewhere at the time of
+writing): the in-flight turn aborts and the CLI emits a `result` message with
+`subtype: "error_during_execution"` — but the **same `session_id` continues
+to be usable**. A follow-up turn sent on the same stdin/stdout pair correctly
+recalls context from before the interrupted turn, including context set
+earlier in that same turn.
+
+One footgun caught by this: the `result` field on an interrupted turn's
+`result` message is present but `null`, not omitted. Code that does
+`payload.get("result", "default")` will get `None` back, not the default —
+handle `result is None` explicitly rather than relying on a fallback in
+`.get()`.
+
+### Switching Models Mid-Session
+
+A live session's model can be changed between turns with a `control_request`
+of subtype `set_model`:
+
+```json
+{
+  "type": "control_request",
+  "request": {
+    "subtype": "set_model",
+    "request_id": "mod_1",
+    "model": "claude-opus-4-8"
+  }
+}
+```
+
+Verified by observing the `model` field on the next `system`/`init` message
+change, and the following turn actually answering as the new model. This
+means one long-lived process can serve both a cheap default model for most
+turns and an escalated model for turns that need it, instead of needing a
+separate model-pinned process per tier.
+
 ## Environment Variables
 
 The CLI respects several environment variables:
@@ -342,3 +392,19 @@ Each JSON message must be on a single line.
 Graceful shutdown is achieved by closing stdin. The CLI will finish any pending
 work and exit. If it doesn't exit within a reasonable timeout, sending SIGTERM
 is appropriate.
+
+`--max-turns` and `--max-budget-usd` are **per-turn ceilings, not cumulative**
+across a long-lived process's lifetime. Verified by sending several turns
+through one persistent process with a small `--max-turns` value and observing
+that each turn reports its own independent `num_turns` in its `result`
+message, unaffected by prior turns on the same process. A long-running
+process does not need periodic budget/turn resets — each new turn gets a
+fresh ceiling.
+
+If the CLI process dies unexpectedly (tested with a hard `SIGKILL`, not a
+graceful shutdown), the next invocation can transparently recover by passing
+`--resume <session_id>`. Verified: the model correctly recalls context from
+before the crash on the first post-resume turn, with no observable
+difference from an interrupt-and-continue on the same process. This makes
+`--resume` a viable crash-recovery mechanism, not just a way to continue a
+deliberately-closed session.
