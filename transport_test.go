@@ -2529,3 +2529,78 @@ func TestSubprocessTransportProjectConfigRoot(t *testing.T) {
 		assert.Contains(t, runner.StartArgs, "--add-dir=/tmp")
 	})
 }
+
+// TestSubprocessTransportToolFlags checks that tool restrictions and
+// setting sources reach the CLI. Before these were wired, WithAllowedTools,
+// WithDisallowedTools, WithTools, and WithSettingSources were stored on
+// Options and silently dropped.
+func TestSubprocessTransportToolFlags(t *testing.T) {
+	tests := []struct {
+		name   string
+		opts   []Option
+		want   map[string]string
+		absent []string
+	}{
+		{
+			name:   "unset",
+			absent: []string{"--tools", "--allowedTools", "--disallowedTools", "--setting-sources"},
+		},
+		{
+			name: "allowed and disallowed",
+			opts: []Option{
+				WithAllowedTools([]string{"mcp__s__a", "mcp__s__b"}),
+				WithDisallowedTools([]string{"Bash", "WebFetch"}),
+			},
+			want: map[string]string{
+				"--allowedTools":    "mcp__s__a,mcp__s__b",
+				"--disallowedTools": "Bash,WebFetch",
+			},
+		},
+		{
+			name: "no built-in tools",
+			opts: []Option{WithTools(&ToolsConfig{Tools: []string{}})},
+			want: map[string]string{"--tools": ""},
+		},
+		{
+			name: "explicit built-ins",
+			opts: []Option{WithTools(&ToolsConfig{Tools: []string{"Read", "Grep"}})},
+			want: map[string]string{"--tools": "Read,Grep"},
+		},
+		{
+			name: "preset",
+			opts: []Option{WithTools(&ToolsConfig{Type: "preset", Preset: "claude_code"})},
+			want: map[string]string{"--tools": "default"},
+		},
+		{
+			name: "no setting sources",
+			opts: []Option{WithSettingSources([]SettingSource{})},
+			want: map[string]string{"--setting-sources": ""},
+		},
+		{
+			name: "explicit setting sources",
+			opts: []Option{WithSettingSources([]SettingSource{SettingSourceUser, SettingSourceProject})},
+			want: map[string]string{"--setting-sources": "user,project"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+			opts := NewOptions()
+			for _, o := range tt.opts {
+				o(opts)
+			}
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+			require.NoError(t, transport.Connect(context.Background()))
+			defer transport.Close()
+
+			for flag, value := range tt.want {
+				assertArgValue(t, runner.StartArgs, flag, value)
+			}
+			for _, flag := range tt.absent {
+				assertArgAbsent(t, runner.StartArgs, flag)
+			}
+		})
+	}
+}

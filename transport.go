@@ -259,10 +259,38 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 
 	// Note: --verbose is already added above (required for stream-json).
 
-	// Add settings sources for Skills
-	if t.options.SkillsConfig.EnableSkills && len(t.options.SkillsConfig.SettingSources) > 0 {
+	// Add settings sources. An explicit WithSettingSources wins over the
+	// list derived from SkillsConfig; a non-nil empty slice loads no
+	// filesystem settings at all (no user hooks, no project config).
+	switch {
+	case t.options.SettingSources != nil:
+		sources := make([]string, len(t.options.SettingSources))
+		for i, src := range t.options.SettingSources {
+			sources[i] = string(src)
+		}
+		args = append(args, flagValue("--setting-sources", strings.Join(sources, ",")))
+
+	case t.options.SkillsConfig.EnableSkills && len(t.options.SkillsConfig.SettingSources) > 0:
 		// --setting-sources takes a comma-separated list
 		args = append(args, flagValue("--setting-sources", strings.Join(t.options.SkillsConfig.SettingSources, ",")))
+	}
+
+	// Add the built-in tool set. A preset maps to "default"; an explicit
+	// list names the built-in tools to keep, and an empty list removes
+	// them all, which is how an agent is limited to its MCP tools.
+	if cfg := t.options.Tools; cfg != nil {
+		if cfg.Type == "preset" {
+			args = append(args, flagValue("--tools", "default"))
+		} else {
+			args = append(args, flagValue("--tools", strings.Join(cfg.Tools, ",")))
+		}
+	}
+
+	if len(t.options.AllowedTools) > 0 {
+		args = append(args, flagValue("--allowedTools", strings.Join(t.options.AllowedTools, ",")))
+	}
+	if len(t.options.DisallowedTools) > 0 {
+		args = append(args, flagValue("--disallowedTools", strings.Join(t.options.DisallowedTools, ",")))
 	}
 
 	if t.options.SettingsPath != "" {
