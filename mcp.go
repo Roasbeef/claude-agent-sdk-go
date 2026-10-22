@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 // McpServer represents an in-process MCP server.
@@ -142,7 +144,7 @@ func Tool[Args any](
 	handler func(ctx context.Context, args Args) (ToolResult, error),
 ) ToolRegistrar {
 	return func(s *McpServer) {
-		s.addTool(ToolDef{Name: name, Description: description}, func(ctx context.Context, rawArgs json.RawMessage) (ToolResult, error) {
+		s.addTool(withSchema[Args](ToolDef{Name: name, Description: description}), func(ctx context.Context, rawArgs json.RawMessage) (ToolResult, error) {
 			var args Args
 			if err := json.Unmarshal(rawArgs, &args); err != nil {
 				return ErrorResult(fmt.Sprintf("invalid arguments: %v", err)), nil
@@ -182,7 +184,7 @@ func ToolWithResponse[Args, Response any](
 	handler func(ctx context.Context, args Args) (Response, error),
 ) ToolRegistrar {
 	return func(s *McpServer) {
-		s.addTool(ToolDef{Name: name, Description: description}, func(ctx context.Context, rawArgs json.RawMessage) (ToolResult, error) {
+		s.addTool(withSchema[Args](ToolDef{Name: name, Description: description}), func(ctx context.Context, rawArgs json.RawMessage) (ToolResult, error) {
 			var args Args
 			if err := json.Unmarshal(rawArgs, &args); err != nil {
 				return ErrorResult(fmt.Sprintf("invalid arguments: %v", err)), nil
@@ -245,6 +247,34 @@ func (s *McpServer) AddTool(name, description string, handler interface{}) *McpS
 	return s
 }
 
+// withSchema fills in def.InputSchema from Args when the caller did not
+// supply one. The CLI rejects a tools/list entry that has no inputSchema,
+// and one bad entry drops every tool on the server, so typed tools must
+// always carry a schema.
+func withSchema[Args any](def ToolDef) ToolDef {
+	if def.InputSchema == nil {
+		def.InputSchema = schemaFor[Args]()
+	}
+	return def
+}
+
+// schemaFor reflects a JSON Schema from Args' struct fields; a field's
+// `jsonschema` tag becomes its description. A type the reflector cannot
+// describe falls back to an open object schema rather than no schema.
+func schemaFor[Args any]() interface{} {
+	schema, err := jsonschema.For[Args](&jsonschema.ForOptions{IgnoreInvalidTypes: true})
+	if err != nil {
+		return openObjectSchema()
+	}
+	return schema
+}
+
+// openObjectSchema accepts any JSON object. tools/list uses it for tools
+// registered without a schema, such as untyped handlers.
+func openObjectSchema() map[string]interface{} {
+	return map[string]interface{}{"type": "object"}
+}
+
 // addTool is the internal method for registering tools.
 func (s *McpServer) addTool(def ToolDef, handler func(ctx context.Context, args json.RawMessage) (ToolResult, error)) {
 	s.tools[def.Name] = &toolEntry{
@@ -277,7 +307,7 @@ func AddTool[Args any](
 	def ToolDef,
 	handler func(ctx context.Context, args Args) (ToolResult, error),
 ) {
-	server.addTool(def, func(ctx context.Context, rawArgs json.RawMessage) (ToolResult, error) {
+	server.addTool(withSchema[Args](def), func(ctx context.Context, rawArgs json.RawMessage) (ToolResult, error) {
 		var args Args
 		if err := json.Unmarshal(rawArgs, &args); err != nil {
 			return ErrorResult(fmt.Sprintf("invalid arguments: %v", err)), nil
@@ -311,7 +341,7 @@ func AddToolWithResponse[Args, Response any](
 	def ToolDef,
 	handler func(ctx context.Context, args Args) (Response, error),
 ) {
-	server.addTool(def, func(ctx context.Context, rawArgs json.RawMessage) (ToolResult, error) {
+	server.addTool(withSchema[Args](def), func(ctx context.Context, rawArgs json.RawMessage) (ToolResult, error) {
 		var args Args
 		if err := json.Unmarshal(rawArgs, &args); err != nil {
 			return ErrorResult(fmt.Sprintf("invalid arguments: %v", err)), nil

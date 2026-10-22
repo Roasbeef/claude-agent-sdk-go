@@ -514,3 +514,49 @@ func TestServerAddToolMethod(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, `"hello"`, result.Content[0].Text)
 }
+
+// TestTypedToolsCarryInputSchema guards against typed registrations
+// reaching tools/list without an inputSchema. The CLI rejects the whole
+// tools/list result when any entry lacks one, which silently hides every
+// tool on the server from the model.
+func TestTypedToolsCarryInputSchema(t *testing.T) {
+	type searchArgs struct {
+		Query string `json:"query" jsonschema:"search terms"`
+	}
+	handler := func(ctx context.Context, args searchArgs) (ToolResult, error) {
+		return TextResult(args.Query), nil
+	}
+
+	server := CreateMcpServer(McpServerOptions{
+		Name: "typed",
+		Tools: []ToolRegistrar{
+			Tool("via_tool", "registrar", handler),
+			ToolWithResponse("via_response", "registrar with response",
+				func(ctx context.Context, args searchArgs) (searchArgs, error) {
+					return args, nil
+				}),
+		},
+	})
+	AddTool(server, ToolDef{Name: "via_add", Description: "package-level"}, handler)
+	AddToolWithResponse(server, ToolDef{Name: "via_add_response", Description: "package-level response"},
+		func(ctx context.Context, args searchArgs) (searchArgs, error) {
+			return args, nil
+		})
+
+	defs := server.ToolDefs()
+	require.Len(t, defs, 4)
+	for _, def := range defs {
+		raw, err := json.Marshal(def.InputSchema)
+		require.NoError(t, err, def.Name)
+
+		var schema map[string]interface{}
+		require.NoError(t, json.Unmarshal(raw, &schema), def.Name)
+		assert.Equal(t, "object", schema["type"], def.Name)
+
+		props, ok := schema["properties"].(map[string]interface{})
+		require.True(t, ok, "%s: schema has no properties: %s", def.Name, raw)
+		query, ok := props["query"].(map[string]interface{})
+		require.True(t, ok, "%s: schema missing query: %s", def.Name, raw)
+		assert.Equal(t, "search terms", query["description"], def.Name)
+	}
+}

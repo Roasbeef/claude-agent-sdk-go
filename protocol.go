@@ -909,6 +909,8 @@ func (p *Protocol) handleMCPMessage(ctx context.Context, req ControlRequest) SDK
 			}
 			if def.InputSchema != nil {
 				tool["inputSchema"] = def.InputSchema
+			} else {
+				tool["inputSchema"] = openObjectSchema()
 			}
 			tools = append(tools, tool)
 		}
@@ -1494,6 +1496,8 @@ func (p *Protocol) handleSDKMCPMessage(ctx context.Context, req SDKControlReques
 			}
 			if def.InputSchema != nil {
 				tool["inputSchema"] = def.InputSchema
+			} else {
+				tool["inputSchema"] = openObjectSchema()
 			}
 			tools = append(tools, tool)
 		}

@@ -1814,6 +1814,17 @@ func TestProtocolMCPMessage(t *testing.T) {
 			tools, ok := result["tools"].([]interface{})
 			require.True(t, ok, "tools should be an array")
 			assert.Len(t, tools, 2)
+
+			// The CLI rejects a tools/list entry without an
+			// inputSchema, so untyped tools registered without one
+			// must still get an object schema on the wire.
+			for _, raw := range tools {
+				tool, ok := raw.(map[string]interface{})
+				require.True(t, ok)
+				schema, ok := tool["inputSchema"].(map[string]interface{})
+				require.True(t, ok, "tool %v has no inputSchema", tool["name"])
+				assert.Equal(t, "object", schema["type"])
+			}
 		case <-time.After(500 * time.Millisecond):
 			t.Fatal("Timeout waiting for response")
 		}
