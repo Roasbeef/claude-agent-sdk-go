@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -20,6 +21,7 @@ type McpServer struct {
 	version      string
 	instructions string
 	timeout      *int
+	toolPolicies []MCPServerToolPolicy
 	tools        map[string]*toolEntry
 }
 
@@ -81,6 +83,19 @@ type McpServerOptions struct {
 	// CLI already knows about has no effect until the server is removed and
 	// re-added (sdk.d.ts v0.3.251 L1093).
 	Timeout *int
+
+	// ToolPolicies is the per-tool permission policy the host declares for
+	// this server's tools, keyed by tool name without the mcp__ prefix. Only
+	// MCPToolPolicyAskAlways and MCPToolPolicyDenyAlways take effect on an
+	// in-process server: ask routes every call through OnPermissionRequest
+	// (or the permission prompt tool) even where an allow rule or
+	// WithAllowedTools covers it, including under bypassPermissions; under
+	// dontAsk the call is denied. Deny refuses every call. AllowAlways and
+	// OrgMaxPermission are ignored here; grant with WithAllowedTools or the
+	// permission callback instead. Unlike Timeout, the CLI adds these rules
+	// on every initialize that names the server (sdk.d.ts v0.3.310 L1234).
+	// A CLI that predates the field ignores it.
+	ToolPolicies []MCPServerToolPolicy
 }
 
 // CreateMcpServer creates a new in-process MCP server.
@@ -106,6 +121,7 @@ func CreateMcpServer(opts McpServerOptions) *McpServer {
 		version:      version,
 		instructions: opts.Instructions,
 		timeout:      opts.Timeout,
+		toolPolicies: slices.Clone(opts.ToolPolicies),
 		tools:        make(map[string]*toolEntry),
 	}
 
@@ -403,6 +419,12 @@ func (s *McpServer) Instructions() string {
 // when this server takes the CLI default. See McpServerOptions.Timeout.
 func (s *McpServer) Timeout() *int {
 	return s.timeout
+}
+
+// ToolPolicies returns the per-tool permission policy declared for this
+// server. See McpServerOptions.ToolPolicies.
+func (s *McpServer) ToolPolicies() []MCPServerToolPolicy {
+	return slices.Clone(s.toolPolicies)
 }
 
 // ToolNames returns the names of all registered tools.

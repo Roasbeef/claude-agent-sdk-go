@@ -404,6 +404,39 @@ func TestProtocolInitializeOptions(t *testing.T) {
 			},
 		},
 		{
+			name: "sdk mcp server tool policies wired through",
+			configure: func(opts *Options) {
+				WithMcpServer("guarded", CreateMcpServer(McpServerOptions{
+					Name: "guarded",
+					ToolPolicies: []MCPServerToolPolicy{
+						{Name: "wipe", PermissionPolicy: MCPToolPolicyDenyAlways},
+						{Name: "send", PermissionPolicy: MCPToolPolicyAskAlways},
+						{Name: "peek"},
+					},
+				}))(opts)
+			},
+			expected: map[string]interface{}{
+				"sdkMcpServers": []interface{}{"guarded"},
+				"sdkMcpServerConfigs": map[string]interface{}{
+					"guarded": map[string]interface{}{
+						"tools": []interface{}{
+							map[string]interface{}{
+								"name":              "wipe",
+								"permission_policy": "always_deny",
+							},
+							map[string]interface{}{
+								"name":              "send",
+								"permission_policy": "always_ask",
+							},
+							map[string]interface{}{
+								"name": "peek",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name: "sdk mcp server without timeout omits configs",
 			configure: func(opts *Options) {
 				WithMcpServer("plain", CreateMcpServer(McpServerOptions{

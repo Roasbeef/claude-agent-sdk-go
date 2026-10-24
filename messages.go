@@ -1119,6 +1119,10 @@ type SDKMCPServerConfig struct {
 	// Timeout is the per-server tool-call timeout in milliseconds. See
 	// McpServerOptions.Timeout.
 	Timeout *int `json:"timeout,omitempty"`
+
+	// Tools is the per-tool permission policy. See
+	// McpServerOptions.ToolPolicies.
+	Tools []MCPServerToolPolicy `json:"tools,omitempty"`
 }
 
 // SDKControlRequestBody contains the actual request data.
@@ -1197,6 +1201,7 @@ type SDKControlRequestBody struct {
 	Detail            string                      `json:"detail,omitempty"`               // For get_context_usage ("summary"|"full")
 	SkipBehaviors     bool                        `json:"skip_behaviors,omitempty"`       // For get_usage
 	HoldOnCacheImpact bool                        `json:"hold_on_cache_impact,omitempty"` // For reload_plugins
+	AddPlugins        []PluginConfig              `json:"add_plugins,omitempty"`          // For reload_plugins
 }
 
 // SDKHookCallbackMatcher defines hook callback matching configuration.

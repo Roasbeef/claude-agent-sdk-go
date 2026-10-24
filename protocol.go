@@ -102,8 +102,8 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 
 	// Build list of SDK MCP server names, plus per-server config for the
 	// subset that carries any. The config map stays absent when no server
-	// sets a timeout — the CLI reads a missing key and an empty object the
-	// same way, and sending {} is noise.
+	// sets a timeout or tool policy — the CLI reads a missing key and an
+	// empty object the same way, and sending {} is noise.
 	var sdkMcpServers []string
 	var sdkMcpServerConfigs map[string]SDKMCPServerConfig
 	if len(p.sdkMcpServers) > 0 {
@@ -111,7 +111,10 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 		for name, server := range p.sdkMcpServers {
 			sdkMcpServers = append(sdkMcpServers, name)
 
-			if server == nil || server.Timeout() == nil {
+			if server == nil {
+				continue
+			}
+			if server.Timeout() == nil && len(server.ToolPolicies()) == 0 {
 				continue
 			}
 			if sdkMcpServerConfigs == nil {
@@ -119,6 +122,7 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 			}
 			sdkMcpServerConfigs[name] = SDKMCPServerConfig{
 				Timeout: server.Timeout(),
+				Tools:   server.ToolPolicies(),
 			}
 		}
 	}

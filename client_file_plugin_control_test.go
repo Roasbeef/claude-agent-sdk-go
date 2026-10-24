@@ -725,6 +725,29 @@ func TestStreamReloadPluginsHoldOnCacheImpact(t *testing.T) {
 		)
 	})
 
+	t.Run("add plugins rides the request", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.ReloadPlugins(ctx, ReloadPluginsOptions{
+				AddPlugins: []PluginConfig{{
+					Type:             PluginTypeLocal,
+					Path:             "/opt/plugins/docs",
+					SkipMcpDiscovery: true,
+				}},
+			})
+			return err
+		})
+		require.NoError(t, err)
+
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1","request":`+
+				`{"subtype":"reload_plugins","add_plugins":[`+
+				`{"type":"local","path":"/opt/plugins/docs","skipMcpDiscovery":true}]}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+	})
+
 	t.Run("no opts omits the option", func(t *testing.T) {
 		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
 

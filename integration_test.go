@@ -3526,6 +3526,72 @@ func TestIntegrationSdkMcpServerTimeout(t *testing.T) {
 			"tool's own %s sleep", toolTimeoutMs, toolSleep)
 }
 
+// TestIntegrationSdkMcpToolPolicyDeny declares always_deny for an in-process
+// tool and runs under bypassPermissions, which would otherwise admit every
+// call. The CLI must refuse the call before it reaches the handler.
+func TestIntegrationSdkMcpToolPolicyDeny(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	skipIfCLIOlderThan(t, "2.1.310")
+
+	type NoArgs struct{}
+
+	var invoked atomic.Bool
+	server := CreateMcpServer(McpServerOptions{
+		Name: "vault",
+		ToolPolicies: []MCPServerToolPolicy{
+			{Name: "open", PermissionPolicy: MCPToolPolicyDenyAlways},
+		},
+		Tools: []ToolRegistrar{
+			Tool("open", "Open the vault",
+				func(ctx context.Context, args NoArgs) (ToolResult, error) {
+					invoked.Store(true)
+					return TextResult("opened"), nil
+				},
+			),
+		},
+	})
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You have one tool, mcp__vault__open. When asked "+
+			"to run it you MUST call it. Do not explain, do not refuse, do "+
+			"not ask questions. Call it exactly once, then stop."),
+		WithMcpServer("vault", server),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(2),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	var calledTool bool
+	for msg := range client.Query(ctx, "Call the mcp__vault__open tool now.") {
+		if m, ok := msg.(AssistantMessage); ok {
+			for _, block := range m.Message.Content {
+				if block.Type == "tool_use" &&
+					block.Name == "mcp__vault__open" {
+					calledTool = true
+				}
+			}
+		}
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+
+	if !calledTool {
+		t.Skip("not triggerable from CLI: the model declined to call the tool")
+	}
+	assert.False(t, invoked.Load(),
+		"always_deny must stop the call before it reaches the handler, "+
+			"even under bypassPermissions")
+}
+
 // TestIntegrationElicitation drives a stdio MCP server whose tool asks for a
 // form through elicitation/create, then checks the CLI's elicitation control
 // request reaches OnElicitation and the host's answer reaches the server.
@@ -4857,6 +4923,46 @@ func TestIntegrationReloadPluginsHoldOnCacheImpact(t *testing.T) {
 	assert.False(t, *got.Held,
 		"a session with no plugins has no tool-list change to hold on")
 	assert.Nil(t, got.CacheImpact, "nothing was held, so nothing to preview")
+}
+
+// TestIntegrationReloadPluginsAddPlugins starts a session with no plugins and
+// side-loads one through reload_plugins. The response's plugin list is the
+// evidence the CLI loaded it; a CLI that drops add_plugins reloads an empty set.
+func TestIntegrationReloadPluginsAddPlugins(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	skipIfCLIOlderThan(t, "2.1.310")
+
+	const pluginName = "daedalus-reload-probe"
+	pluginDir := writeProbePlugin(t, pluginName)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	got, err := stream.ReloadPlugins(ctx, ReloadPluginsOptions{
+		AddPlugins: []PluginConfig{{Type: PluginTypeLocal, Path: pluginDir}},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+
+	var loaded []string
+	for _, p := range got.Plugins {
+		loaded = append(loaded, p.Name)
+	}
+	assert.Contains(t, loaded, pluginName,
+		"add_plugins never reached the CLI; reload listed %v", loaded)
 }
 
 // TestIntegrationListPermissionRules exercises the v0.3.270
