@@ -479,25 +479,57 @@ type UsageBehaviors struct {
 
 // UsageBehaviorsWindow is the attribution for a single time window.
 type UsageBehaviorsWindow struct {
-	RequestCount int                     `json:"request_count"`
-	SessionCount int                     `json:"session_count"`
-	Behaviors    []UsageBehaviorEntry    `json:"behaviors"`
-	Agents       []UsageAttributionEntry `json:"agents"`
-	Skills       []UsageAttributionEntry `json:"skills"`
-	Plugins      []UsageAttributionEntry `json:"plugins"`
-	McpServers   []UsageAttributionEntry `json:"mcp_servers"`
+	RequestCount int                  `json:"request_count"`
+	SessionCount int                  `json:"session_count"`
+	Behaviors    []UsageBehaviorEntry `json:"behaviors"`
+	// Recommendations holds one suggested change per notable behavior or
+	// source, largest share first, worded for display (sdk.d.ts v0.3.310
+	// L4512).
+	Recommendations []UsageRecommendation `json:"recommendations,omitempty"`
+	// Fix describes what a single "fix" action does, or nil when nothing
+	// can be fixed in the session that answered.
+	Fix        *UsageFix               `json:"fix,omitempty"`
+	Agents     []UsageAttributionEntry `json:"agents"`
+	Skills     []UsageAttributionEntry `json:"skills"`
+	Plugins    []UsageAttributionEntry `json:"plugins"`
+	McpServers []UsageAttributionEntry `json:"mcp_servers"`
 }
 
 // UsageBehaviorEntry is one behavioral characteristic. Categories overlap —
 // percentages do not sum to 100.
 type UsageBehaviorEntry struct {
 	// Key is one of cache_miss, long_context, subagent_heavy, high_parallel,
-	// cron. Open string for forward-compat with new categories on the wire.
+	// cron, max_effort, workflow, always_on_context, large_tool_results.
+	// Open string for forward-compat with new categories on the wire.
 	Key string `json:"key"`
 	// Pct is the share of weighted local usage for this behavior, 0-100.
 	Pct float64 `json:"pct"`
 	// Count is requests in the window exhibiting the behavior.
 	Count int `json:"count"`
+}
+
+// UsageRecommendation is one suggested change from the usage scan.
+type UsageRecommendation struct {
+	// Key is a UsageBehaviorEntry key, or "agent", "skill", "plugin" or
+	// "mcp_server" for a named source.
+	Key string `json:"key"`
+	// Pct is the share of weighted local usage this touches, 0-100.
+	Pct float64 `json:"pct"`
+	// Title says what to do, verb first.
+	Title string `json:"title"`
+	// Detail is a few words: what the scan saw, or the command to run.
+	Detail string `json:"detail,omitempty"`
+}
+
+// UsageFix describes the one-step fix for a set of recommendations.
+type UsageFix struct {
+	// Keys are the recommendations the fix covers.
+	Keys []string `json:"keys"`
+	// Messages are user messages to send on the person's behalf, one each
+	// and in order, at UserMessagePriorityLater so a running turn cannot
+	// reorder them. Any /effort commands come first, then one prompt for
+	// the rest, which goes with UserMessage.ClientComposed set.
+	Messages []string `json:"messages"`
 }
 
 // UsageAttributionEntry attributes a share of local usage to a named
