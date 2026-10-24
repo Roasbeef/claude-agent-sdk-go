@@ -2498,6 +2498,15 @@ type ElicitationRequest struct {
 	Title           string                 `json:"title,omitempty"`
 	DisplayName     string                 `json:"displayName,omitempty"`
 	Description     string                 `json:"description,omitempty"`
+
+	// PropertyOrder lists the top-level keys of RequestedSchema's
+	// properties in the order the MCP server declared them. RequestedSchema
+	// is a Go map, so iterating it loses that order; render form fields
+	// from this list instead. Names that look like array indices ("0",
+	// "1", ...) come first. Nil for URL mode, when the schema has no
+	// properties object, and from a CLI that predates the field (sdk.d.ts
+	// v0.3.310 L4006).
+	PropertyOrder []string `json:"propertyOrder,omitempty"`
 }
 
 // ElicitationResult is what OnElicitation returns.

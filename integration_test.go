@@ -3592,12 +3592,13 @@ func TestIntegrationSdkMcpToolPolicyDeny(t *testing.T) {
 			"even under bypassPermissions")
 }
 
-// TestIntegrationElicitation drives a stdio MCP server whose tool asks for a
-// form through elicitation/create, then checks the CLI's elicitation control
-// request reaches OnElicitation and the host's answer reaches the server.
-func TestIntegrationElicitation(t *testing.T) {
-	skipIfNoToken(t)
-	skipIfNoCLI(t)
+// runElicitationProbe drives a stdio MCP server whose tool asks for a form
+// through elicitation/create, declining from OnElicitation, and returns the
+// requests the callback saw. The server lists the form's properties as zeta,
+// alpha, mid, so neither Go's map order nor a sort can produce that order by
+// accident. It skips when the model declines to call the tool.
+func runElicitationProbe(t *testing.T) []ElicitationRequest {
+	t.Helper()
 
 	serverPath := filepath.Join(t.TempDir(), "elicitmcp")
 	build := exec.Command("go", "build", "-o", serverPath, "./testdata/elicitmcp")
@@ -3658,11 +3659,33 @@ func TestIntegrationElicitation(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
+	return append([]ElicitationRequest(nil), got...)
+}
+
+// TestIntegrationElicitation checks the CLI's elicitation control request
+// reaches OnElicitation with the server's form.
+func TestIntegrationElicitation(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	got := runElicitationProbe(t)
 	require.Len(t, got, 1, "the tool call should elicit exactly once")
 	assert.Equal(t, "elicit", got[0].ServerName)
 	assert.Equal(t, "form", got[0].Mode)
 	assert.Equal(t, "Fill in the form", got[0].Message)
 	assert.Contains(t, got[0].RequestedSchema, "properties")
+}
+
+// TestIntegrationElicitationPropertyOrder checks the form's properties reach
+// OnElicitation in the order the server declared them.
+func TestIntegrationElicitationPropertyOrder(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	skipIfCLIOlderThan(t, "2.1.310")
+
+	got := runElicitationProbe(t)
+	require.Len(t, got, 1, "the tool call should elicit exactly once")
+	assert.Equal(t, []string{"zeta", "alpha", "mid"}, got[0].PropertyOrder)
 }
 
 // TestIntegrationModelUsageThinkingTokens drives a turn that should provoke
