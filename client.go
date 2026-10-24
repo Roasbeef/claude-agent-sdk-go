@@ -1222,6 +1222,16 @@ type ReloadPluginsOptions struct {
 	// what applying would change, and the session keeps its current plugins.
 	// Call again without the option to apply anyway.
 	HoldOnCacheImpact bool
+
+	// AddPlugins are loaded by the reload as well, as if each had been in
+	// WithPlugins at launch. Plugins already loaded stay; nothing is
+	// removed. Each Path must be absolute. The CLI refuses the list when it
+	// is malformed, when managed settings set disableSideloadFlags, on a
+	// Remote Control or cloud connection, and when a running sandbox cannot
+	// keep shell commands out of the folders; a held or failed reload adds
+	// none of them (sdk.d.ts v0.3.310 L5156). A CLI that predates the field
+	// ignores it and reloads without them.
+	AddPlugins []PluginConfig
 }
 
 // ReloadPlugins reloads plugins from disk and returns refreshed session
@@ -1241,6 +1251,7 @@ func (s *Stream) ReloadPlugins(
 	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
 		Subtype:           "reload_plugins",
 		HoldOnCacheImpact: o.HoldOnCacheImpact,
+		AddPlugins:        o.AddPlugins,
 	})
 	if err != nil {
 		return nil, err
