@@ -429,6 +429,21 @@ func TestStreamGetUsageExperimentalParsesCanonicalPayload(t *testing.T) {
 				"request_count": 10, "session_count": 3,
 				"behaviors": []interface{}{
 					map[string]interface{}{"key": "cache_miss", "pct": 30.0, "count": 3},
+					map[string]interface{}{"key": "max_effort", "pct": 12.0, "count": 2},
+				},
+				"recommendations": []interface{}{
+					map[string]interface{}{
+						"key": "cache_miss", "pct": 30.0,
+						"title": "Keep sessions warm", "detail": "3 cold starts",
+					},
+					map[string]interface{}{
+						"key": "max_effort", "pct": 12.0,
+						"title": "Lower effort for routine work",
+					},
+				},
+				"fix": map[string]interface{}{
+					"keys":     []interface{}{"max_effort"},
+					"messages": []interface{}{"/effort high"},
 				},
 				"agents":      []interface{}{map[string]interface{}{"name": "Explore", "pct": 20.0}},
 				"skills":      []interface{}{},
@@ -494,9 +509,20 @@ func TestStreamGetUsageExperimentalParsesCanonicalPayload(t *testing.T) {
 
 	require.NotNil(t, got.Behaviors)
 	assert.Equal(t, 10, got.Behaviors.Day.RequestCount)
-	require.Len(t, got.Behaviors.Day.Behaviors, 1)
+	require.Len(t, got.Behaviors.Day.Behaviors, 2)
 	assert.Equal(t, "cache_miss", got.Behaviors.Day.Behaviors[0].Key)
 	assert.Equal(t, 3, got.Behaviors.Day.Behaviors[0].Count)
+	assert.Equal(t, "max_effort", got.Behaviors.Day.Behaviors[1].Key)
+	assert.Equal(t, []UsageRecommendation{
+		{Key: "cache_miss", Pct: 30, Title: "Keep sessions warm",
+			Detail: "3 cold starts"},
+		{Key: "max_effort", Pct: 12,
+			Title: "Lower effort for routine work"},
+	}, got.Behaviors.Day.Recommendations)
+	require.NotNil(t, got.Behaviors.Day.Fix)
+	assert.Equal(t, []string{"max_effort"}, got.Behaviors.Day.Fix.Keys)
+	assert.Equal(t, []string{"/effort high"}, got.Behaviors.Day.Fix.Messages)
+	assert.Nil(t, got.Behaviors.Week.Fix, "absent when nothing can be fixed")
 	require.Len(t, got.Behaviors.Day.Agents, 1)
 	assert.Equal(t, "Explore", got.Behaviors.Day.Agents[0].Name)
 	assert.Equal(t, 70, got.Behaviors.Week.RequestCount)
