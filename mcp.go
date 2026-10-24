@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -120,7 +121,7 @@ func CreateMcpServer(opts McpServerOptions) *McpServer {
 		version:      version,
 		instructions: opts.Instructions,
 		timeout:      opts.Timeout,
-		toolPolicies: opts.ToolPolicies,
+		toolPolicies: slices.Clone(opts.ToolPolicies),
 		tools:        make(map[string]*toolEntry),
 	}
 
@@ -423,7 +424,7 @@ func (s *McpServer) Timeout() *int {
 // ToolPolicies returns the per-tool permission policy declared for this
 // server. See McpServerOptions.ToolPolicies.
 func (s *McpServer) ToolPolicies() []MCPServerToolPolicy {
-	return s.toolPolicies
+	return slices.Clone(s.toolPolicies)
 }
 
 // ToolNames returns the names of all registered tools.
