@@ -1076,8 +1076,10 @@ Deferred in v0.3.310:
   keep-alive lines that come with them (#292).
 - `sdk-tools.d.ts` churn, the standing deferral.
 
-Follow-ups filed: #311 (human-in-the-loop callbacks block the message pump)
-and #312 (reattach `pending_user_dialog_requests` lose their payload).
+Follow-ups filed: #311 (human-in-the-loop callbacks block the message pump,
+which is also why `TestIntegrationSdkMcpServerTimeout` fails), #312 (reattach
+`pending_user_dialog_requests` lose their payload) and #315 (the HTTP hook
+allowlists can't send an empty list).
 
 ### Porting from the TypeScript SDK - Go-side differences
 
