@@ -792,7 +792,10 @@ type InterruptReceipt struct {
 	// the uuids of main-thread commands cancelled by this interrupt — every
 	// survivor that would otherwise have appeared in StillQueued. Each emitted a
 	// terminal "cancelled" lifecycle and none will run. Absent on a plain
-	// interrupt and on older CLIs.
+	// interrupt and on older CLIs. When one of them was the re-run of an
+	// interrupted turn that also answered for other client messages, those
+	// messages' uuids are listed after the commands. They were never queued
+	// and never in StillQueued (sdk.d.ts v0.3.310 L4843).
 	Cancelled []string `json:"cancelled,omitempty"`
 }
 
@@ -1017,11 +1020,13 @@ type SetMaxThinkingTokensOption func(*setMaxThinkingTokensOptions)
 // This is the only path that accepts ThinkingDisplayHighlights; the
 // spawn-time ThinkingConfig.Display does not. Note that highlights is honored
 // by the API only for Anthropic-hosted Claude Code sessions. Where the session
-// cannot send it (Bedrock, Vertex and other providers without first-party
-// betas, experimental betas switched off, a Claude 3 model, or after the API
-// has already rejected it once) the request returns an error naming the cause
-// and the display stays as it was; the token budget still applies. Older
-// CLIs instead accepted the request and quietly fell back to
+// cannot send it, the request returns an error naming the cause and the
+// display stays as it was; the token budget still applies. The causes are:
+// experimental betas switched off, a Claude 3 model (except on Microsoft
+// Foundry), the API having already rejected it once, or Amazon Bedrock
+// (Mantle included), Google Vertex AI or a Claude apps gateway with a model
+// released before Claude Opus 4.7 (sdk.d.ts v0.3.310 L5309). Older CLIs
+// instead accepted the request and quietly fell back to
 // ThinkingDisplayOmitted.
 func WithThinkingDisplay(mode ThinkingDisplay) SetMaxThinkingTokensOption {
 	return func(o *setMaxThinkingTokensOptions) {

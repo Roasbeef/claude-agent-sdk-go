@@ -129,9 +129,12 @@ type McpServerStatusTool struct {
 	// used: "ui" (an object with resourceUri, a ui:// string, visibility, an
 	// array of "model" | "app", and any other member the server sent) and the
 	// deprecated flat "ui/resourceUri". The CLI validates and size-bounds
-	// them and withholds every other _meta key. Present only on a tool that
-	// declares one, from CLIs advertising the mcp_tool_ui_meta_v1 capability
-	// (sdk.d.ts v0.3.290 L1280).
+	// each and withholds one that fails, along with every other _meta key.
+	// Of a "ui" that fails, only visibility still arrives: the "model" and
+	// "app" entries the server listed, or [] when ui is not an object or
+	// visibility not an array. So a tool with no visibility declared none.
+	// Present only on a tool that declares one, from CLIs advertising the
+	// mcp_tool_ui_meta_v1 capability (sdk.d.ts v0.3.310 L1314).
 	Meta map[string]interface{} `json:"_meta,omitempty"`
 }
 
