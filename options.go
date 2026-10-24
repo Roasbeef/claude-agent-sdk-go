@@ -4322,11 +4322,13 @@ func WithSettings(settings Settings) Option {
 // WithManagedSettings supplies inline managed settings.
 //
 // The CLI filters them restrictive-only, and two hook keys by value as well
-// (sdk.d.ts v0.3.310 L2282). DisableAllHooks binds as AllowManagedHooksOnly,
-// so the machine administrator's own hooks keep running; any value but false
-// binds it. AllowedHTTPHookURLs and HTTPHookAllowedEnvVars bind only as an
+// (sdk.d.ts v0.3.310 L2282). DisableAllHooks: true binds as
+// AllowManagedHooksOnly, so the machine administrator's own hooks keep
+// running. AllowedHTTPHookURLs and HTTPHookAllowedEnvVars bind only as an
 // empty list, and only where no other source sets one, because these lists
-// union across sources and a non-empty one would widen an admin's.
+// union across sources and a non-empty one would widen an admin's. Both
+// fields are omitempty today, so an empty list never reaches the CLI (#315);
+// use AllowManagedHooksOnly to stop a project's HTTP hooks instead.
 func WithManagedSettings(settings Settings) Option {
 	return func(o *Options) {
 		o.ManagedSettings = &settings

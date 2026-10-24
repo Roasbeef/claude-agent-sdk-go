@@ -1057,7 +1057,7 @@ This cycle also fixed a long-standing bug. `OnElicitation`, `OnUserDialog` and
 `GetHostAuthToken` had never fired against a real CLI. Their handlers were
 only wired to the legacy `control` envelope, and an elicitation frame didn't
 even parse (its `message` is a string where `mcp_message`'s is an object), so
-it was dropped and the turn hung until the CLI's dialog deadline. Alongside
+it was dropped and the turn hung. Alongside
 the fix, a session with no `OnUserDialog` now leaves `request_user_dialog`
 unanswered, as sdk.mjs does, instead of answering `cancelled` (#198).
 
