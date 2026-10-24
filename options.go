@@ -145,8 +145,18 @@ type Options struct {
 	// callback answers cancelled, the CLI applies the dialog's default
 	// behavior. When unset, the SDK leaves the request unanswered, so a
 	// capable client attached to the same session (or the CLI's dialog
-	// deadline) settles it. Hosts MUST answer unrecognized dialogKind values
-	// with cancelled.
+	// deadline) settles it.
+	//
+	// The CLI only sends kinds that some attached client declared in
+	// SupportedDialogKinds. On a multi-client session a kind this host did not
+	// declare can still arrive. Upstream says to leave such a request
+	// unanswered and never to answer it cancelled, which is a real settlement
+	// (sdk.d.ts v0.3.310 L5261). The Go SDK has no way to stay silent from
+	// inside the callback yet (#198): an error return answers cancelled.
+	//
+	// A dialog may have no deadline, staying up until answered or withdrawn
+	// with control_cancel_request. The SDK doesn't yet cancel the callback's
+	// context on withdrawal, and the callback runs on the message pump (#311).
 	OnUserDialog OnUserDialogFunc
 
 	// SupportedDialogKinds declares the request_user_dialog dialog_kind
@@ -483,9 +493,10 @@ type Settings struct {
 	// toward in the organization's usage reports: the Project's UUID or its
 	// "claude_proj_" ID. Pointer so an explicit empty string, which names
 	// none and stops lower-precedence files from naming one, reaches the
-	// wire. Sent only with a claude.ai login talking to the Anthropic API
-	// directly, outside cloud sessions; CLAUDE_CODE_ATTRIBUTION_PROJECT
-	// wins over it (sdk.d.ts v0.3.310 L7104).
+	// wire; the organization default still applies then. Sent only with a
+	// claude.ai login talking to the Anthropic API directly, outside cloud
+	// sessions; CLAUDE_CODE_ATTRIBUTION_PROJECT wins over it (sdk.d.ts
+	// v0.3.310 L7104).
 	AttributionProject *string `json:"attributionProject,omitempty"`
 	// AttributionProjectPolicy is the organization's default for
 	// AttributionProject. Honored only from managed settings.
@@ -2009,12 +2020,12 @@ const (
 	// L9204 for the spawn-time one that still excludes it).
 	//
 	// Even mid-session it is conditional: the API honors highlights only for
-	// Claude Code sessions Anthropic hosts. Anywhere else the control request
-	// still SUCCEEDS and the session then falls back to
-	// ThinkingDisplayOmitted once the API has rejected the value. So a host
-	// that asks for highlights and sees no thinking text is looking at that
-	// fallback, not at a bug, and there is no success/failure signal on the
-	// response to distinguish the two.
+	// Claude Code sessions Anthropic hosts. Once the API rejects it, the
+	// session sends ThinkingDisplayOmitted in its place. Current CLIs refuse
+	// the request up front where they know it can't be sent; see
+	// WithThinkingDisplay for the cases. Older CLIs accepted it anyway, so a
+	// host that asked for highlights and saw no thinking text was looking at
+	// the omitted fallback, not a bug.
 	ThinkingDisplayHighlights ThinkingDisplay = "highlights"
 )
 
@@ -2478,8 +2489,8 @@ type OnElicitationFunc func(ctx context.Context, req ElicitationRequest) (Elicit
 //
 // Returning a non-nil error or a UserDialogResult with
 // Behavior == UserDialogBehaviorCancelled signals the CLI to apply the
-// dialog's default behavior. Hosts MUST answer with cancelled for any
-// dialogKind they do not recognize.
+// dialog's default behavior. See Options.OnUserDialog for kinds the host did
+// not declare.
 type OnUserDialogFunc func(ctx context.Context, req UserDialogRequest) (UserDialogResult, error)
 
 // GetHostAuthTokenFunc returns a fresh host auth token.
@@ -2650,8 +2661,13 @@ type PermissionContext struct {
 	// to open the session and respond on the card itself (sdk.d.ts
 	// v0.3.201). As of v0.3.215 it is also set when the pending ask is
 	// localDisplayOnly: its consent disclosure cannot ride this wire and only
-	// the local dialog renders it. Either way the user must open the session
-	// to answer.
+	// the local dialog renders it. As of v0.3.310 it also covers three more
+	// cases (sdk.d.ts L5062). One is an auto-mode classifier block handed to
+	// a person, which no stored grant may answer. Another is an MCP server
+	// whose name spells a claude.ai connector's key but came from neither
+	// claude.ai nor whoever launched the session. The last is an ask whose
+	// title and description the SDK host worded itself. In every case the
+	// user must open the session to answer.
 	RequiresUserInteraction bool
 	// SuppressAlwaysAllowRule is true when the dialog must not offer the
 	// persistent "don't ask again" affordance for this ask: accepting it would
@@ -4315,6 +4331,15 @@ func WithSettings(settings Settings) Option {
 }
 
 // WithManagedSettings supplies inline managed settings.
+//
+// The CLI filters them restrictive-only, and two hook keys by value as well
+// (sdk.d.ts v0.3.310 L2282). DisableAllHooks: true binds as
+// AllowManagedHooksOnly, so the machine administrator's own hooks keep
+// running. AllowedHTTPHookURLs and HTTPHookAllowedEnvVars bind only as an
+// empty list, and only where no other source sets one, because these lists
+// union across sources and a non-empty one would widen an admin's. Both
+// fields are omitempty today, so an empty list never reaches the CLI (#315);
+// use AllowManagedHooksOnly to stop a project's HTTP hooks instead.
 func WithManagedSettings(settings Settings) Option {
 	return func(o *Options) {
 		o.ManagedSettings = &settings

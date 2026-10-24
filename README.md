@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.296 catchup work, using Go idioms where the API shape differs.
+v0.3.310 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -1030,6 +1030,57 @@ Deferred in v0.3.296:
 - `bridge.d.ts` `claudeCodeVersion` (bridge host side) and `sdk-tools.d.ts`
   churn — the standing deferrals.
 
+The v0.3.310 catchup added:
+
+- `McpServerOptions.ToolPolicies`, a per-tool permission policy for
+  in-process MCP servers sent on initialize. `always_deny` holds even under
+  `bypassPermissions`, and `always_ask` routes a call through the permission
+  callback even where an allow rule covers it. The other values are ignored
+  for sdk servers. `MCPServerToolPolicy.PermissionPolicy` is now omitempty,
+  so an entry without one states no policy instead of an empty one (which
+  the CLI read as ask).
+- `ReloadPluginsOptions.AddPlugins`, which side-loads plugins into a running
+  session as if they had been passed to `WithPlugins`. Paths must be
+  absolute.
+- `ElicitationRequest.PropertyOrder`: the form's property names in the
+  server's order, which a Go map can't keep.
+- `get_context_usage` provenance: a stable `ID` on each category row (an
+  open `ContextUsageCategoryID` set), `McpInstructions` by server, and
+  plugin id + file path on agent and skill rows.
+- `get_usage` behaviors gain `Recommendations` and a one-step `Fix`, and the
+  behavior keys `max_effort`, `workflow`, `always_on_context` and
+  `large_tool_results`.
+- Settings `AttributionProject`, `AttributionProjectPolicy`,
+  `SSHHostCommands` and `SettingsSandbox.AllowNestedUserNamespaces`.
+
+This cycle also fixed a long-standing bug. `OnElicitation`, `OnUserDialog` and
+`GetHostAuthToken` had never fired against a real CLI. Their handlers were
+only wired to the legacy `control` envelope, and an elicitation frame didn't
+even parse (its `message` is a string where `mcp_message`'s is an object), so
+it was dropped and the turn hung. Alongside
+the fix, a session with no `OnUserDialog` now leaves `request_user_dialog`
+unanswered, as sdk.mjs does, instead of answering `cancelled` (#198).
+
+PRs in this cycle (squash-merged): #305 sdk server tool policy, #306
+`add_plugins`, #307 control-request routing, #308 context usage provenance,
+#309 usage recommendations, #310 settings, #313 `PropertyOrder`, plus this
+docs refresh.
+
+Deferred in v0.3.310:
+
+- `BUILTIN_TOOL_NAMES` / `LEGACY_TOOL_NAME_ALIASES` (`@alpha`; the list
+  changes every release).
+- `mcp_call` `result_not_for_model` (no Go `mcp_call` wrapper yet) and
+  `mcp_status` `liveReply` (for cloud and Remote Control transports only).
+- `startup()` / `prewarm()` `initializeTimeoutMs` and the `startup_mark`
+  keep-alive lines that come with them (#292).
+- `sdk-tools.d.ts` churn, the standing deferral.
+
+Follow-ups filed: #311 (human-in-the-loop callbacks block the message pump,
+which is also why `TestIntegrationSdkMcpServerTimeout` fails), #312 (reattach
+`pending_user_dialog_requests` lose their payload) and #315 (the HTTP hook
+allowlists can't send an empty list).
+
 ### Porting from the TypeScript SDK - Go-side differences
 
 A short list of places the Go SDK consciously diverges from the TS shape; if
@@ -1068,19 +1119,15 @@ you are translating TS code, watch for these:
   models the CLI silently downgrades per its own policy. The CLI is the
   authority on which model accepts which level - the SDK only forwards the enum
   value.
-- **`OnUserDialog` answers cancelled by default, including on unknown
-  `dialogKind`.** Per TS SDK v0.3.168, `dialogKind` is an open string union: a
-  new CLI release can ship a kind the host has never seen. The contract is
-  that the host MUST respond cancelled in that case, and the CLI then applies
-  the dialog's default behavior. The Go SDK enforces this automatically: if
-  `OnUserDialog` is unset, or the callback returns a non-nil error, the SDK
-  emits cancelled on the host's behalf. Callbacks that do recognize the kind
-  should still return `UserDialogBehaviorCancelled` (rather than fabricating a
-  result) for any branch they cannot honor — a misbehaving host should never
-  wedge the CLI on an unresolved dialog. As of TS SDK v0.3.177, declare the
-  kinds the host can actually render via `Options.SupportedDialogKinds`: the
-  CLI fails closed and never emits an undeclared kind, so the flow behind it
-  degrades to its no-dialog behavior instead.
+- **`OnUserDialog` cannot stay silent from inside the callback.** Declare
+  the kinds the host can render via `Options.SupportedDialogKinds`: the CLI
+  fails closed and never sends a kind no attached client declared. With no
+  `OnUserDialog` at all, the SDK leaves the request unanswered, as TS does.
+  With a callback, an error return answers `cancelled`, which is a real
+  settlement. TS lets the callback return `null` to stay silent, and
+  upstream says a kind the host did not declare (possible on a multi-client
+  session) must not be answered. There is no Go equivalent yet (#198), so on
+  shared sessions only declare kinds you can actually answer.
 
 For internal architecture, see [DESIGN.md](docs/DESIGN.md). For CLI protocol
 details (how this and the official Typescript SDK actually work), see
