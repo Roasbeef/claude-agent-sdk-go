@@ -356,6 +356,77 @@ func TestStreamGetContextUsageParsesCanonicalPayload(t *testing.T) {
 	assert.Equal(t, "image", got.MessageBreakdown.AttachmentsByType[0].Name)
 }
 
+// TestStreamGetContextUsageProvenance covers the v0.3.310 additions: the
+// stable category id, the per-server mcp_instructions split, and plugin
+// provenance on agent and skill rows.
+func TestStreamGetContextUsageProvenance(t *testing.T) {
+	payload := map[string]interface{}{
+		"categories": []interface{}{
+			map[string]interface{}{
+				"id": "mcp_instructions", "name": "MCP instructions",
+				"tokens": 90, "color": "#abc", "kind": "used",
+			},
+			map[string]interface{}{
+				"name": "Old CLI row", "tokens": 10, "color": "#def",
+			},
+		},
+		"mcpInstructions": []interface{}{
+			map[string]interface{}{"serverName": "My Server", "tokens": 90},
+		},
+		"agents": []interface{}{
+			map[string]interface{}{
+				"agentType": "docs:writer", "source": "plugin",
+				"pluginId": "docs@acme", "path": "/p/agents/writer.md",
+				"tokens": 30,
+			},
+		},
+		"skills": map[string]interface{}{
+			"totalSkills": 1, "includedSkills": 1, "tokens": 20,
+			"skillFrontmatter": []interface{}{
+				map[string]interface{}{
+					"name": "lint", "source": "plugin",
+					"pluginName": "docs", "pluginId": "docs@acme",
+					"path": "/p/skills/lint/SKILL.md", "tokens": 20,
+				},
+			},
+		},
+	}
+
+	stream, _, _ := newStreamControlTest(func(req SDKControlRequest) SDKControlResponse {
+		return SDKControlResponse{
+			Type: "control_response",
+			Response: SDKControlResponseBody{
+				Subtype:   "success",
+				RequestID: req.RequestID,
+				Response:  payload,
+			},
+		}
+	})
+
+	got, err := stream.GetContextUsage(context.Background())
+	require.NoError(t, err)
+
+	require.Len(t, got.Categories, 2)
+	assert.Equal(t, ContextUsageCategoryMcpInstructions, got.Categories[0].ID)
+	assert.Empty(t, got.Categories[1].ID, "a CLI that predates id sends none")
+
+	require.Len(t, got.McpInstructions, 1)
+	assert.Equal(t, ContextUsageMcpInstructions{
+		ServerName: "My Server", Tokens: 90,
+	}, got.McpInstructions[0])
+
+	require.Len(t, got.Agents, 1)
+	assert.Equal(t, "docs@acme", got.Agents[0].PluginID)
+	assert.Equal(t, "/p/agents/writer.md", got.Agents[0].Path)
+
+	require.NotNil(t, got.Skills)
+	require.Len(t, got.Skills.SkillFrontmatter, 1)
+	skill := got.Skills.SkillFrontmatter[0]
+	assert.Equal(t, "docs", skill.PluginName)
+	assert.Equal(t, "docs@acme", skill.PluginID)
+	assert.Equal(t, "/p/skills/lint/SKILL.md", skill.Path)
+}
+
 func TestStreamGetContextUsageApiUsageNullable(t *testing.T) {
 	payload := map[string]interface{}{
 		"categories":           []interface{}{},
