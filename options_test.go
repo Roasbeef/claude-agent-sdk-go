@@ -2639,6 +2639,53 @@ func TestSettingsParityV0_3_290(t *testing.T) {
 	assert.Equal(t, s, back)
 }
 
+func TestSettingsParityV0_3_310(t *testing.T) {
+	project := "claude_proj_abc123"
+	nested := true
+	s := Settings{
+		AttributionProject: &project,
+		AttributionProjectPolicy: &SettingsAttributionProjectPolicy{
+			Default: "6f1c0d2e-0000-4000-8000-000000000000",
+		},
+		SSHHostCommands: []interface{}{
+			map[string]interface{}{
+				"id": "dev", "name": "Dev box", "command": "/usr/local/bin/devhost",
+			},
+		},
+		Sandbox: &SettingsSandbox{AllowNestedUserNamespaces: &nested},
+	}
+
+	data, err := json.Marshal(s)
+	require.NoError(t, err)
+
+	var got map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &got))
+	assert.JSONEq(t, `"claude_proj_abc123"`, string(got["attributionProject"]))
+	assert.JSONEq(t, `{"default":"6f1c0d2e-0000-4000-8000-000000000000"}`,
+		string(got["attributionProjectPolicy"]))
+	assert.JSONEq(t,
+		`[{"id":"dev","name":"Dev box","command":"/usr/local/bin/devhost"}]`,
+		string(got["sshHostCommands"]))
+	assert.JSONEq(t, `{"allowNestedUserNamespaces":true}`, string(got["sandbox"]))
+
+	var back Settings
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, s, back)
+}
+
+// An empty attributionProject names no Project and overrides a lower source
+// that names one, so it has to reach the wire.
+func TestSettingsAttributionProjectEmptyVersusNil(t *testing.T) {
+	empty := ""
+	data, err := json.Marshal(Settings{AttributionProject: &empty})
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"attributionProject":""`)
+
+	data, err = json.Marshal(Settings{})
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "attributionProject")
+}
+
 // An empty allowedProviders list allows no provider at all, so it must reach
 // the wire; only a nil list means "every provider".
 func TestSettingsAllowedProvidersEmptyVersusNil(t *testing.T) {

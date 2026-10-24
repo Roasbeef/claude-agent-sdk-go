@@ -6071,6 +6071,50 @@ func TestIntegrationSettingsParityV0_3_290(t *testing.T) {
 		"a stalled managed-settings handshake shows up as no result at all")
 }
 
+// TestIntegrationSettingsParityV0_3_310 hands the v0.3.310 settings to the
+// CLI as managed settings and checks the session still runs. A nested key the
+// CLI's schema rejects stalls the managed-settings handshake, so a missing
+// result is the failure signal. attributionProject is the empty string, which
+// names no Project and so leaves this account's API requests untouched.
+func TestIntegrationSettingsParityV0_3_310(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	none := ""
+	nested := false
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithManagedSettings(Settings{
+			AttributionProject: &none,
+			SSHHostCommands: []interface{}{
+				map[string]interface{}{
+					"id": "dev", "name": "Dev", "command": "/bin/true",
+				},
+			},
+			Sandbox: &SettingsSandbox{AllowNestedUserNamespaces: &nested},
+		}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var gotResult bool
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(ResultMessage); ok {
+			assert.False(t, m.IsError,
+				"the v0.3.310 settings must not fail the session: %s", m.Result)
+			gotResult = true
+			break
+		}
+	}
+	assert.True(t, gotResult,
+		"a stalled managed-settings handshake shows up as no result at all")
+}
+
 // TestIntegrationAllowedProvidersRefusesStartup sets an allowedProviders list
 // that leaves out the provider this session uses, and checks the CLI refuses
 // to start with the provider_not_allowed reason (sdk.d.ts v0.3.290 L8610,

@@ -479,13 +479,24 @@ type Settings struct {
 	WSLInheritsWindowsSettings *bool                `json:"wslInheritsWindowsSettings,omitempty"`
 	Env                        map[string]string    `json:"env,omitempty"`
 	Attribution                *SettingsAttribution `json:"attribution,omitempty"`
-	IncludeCoAuthoredBy        *bool                `json:"includeCoAuthoredBy,omitempty"`
-	IncludeGitInstructions     *bool                `json:"includeGitInstructions,omitempty"`
-	Permissions                *SettingsPermissions `json:"permissions,omitempty"`
-	Model                      string               `json:"model,omitempty"`
-	FallbackModel              []string             `json:"fallbackModel,omitempty"`
-	AvailableModels            []string             `json:"availableModels,omitempty"`
-	ModelOverrides             map[string]string    `json:"modelOverrides,omitempty"`
+	// AttributionProject names the claude.ai Project this session counts
+	// toward in the organization's usage reports: the Project's UUID or its
+	// "claude_proj_" ID. Pointer so an explicit empty string, which names
+	// none and stops lower-precedence files from naming one, reaches the
+	// wire. Sent only with a claude.ai login talking to the Anthropic API
+	// directly, outside cloud sessions; CLAUDE_CODE_ATTRIBUTION_PROJECT
+	// wins over it (sdk.d.ts v0.3.310 L7104).
+	AttributionProject *string `json:"attributionProject,omitempty"`
+	// AttributionProjectPolicy is the organization's default for
+	// AttributionProject. Honored only from managed settings.
+	AttributionProjectPolicy *SettingsAttributionProjectPolicy `json:"attributionProjectPolicy,omitempty"`
+	IncludeCoAuthoredBy      *bool                             `json:"includeCoAuthoredBy,omitempty"`
+	IncludeGitInstructions   *bool                             `json:"includeGitInstructions,omitempty"`
+	Permissions              *SettingsPermissions              `json:"permissions,omitempty"`
+	Model                    string                            `json:"model,omitempty"`
+	FallbackModel            []string                          `json:"fallbackModel,omitempty"`
+	AvailableModels          []string                          `json:"availableModels,omitempty"`
+	ModelOverrides           map[string]string                 `json:"modelOverrides,omitempty"`
 	// ModelPicker curates the /model picker with an ordered list of rows,
 	// independent of the built-in lineup and of Claude Code releases.
 	// AvailableModels still filters these rows. Honored from managed,
@@ -775,6 +786,11 @@ type Settings struct {
 	SkipDangerousModePermissionPrompt *bool               `json:"skipDangerousModePermissionPrompt,omitempty"`
 	DisableAutoMode                   string              `json:"disableAutoMode,omitempty"`
 	SSHConfigs                        []SettingsSSHConfig `json:"sshConfigs,omitempty"`
+	// SSHHostCommands lists Claude Desktop SSH connections whose host comes
+	// from running a command. Upstream types it as unknown[]: Desktop reads
+	// it from user and machine-managed settings, and Claude Code itself
+	// ignores it (sdk.d.ts v0.3.310 L9527).
+	SSHHostCommands []interface{} `json:"sshHostCommands,omitempty"`
 	// ClaudeMD is CLAUDE.md-style instructions injected as organization-managed memory. Honored only from managed / policy settings. Mirrors sdk.d.ts v0.3.150 L5343.
 	ClaudeMD           string   `json:"claudeMd,omitempty"`
 	ClaudeMDExcludes   []string `json:"claudeMdExcludes,omitempty"`
@@ -1529,6 +1545,15 @@ type SettingsChannelPlugin struct {
 	Plugin      string `json:"plugin"`
 }
 
+// SettingsAttributionProjectPolicy is the organization default behind
+// Settings.AttributionProject.
+type SettingsAttributionProjectPolicy struct {
+	// Default is the Project used when neither
+	// CLAUDE_CODE_ATTRIBUTION_PROJECT nor attributionProject names one: its
+	// UUID or "claude_proj_" ID.
+	Default string `json:"default,omitempty"`
+}
+
 type SettingsSSHConfig struct {
 	ID              string `json:"id"`
 	Name            string `json:"name"`
@@ -1568,17 +1593,25 @@ type SettingsSpinnerTipsOverride struct {
 }
 
 type SettingsSandbox struct {
-	Enabled                      *bool                      `json:"enabled,omitempty"`
-	FailIfUnavailable            *bool                      `json:"failIfUnavailable,omitempty"`
-	AutoAllowBashIfSandboxed     *bool                      `json:"autoAllowBashIfSandboxed,omitempty"`
-	AllowUnsandboxedCommands     *bool                      `json:"allowUnsandboxedCommands,omitempty"`
-	Network                      *SettingsSandboxNetwork    `json:"network,omitempty"`
-	Filesystem                   *SettingsSandboxFilesystem `json:"filesystem,omitempty"`
-	IgnoreViolations             map[string][]string        `json:"ignoreViolations,omitempty"`
-	EnableWeakerNestedSandbox    *bool                      `json:"enableWeakerNestedSandbox,omitempty"`
-	EnableWeakerNetworkIsolation *bool                      `json:"enableWeakerNetworkIsolation,omitempty"`
-	ExcludedCommands             []string                   `json:"excludedCommands,omitempty"`
-	Ripgrep                      *SettingsSandboxRipgrep    `json:"ripgrep,omitempty"`
+	Enabled                   *bool                      `json:"enabled,omitempty"`
+	FailIfUnavailable         *bool                      `json:"failIfUnavailable,omitempty"`
+	AutoAllowBashIfSandboxed  *bool                      `json:"autoAllowBashIfSandboxed,omitempty"`
+	AllowUnsandboxedCommands  *bool                      `json:"allowUnsandboxedCommands,omitempty"`
+	Network                   *SettingsSandboxNetwork    `json:"network,omitempty"`
+	Filesystem                *SettingsSandboxFilesystem `json:"filesystem,omitempty"`
+	IgnoreViolations          map[string][]string        `json:"ignoreViolations,omitempty"`
+	EnableWeakerNestedSandbox *bool                      `json:"enableWeakerNestedSandbox,omitempty"`
+	// AllowNestedUserNamespaces (Linux/WSL only) lets sandboxed commands
+	// create their own user namespaces, as Chromium's sandbox, a nested
+	// bubblewrap, or unshare need. It REMOVES code-execution isolation: a
+	// hostile command can then bypass denyWrite, denyRead and the paths the
+	// sandbox always protects, and plant code that later runs outside it.
+	// Default false. True is ignored from project settings (sdk.d.ts
+	// v0.3.310 L9181).
+	AllowNestedUserNamespaces    *bool                   `json:"allowNestedUserNamespaces,omitempty"`
+	EnableWeakerNetworkIsolation *bool                   `json:"enableWeakerNetworkIsolation,omitempty"`
+	ExcludedCommands             []string                `json:"excludedCommands,omitempty"`
+	Ripgrep                      *SettingsSandboxRipgrep `json:"ripgrep,omitempty"`
 	// BwrapPath is the absolute path to the bwrap (bubblewrap) binary on
 	// Linux/WSL. Overrides auto-detection via PATH. Honored only from
 	// admin-controlled managed settings. Mirrors sdk.d.ts v0.3.150 L5133.
