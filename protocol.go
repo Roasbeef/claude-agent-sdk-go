@@ -283,6 +283,9 @@ func (p *Protocol) handleControlRequest(ctx context.Context, req ControlRequest)
 
 	// Tool-driven blocking dialog from CLI (request_user_dialog).
 	case "request_user_dialog":
+		if p.options.OnUserDialog == nil {
+			return nil
+		}
 		resp = p.handleUserDialogRequest(ctx, req)
 
 	default:
@@ -473,11 +476,13 @@ func (p *Protocol) handleElicitationRequest(ctx context.Context, req ControlRequ
 }
 
 // handleUserDialogRequest processes a request_user_dialog control request.
+// Callers must not invoke it without an OnUserDialog callback; with none, the
+// request goes unanswered.
 //
 // The wire payload uses snake_case keys (dialog_kind, payload, tool_use_id);
 // the Go-side UserDialogRequest mirrors the camelCase TS type. When the
-// callback is unset or returns an error, the SDK answers `cancelled` so the
-// CLI applies the dialog's default behavior.
+// callback returns an error, the SDK answers `cancelled` so the CLI applies
+// the dialog's default behavior.
 func (p *Protocol) handleUserDialogRequest(ctx context.Context, req ControlRequest) SDKControlResponse {
 	udReq := UserDialogRequest{}
 	udReq.DialogKind, _ = req.Payload["dialog_kind"].(string)
@@ -486,14 +491,9 @@ func (p *Protocol) handleUserDialogRequest(ctx context.Context, req ControlReque
 	}
 	udReq.ToolUseID, _ = req.Payload["tool_use_id"].(string)
 
-	result := UserDialogResult{Behavior: UserDialogBehaviorCancelled}
-	if p.options.OnUserDialog != nil {
-		callbackResult, err := p.options.OnUserDialog(ctx, udReq)
-		if err != nil {
-			result = UserDialogResult{Behavior: UserDialogBehaviorCancelled}
-		} else {
-			result = callbackResult
-		}
+	result, err := p.options.OnUserDialog(ctx, udReq)
+	if err != nil {
+		result = UserDialogResult{Behavior: UserDialogBehaviorCancelled}
 	}
 
 	respData := map[string]interface{}{
@@ -989,6 +989,12 @@ func (p *Protocol) handleSDKControlRequest(ctx context.Context, req SDKControlRe
 		resp = p.handleElicitationRequest(ctx, req.asLegacy())
 
 	case "request_user_dialog":
+		// With no handler we stay silent, as sdk.mjs does. Answering
+		// cancelled would settle a dialog that another attached client, or
+		// the worker's own deadline, should settle (#198).
+		if p.options.OnUserDialog == nil {
+			return nil
+		}
 		resp = p.handleUserDialogRequest(ctx, req.asLegacy())
 
 	default:

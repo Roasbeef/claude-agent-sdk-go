@@ -1029,6 +1029,14 @@ type SDKControlRequest struct {
 	payload map[string]interface{}
 }
 
+// payloadOnlyControlSubtypes are the inbound control requests whose handlers
+// read the untyped payload rather than SDKControlRequestBody.
+var payloadOnlyControlSubtypes = map[string]bool{
+	"elicitation":             true,
+	"request_user_dialog":     true,
+	"host_auth_token_refresh": true,
+}
+
 // asLegacy rebuilds an inbound request in the legacy control envelope, whose
 // handlers read their fields from the untyped payload.
 func (r SDKControlRequest) asLegacy() ControlRequest {
@@ -2967,13 +2975,19 @@ func ParseMessage(data []byte) (Message, error) {
 
 		// The typed body is a union over the requests the SDK sends, and an
 		// inbound request can reuse one of its keys with another type:
-		// elicitation's message is a string, mcp_message's an object. A
-		// failed typed decode must not drop the request, or the CLI waits
-		// on an answer that never comes, so fall back to the subtype alone
-		// and let the handler read the payload.
+		// elicitation's message is a string, mcp_message's an object. The
+		// handlers for these subtypes read only the payload, so a failed
+		// typed decode must not drop the request, or the CLI waits on an
+		// answer that never comes. Every other subtype is handled from the
+		// typed body, and acting on a half-decoded one could answer a
+		// permission check for a tool the host never saw, so those still
+		// fail.
 		if err := json.Unmarshal(env.Request, &msg.Request); err != nil {
-			msg.Request = SDKControlRequestBody{}
-			msg.Request.Subtype, _ = msg.payload["subtype"].(string)
+			subtype, _ := msg.payload["subtype"].(string)
+			if !payloadOnlyControlSubtypes[subtype] {
+				return nil, err
+			}
+			msg.Request = SDKControlRequestBody{Subtype: subtype}
 		}
 		return msg, nil
 

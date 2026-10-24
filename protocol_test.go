@@ -1304,6 +1304,24 @@ func TestProtocolSDKControlRequestDialogRouting(t *testing.T) {
 		assert.Equal(t, "tu_1", got.ToolUseID)
 	})
 
+	t.Run("request_user_dialog without a handler stays silent",
+		func(t *testing.T) {
+			msg, err := ParseMessage([]byte(`{"type":"control_request",` +
+				`"request_id":"r4","request":{"subtype":` +
+				`"request_user_dialog","dialog_kind":"approve_edit",` +
+				`"payload":{}}}`))
+			require.NoError(t, err)
+
+			transport := newMockTransport(1)
+			protocol := NewProtocol(transport, NewOptions())
+			require.NoError(t, protocol.HandleControlMessage(
+				context.Background(), msg))
+
+			transport.mu.Lock()
+			defer transport.mu.Unlock()
+			assert.Empty(t, transport.written)
+		})
+
 	t.Run("host_auth_token_refresh", func(t *testing.T) {
 		opts := NewOptions()
 		opts.GetHostAuthToken = func(ctx context.Context) (string, error) {
@@ -1319,6 +1337,27 @@ func TestProtocolSDKControlRequestDialogRouting(t *testing.T) {
 		assert.Equal(t, map[string]interface{}{"authToken": "tok"},
 			resp.Response.Response)
 	})
+}
+
+// TestParseMessageControlRequestTypeCollision pins which subtypes survive a
+// failed typed decode of the request body. A can_use_tool frame that does not
+// decode must fail rather than reach the permission callback with an empty
+// tool name, where a deny-by-name policy would let it through.
+func TestParseMessageControlRequestTypeCollision(t *testing.T) {
+	_, err := ParseMessage([]byte(`{"type":"control_request",` +
+		`"request_id":"r1","request":{"subtype":"can_use_tool",` +
+		`"tool_name":"Bash","input":{"command":"rm -rf /"},` +
+		`"message":"not an object"}}`))
+	require.Error(t, err)
+
+	msg, err := ParseMessage([]byte(`{"type":"control_request",` +
+		`"request_id":"r2","request":{"subtype":"elicitation",` +
+		`"mcp_server_name":"s","message":"a string here"}}`))
+	require.NoError(t, err)
+	req, ok := msg.(SDKControlRequest)
+	require.True(t, ok)
+	assert.Equal(t, "elicitation", req.Request.Subtype)
+	assert.Equal(t, "a string here", req.payload["message"])
 }
 
 func TestProtocolHandleUserDialogRequest(t *testing.T) {
@@ -1360,21 +1399,22 @@ func TestProtocolHandleUserDialogRequest(t *testing.T) {
 		assert.Equal(t, "tu_42", got.ToolUseID)
 	})
 
-	t.Run("nil callback answers cancelled", func(t *testing.T) {
-		opts := NewOptions()
-		protocol := NewProtocol(nil, opts)
+	t.Run("nil callback stays silent", func(t *testing.T) {
+		transport := newMockTransport(1)
+		protocol := NewProtocol(transport, NewOptions())
 
-		resp := protocol.handleUserDialogRequest(context.Background(), ControlRequest{
-			Type:      "control",
-			Subtype:   "request_user_dialog",
-			RequestID: "req_nil",
-			Payload:   basePayload,
-		})
+		require.NoError(t, protocol.HandleControlMessage(
+			context.Background(), ControlRequest{
+				Type:      "control",
+				Subtype:   "request_user_dialog",
+				RequestID: "req_nil",
+				Payload:   basePayload,
+			}))
 
-		assert.Equal(t, "success", resp.Response.Subtype)
-		assert.Equal(t, map[string]interface{}{"behavior": "cancelled"}, resp.Response.Response)
-		_, hasResult := resp.Response.Response["result"]
-		assert.False(t, hasResult)
+		transport.mu.Lock()
+		defer transport.mu.Unlock()
+		assert.Empty(t, transport.written,
+			"cancelled would settle a dialog another client could answer")
 	})
 
 	t.Run("callback cancels", func(t *testing.T) {
