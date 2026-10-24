@@ -1223,6 +1223,104 @@ func TestProtocolHandleElicitationRequest(t *testing.T) {
 	})
 }
 
+// TestProtocolSDKControlRequestDialogRouting feeds the three callback-backed
+// requests through ParseMessage exactly as the CLI frames them. They used to
+// be routed only for the legacy "control" envelope, which the CLI never
+// sends, so each one was answered "unknown control request subtype".
+func TestProtocolSDKControlRequestDialogRouting(t *testing.T) {
+	dispatch := func(t *testing.T, opts *Options,
+		frame string) SDKControlResponse {
+
+		t.Helper()
+
+		msg, err := ParseMessage([]byte(frame))
+		require.NoError(t, err)
+
+		transport := newMockTransport(1)
+		protocol := NewProtocol(transport, opts)
+		require.NoError(t, protocol.HandleControlMessage(
+			context.Background(), msg))
+
+		transport.mu.Lock()
+		defer transport.mu.Unlock()
+		require.Len(t, transport.written, 1)
+		resp, ok := transport.written[0].(SDKControlResponse)
+		require.True(t, ok, "wrote %T", transport.written[0])
+		return resp
+	}
+
+	t.Run("elicitation", func(t *testing.T) {
+		var got ElicitationRequest
+		opts := NewOptions()
+		opts.OnElicitation = func(ctx context.Context,
+			req ElicitationRequest) (ElicitationResult, error) {
+
+			got = req
+			return ElicitationResult{
+				Action:  ElicitationActionAccept,
+				Content: map[string]interface{}{"zeta": "z"},
+			}, nil
+		}
+
+		resp := dispatch(t, opts, `{"type":"control_request",`+
+			`"request_id":"r1","request":{"subtype":"elicitation",`+
+			`"mcp_server_name":"elicit","message":"Fill in the form",`+
+			`"mode":"form","requested_schema":{"type":"object"}}}`)
+
+		assert.Equal(t, "success", resp.Response.Subtype)
+		assert.Equal(t, "r1", resp.Response.RequestID)
+		assert.Equal(t, map[string]interface{}{
+			"action":  "accept",
+			"content": map[string]interface{}{"zeta": "z"},
+		}, resp.Response.Response)
+		assert.Equal(t, "elicit", got.ServerName)
+		assert.Equal(t, "Fill in the form", got.Message)
+		assert.Equal(t, "form", got.Mode)
+		assert.Equal(t, map[string]interface{}{"type": "object"},
+			got.RequestedSchema)
+	})
+
+	t.Run("request_user_dialog", func(t *testing.T) {
+		var got UserDialogRequest
+		opts := NewOptions()
+		opts.OnUserDialog = func(ctx context.Context,
+			req UserDialogRequest) (UserDialogResult, error) {
+
+			got = req
+			return UserDialogResult{
+				Behavior: UserDialogBehaviorCancelled,
+			}, nil
+		}
+
+		resp := dispatch(t, opts, `{"type":"control_request",`+
+			`"request_id":"r2","request":{"subtype":"request_user_dialog",`+
+			`"dialog_kind":"approve_edit","payload":{"path":"/tmp/x"},`+
+			`"tool_use_id":"tu_1"}}`)
+
+		assert.Equal(t, "success", resp.Response.Subtype)
+		assert.Equal(t, "r2", resp.Response.RequestID)
+		assert.Equal(t, "approve_edit", got.DialogKind)
+		assert.Equal(t, map[string]interface{}{"path": "/tmp/x"}, got.Payload)
+		assert.Equal(t, "tu_1", got.ToolUseID)
+	})
+
+	t.Run("host_auth_token_refresh", func(t *testing.T) {
+		opts := NewOptions()
+		opts.GetHostAuthToken = func(ctx context.Context) (string, error) {
+			return "tok", nil
+		}
+
+		resp := dispatch(t, opts, `{"type":"control_request",`+
+			`"request_id":"r3","request":`+
+			`{"subtype":"host_auth_token_refresh"}}`)
+
+		assert.Equal(t, "success", resp.Response.Subtype)
+		assert.Equal(t, "r3", resp.Response.RequestID)
+		assert.Equal(t, map[string]interface{}{"authToken": "tok"},
+			resp.Response.Response)
+	})
+}
+
 func TestProtocolHandleUserDialogRequest(t *testing.T) {
 	basePayload := map[string]interface{}{
 		"dialog_kind": "approve_edit",

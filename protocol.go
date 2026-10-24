@@ -982,6 +982,15 @@ func (p *Protocol) handleSDKControlRequest(ctx context.Context, req SDKControlRe
 	case "mcp_message":
 		resp = p.handleSDKMCPMessage(ctx, req)
 
+	case "host_auth_token_refresh":
+		resp = p.handleHostAuthTokenRefresh(ctx, req.asLegacy())
+
+	case "elicitation":
+		resp = p.handleElicitationRequest(ctx, req.asLegacy())
+
+	case "request_user_dialog":
+		resp = p.handleUserDialogRequest(ctx, req.asLegacy())
+
 	default:
 		resp = SDKControlResponse{
 			Type: "control_response",
