@@ -141,9 +141,11 @@ type Options struct {
 	OnElicitation OnElicitationFunc
 
 	// OnUserDialog handles request_user_dialog control requests from the CLI.
-	// Each dialogKind defines its own payload + result shape. When unset or
-	// when the callback answers cancelled, the CLI applies the dialog's
-	// default behavior. Hosts MUST answer unrecognized dialogKind values
+	// Each dialogKind defines its own payload + result shape. When the
+	// callback answers cancelled, the CLI applies the dialog's default
+	// behavior. When unset, the SDK leaves the request unanswered, so a
+	// capable client attached to the same session (or the CLI's dialog
+	// deadline) settles it. Hosts MUST answer unrecognized dialogKind values
 	// with cancelled.
 	OnUserDialog OnUserDialogFunc
 

@@ -3592,6 +3592,79 @@ func TestIntegrationSdkMcpToolPolicyDeny(t *testing.T) {
 			"even under bypassPermissions")
 }
 
+// TestIntegrationElicitation drives a stdio MCP server whose tool asks for a
+// form through elicitation/create, then checks the CLI's elicitation control
+// request reaches OnElicitation and the host's answer reaches the server.
+func TestIntegrationElicitation(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	serverPath := filepath.Join(t.TempDir(), "elicitmcp")
+	build := exec.Command("go", "build", "-o", serverPath, "./testdata/elicitmcp")
+	out, err := build.CombinedOutput()
+	require.NoError(t, err, "build elicitmcp: %s", out)
+
+	var (
+		mu  sync.Mutex
+		got []ElicitationRequest
+	)
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You have one tool, mcp__elicit__signup. When asked "+
+			"to run it you MUST call it. Do not explain, do not refuse, do "+
+			"not ask questions. Call it exactly once, then stop."),
+		WithMCPServers(map[string]MCPServerConfig{
+			"elicit": {Type: "stdio", Command: serverPath},
+		}),
+		WithStrictMCPConfig(true),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithOnElicitation(func(ctx context.Context,
+			req ElicitationRequest) (ElicitationResult, error) {
+
+			mu.Lock()
+			got = append(got, req)
+			mu.Unlock()
+			return ElicitationResult{Action: ElicitationActionDecline}, nil
+		}),
+		WithMaxTurns(3),
+	)
+
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	var calledTool bool
+	for msg := range client.Query(ctx, "Call the mcp__elicit__signup tool now.") {
+		if m, ok := msg.(AssistantMessage); ok {
+			for _, block := range m.Message.Content {
+				if block.Type == "tool_use" &&
+					block.Name == "mcp__elicit__signup" {
+
+					calledTool = true
+				}
+			}
+		}
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+
+	if !calledTool {
+		t.Skip("not triggerable from CLI: the model declined to call the tool")
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, got, 1, "the tool call should elicit exactly once")
+	assert.Equal(t, "elicit", got[0].ServerName)
+	assert.Equal(t, "form", got[0].Mode)
+	assert.Equal(t, "Fill in the form", got[0].Message)
+	assert.Contains(t, got[0].RequestedSchema, "properties")
+}
+
 // TestIntegrationModelUsageThinkingTokens drives a turn that should provoke
 // thinking and, when the CLI reports the v0.3.263 thinkingTokens field,
 // asserts the containment upstream states: the tally is part of outputTokens,

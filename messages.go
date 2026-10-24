@@ -1022,6 +1022,30 @@ type SDKControlRequest struct {
 	Type      string                `json:"type"`       // Always "control_request"
 	RequestID string                `json:"request_id"` // Unique request ID (snake_case)
 	Request   SDKControlRequestBody `json:"request"`    // Nested request payload
+
+	// payload is the request body as the CLI sent it. ParseMessage keeps it
+	// because SDKControlRequestBody only types the fields of the requests
+	// the SDK sends, and drops the rest of an inbound one.
+	payload map[string]interface{}
+}
+
+// payloadOnlyControlSubtypes are the inbound control requests whose handlers
+// read the untyped payload rather than SDKControlRequestBody.
+var payloadOnlyControlSubtypes = map[string]bool{
+	"elicitation":             true,
+	"request_user_dialog":     true,
+	"host_auth_token_refresh": true,
+}
+
+// asLegacy rebuilds an inbound request in the legacy control envelope, whose
+// handlers read their fields from the untyped payload.
+func (r SDKControlRequest) asLegacy() ControlRequest {
+	return ControlRequest{
+		Type:      "control",
+		Subtype:   r.Request.Subtype,
+		RequestID: r.RequestID,
+		Payload:   r.payload,
+	}
 }
 
 // ThinkingDisplayOverride is the optional thinking_display payload of a
@@ -2938,9 +2962,39 @@ func ParseMessage(data []byte) (Message, error) {
 		return msg, err
 
 	case "control_request":
-		var msg SDKControlRequest
-		err := json.Unmarshal(data, &msg)
-		return msg, err
+		var env struct {
+			Type      string          `json:"type"`
+			RequestID string          `json:"request_id"`
+			Request   json.RawMessage `json:"request"`
+		}
+		if err := json.Unmarshal(data, &env); err != nil {
+			return nil, err
+		}
+		msg := SDKControlRequest{Type: env.Type, RequestID: env.RequestID}
+		if len(env.Request) == 0 {
+			return msg, nil
+		}
+		if err := json.Unmarshal(env.Request, &msg.payload); err != nil {
+			return nil, err
+		}
+
+		// The typed body is a union over the requests the SDK sends, and an
+		// inbound request can reuse one of its keys with another type:
+		// elicitation's message is a string, mcp_message's an object. The
+		// handlers for these subtypes read only the payload, so a failed
+		// typed decode must not drop the request, or the CLI waits on an
+		// answer that never comes. Every other subtype is handled from the
+		// typed body, and acting on a half-decoded one could answer a
+		// permission check for a tool the host never saw, so those still
+		// fail.
+		if err := json.Unmarshal(env.Request, &msg.Request); err != nil {
+			subtype, _ := msg.payload["subtype"].(string)
+			if !payloadOnlyControlSubtypes[subtype] {
+				return nil, err
+			}
+			msg.Request = SDKControlRequestBody{Subtype: subtype}
+		}
+		return msg, nil
 
 	case "control_response":
 		var msg SDKControlResponse
