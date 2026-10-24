@@ -448,6 +448,7 @@ func (p *Protocol) handleElicitationRequest(ctx context.Context, req ControlRequ
 	if rs, ok := req.Payload["requested_schema"].(map[string]interface{}); ok {
 		elReq.RequestedSchema = rs
 	}
+	elReq.PropertyOrder = getStringSlice(req.Payload, "property_order")
 	elReq.Title, _ = req.Payload["title"].(string)
 	elReq.DisplayName, _ = req.Payload["display_name"].(string)
 	elReq.Description, _ = req.Payload["description"].(string)
