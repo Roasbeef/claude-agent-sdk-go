@@ -4110,10 +4110,14 @@ type MCPServerConfig struct {
 	AlwaysLoad *bool `json:"alwaysLoad,omitempty"`
 }
 
-// MCPServerToolPolicy configures a per-tool permission policy for remote MCP servers.
+// MCPServerToolPolicy configures a per-tool permission policy for an MCP
+// server: remote (http/sse) servers carry it on MCPServerConfig.Tools, and
+// in-process servers on McpServerOptions.ToolPolicies.
 type MCPServerToolPolicy struct {
-	Name             string `json:"name"`
-	PermissionPolicy string `json:"permission_policy"`
+	Name string `json:"name"`
+	// PermissionPolicy is one of MCPToolPolicy*. Empty sends no policy for
+	// the tool; any other value outside the three makes the CLI ask.
+	PermissionPolicy string `json:"permission_policy,omitempty"`
 	// OrgMaxPermission is the org admin's per-tool ceiling. It drives the
 	// auto-mode isOrgAskCeiling gate so an admin 'ask' cap forces a user
 	// prompt even in auto mode. One of MCPOrgMaxPermission*; empty when unset.

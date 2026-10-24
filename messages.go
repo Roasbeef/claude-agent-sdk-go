@@ -1095,6 +1095,10 @@ type SDKMCPServerConfig struct {
 	// Timeout is the per-server tool-call timeout in milliseconds. See
 	// McpServerOptions.Timeout.
 	Timeout *int `json:"timeout,omitempty"`
+
+	// Tools is the per-tool permission policy. See
+	// McpServerOptions.ToolPolicies.
+	Tools []MCPServerToolPolicy `json:"tools,omitempty"`
 }
 
 // SDKControlRequestBody contains the actual request data.
