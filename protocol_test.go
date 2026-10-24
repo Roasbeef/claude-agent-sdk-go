@@ -1256,6 +1256,31 @@ func TestProtocolHandleElicitationRequest(t *testing.T) {
 		assert.Equal(t, "Auth Server", got.DisplayName)
 		assert.Equal(t, "Authentication required", got.Description)
 	})
+
+	t.Run("no property order in url mode", func(t *testing.T) {
+		opts := NewOptions()
+		var got ElicitationRequest
+		opts.OnElicitation = func(ctx context.Context, req ElicitationRequest) (ElicitationResult, error) {
+			got = req
+			return ElicitationResult{Action: ElicitationActionDecline}, nil
+		}
+		protocol := NewProtocol(nil, opts)
+
+		protocol.handleElicitationRequest(context.Background(), ControlRequest{
+			Type:      "control",
+			Subtype:   "elicitation",
+			RequestID: "req_url",
+			Payload: map[string]interface{}{
+				"mcp_server_name": "auth-server",
+				"message":         "Open the link",
+				"mode":            "url",
+				"url":             "https://example.com/auth",
+			},
+		})
+
+		assert.Equal(t, "url", got.Mode)
+		assert.Nil(t, got.PropertyOrder)
+	})
 }
 
 // TestProtocolSDKControlRequestDialogRouting feeds the three callback-backed

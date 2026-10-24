@@ -2505,7 +2505,9 @@ type ElicitationRequest struct {
 	// from this list instead. Names that look like array indices ("0",
 	// "1", ...) come first. Nil for URL mode, when the schema has no
 	// properties object, and from a CLI that predates the field (sdk.d.ts
-	// v0.3.310 L4006).
+	// v0.3.310 L4006). The TS SDK reads the field but doesn't pass it to
+	// onElicitation, since a JS object keeps key order; it's here on
+	// purpose because a Go map doesn't.
 	PropertyOrder []string `json:"propertyOrder,omitempty"`
 }
 
