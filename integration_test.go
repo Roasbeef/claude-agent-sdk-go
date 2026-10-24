@@ -4786,6 +4786,46 @@ func TestIntegrationReloadPluginsHoldOnCacheImpact(t *testing.T) {
 	assert.Nil(t, got.CacheImpact, "nothing was held, so nothing to preview")
 }
 
+// TestIntegrationReloadPluginsAddPlugins starts a session with no plugins and
+// side-loads one through reload_plugins. The response's plugin list is the
+// evidence the CLI loaded it; a CLI that drops add_plugins reloads an empty set.
+func TestIntegrationReloadPluginsAddPlugins(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	skipIfCLIOlderThan(t, "2.1.310")
+
+	const pluginName = "daedalus-reload-probe"
+	pluginDir := writeProbePlugin(t, pluginName)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	got, err := stream.ReloadPlugins(ctx, ReloadPluginsOptions{
+		AddPlugins: []PluginConfig{{Type: PluginTypeLocal, Path: pluginDir}},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, got)
+
+	var loaded []string
+	for _, p := range got.Plugins {
+		loaded = append(loaded, p.Name)
+	}
+	assert.Contains(t, loaded, pluginName,
+		"add_plugins never reached the CLI; reload listed %v", loaded)
+}
+
 // TestIntegrationListPermissionRules exercises the v0.3.270
 // list_permission_rules control request against the live CLI.
 //

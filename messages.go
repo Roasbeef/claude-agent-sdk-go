@@ -1173,6 +1173,7 @@ type SDKControlRequestBody struct {
 	Detail            string                      `json:"detail,omitempty"`               // For get_context_usage ("summary"|"full")
 	SkipBehaviors     bool                        `json:"skip_behaviors,omitempty"`       // For get_usage
 	HoldOnCacheImpact bool                        `json:"hold_on_cache_impact,omitempty"` // For reload_plugins
+	AddPlugins        []PluginConfig              `json:"add_plugins,omitempty"`          // For reload_plugins
 }
 
 // SDKHookCallbackMatcher defines hook callback matching configuration.
