@@ -364,15 +364,21 @@ type AccountInfo struct {
 
 // SDKControlGetContextUsageResponse mirrors the context usage control response.
 type SDKControlGetContextUsageResponse struct {
-	Categories           []ContextUsageCategory        `json:"categories"`
-	TotalTokens          int                           `json:"totalTokens"`
-	MaxTokens            int                           `json:"maxTokens"`
-	RawMaxTokens         int                           `json:"rawMaxTokens"`
-	Percentage           float64                       `json:"percentage"`
-	GridRows             [][]ContextUsageGridCell      `json:"gridRows"`
-	Model                string                        `json:"model"`
-	MemoryFiles          []ContextUsageMemoryFile      `json:"memoryFiles"`
-	McpTools             []ContextUsageMcpTool         `json:"mcpTools"`
+	Categories   []ContextUsageCategory   `json:"categories"`
+	TotalTokens  int                      `json:"totalTokens"`
+	MaxTokens    int                      `json:"maxTokens"`
+	RawMaxTokens int                      `json:"rawMaxTokens"`
+	Percentage   float64                  `json:"percentage"`
+	GridRows     [][]ContextUsageGridCell `json:"gridRows"`
+	Model        string                   `json:"model"`
+	MemoryFiles  []ContextUsageMemoryFile `json:"memoryFiles"`
+	McpTools     []ContextUsageMcpTool    `json:"mcpTools"`
+	// McpInstructions splits the mcp_instructions category row by server.
+	// Only the row's total is counted; each server's share is estimated
+	// from the length of its text. Present only when the CLI answers on its
+	// own stdio and no server stores or forwards the reply (sdk.d.ts
+	// v0.3.310 L4092).
+	McpInstructions      []ContextUsageMcpInstructions `json:"mcpInstructions,omitempty"`
 	DeferredBuiltinTools []ContextUsageBuiltinTool     `json:"deferredBuiltinTools,omitempty"`
 	SystemTools          []ContextUsageSystemTool      `json:"systemTools,omitempty"`
 	SystemPromptSections []ContextUsageSection         `json:"systemPromptSections,omitempty"`
@@ -541,6 +547,12 @@ type UsageAttributionEntry struct {
 
 // ContextUsageCategory is one row of the get_context_usage report.
 type ContextUsageCategory struct {
+	// ID says which row this is. Match a particular row on it rather than
+	// on Name, which is English and may be reworded. Empty from a CLI that
+	// predates it, and a later CLI may add values: treat one you don't
+	// know like an empty ID (sdk.d.ts v0.3.310 L4055).
+	ID ContextUsageCategoryID `json:"id,omitempty"`
+
 	// Name is the row's English label. Do not classify on it — the CLI is
 	// free to reword these, and Kind is what carries the meaning.
 	Name       string `json:"name"`
@@ -554,6 +566,26 @@ type ContextUsageCategory struct {
 	// CLI that predates it, where IsDeferred is the sole usable signal.
 	Kind ContextUsageCategoryKind `json:"kind,omitempty"`
 }
+
+// ContextUsageCategoryID identifies a get_context_usage category row. Open
+// set: a newer CLI may send values not listed here.
+type ContextUsageCategoryID string
+
+const (
+	ContextUsageCategorySystemPrompt        ContextUsageCategoryID = "system_prompt"
+	ContextUsageCategorySystemTools         ContextUsageCategoryID = "system_tools"
+	ContextUsageCategoryMcpTools            ContextUsageCategoryID = "mcp_tools"
+	ContextUsageCategoryMcpInstructions     ContextUsageCategoryID = "mcp_instructions"
+	ContextUsageCategoryMcpToolsDeferred    ContextUsageCategoryID = "mcp_tools_deferred"
+	ContextUsageCategorySystemToolsDeferred ContextUsageCategoryID = "system_tools_deferred"
+	ContextUsageCategoryCustomAgents        ContextUsageCategoryID = "custom_agents"
+	ContextUsageCategoryMemoryFiles         ContextUsageCategoryID = "memory_files"
+	ContextUsageCategorySkills              ContextUsageCategoryID = "skills"
+	ContextUsageCategoryMessages            ContextUsageCategoryID = "messages"
+	ContextUsageCategoryAutocompactBuffer   ContextUsageCategoryID = "autocompact_buffer"
+	ContextUsageCategoryCompactBuffer       ContextUsageCategoryID = "compact_buffer"
+	ContextUsageCategoryFreeSpace           ContextUsageCategoryID = "free_space"
+)
 
 type ContextUsageGridCell struct {
 	Color          string  `json:"color"`
@@ -577,6 +609,15 @@ type ContextUsageMcpTool struct {
 	IsLoaded   bool   `json:"isLoaded,omitempty"`
 }
 
+// ContextUsageMcpInstructions is one MCP server's estimated share of the
+// mcp_instructions category row.
+type ContextUsageMcpInstructions struct {
+	// ServerName is the server's name as McpServerStatus reports it and
+	// mcp_toggle takes it: not normalized, unlike ContextUsageMcpTool's.
+	ServerName string `json:"serverName"`
+	Tokens     int    `json:"tokens"`
+}
+
 type ContextUsageBuiltinTool struct {
 	Name     string `json:"name"`
 	Tokens   int    `json:"tokens"`
@@ -596,7 +637,14 @@ type ContextUsageSection struct {
 type ContextUsageAgent struct {
 	AgentType string `json:"agentType"`
 	Source    string `json:"source"`
-	Tokens    int    `json:"tokens"`
+	// PluginID is the providing plugin's id (its name and marketplace),
+	// when there is one.
+	PluginID string `json:"pluginId,omitempty"`
+	// Path is the absolute path of the agent's file on the machine the CLI
+	// runs on, which over SSH or WSL is not the host's. Empty for an agent
+	// with no file.
+	Path   string `json:"path,omitempty"`
+	Tokens int    `json:"tokens"`
 }
 
 type ContextUsageSlashCommands struct {
@@ -615,6 +663,13 @@ type ContextUsageSkills struct {
 type ContextUsageSkillSource struct {
 	Name   string `json:"name"`
 	Source string `json:"source"`
+	// PluginName is the providing plugin's name, when there is one. It is
+	// not unique across marketplaces; PluginID is.
+	PluginName string `json:"pluginName,omitempty"`
+	PluginID   string `json:"pluginId,omitempty"`
+	// Path is the absolute path of the skill's file on the machine the CLI
+	// runs on. Empty for a skill with no file.
+	Path   string `json:"path,omitempty"`
 	Tokens int    `json:"tokens"`
 }
 

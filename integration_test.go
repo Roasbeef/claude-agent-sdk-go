@@ -4883,6 +4883,117 @@ func TestIntegrationContextUsageCategoryKind(t *testing.T) {
 	}
 }
 
+// TestIntegrationContextUsageProvenance loads a plugin carrying one agent
+// and one skill, plus an in-process MCP server with instructions, then
+// checks get_context_usage attributes each of them: every category row has a
+// known id, the agent and skill rows name their plugin and file, and the
+// server's instructions get their own row.
+func TestIntegrationContextUsageProvenance(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	skipIfCLIOlderThan(t, "2.1.310")
+
+	const pluginName = "daedalus-ctx-probe"
+	pluginDir := writeProbePlugin(t, pluginName)
+	require.NoError(t, os.MkdirAll(
+		filepath.Join(pluginDir, "agents"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(pluginDir, "agents", "probe-agent.md"),
+		[]byte("---\nname: probe-agent\ndescription: Integration "+
+			"probe agent.\n---\nYou are a probe.\n"), 0o644))
+	skillDir := filepath.Join(pluginDir, "skills", "probe-skill")
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(skillDir, "SKILL.md"),
+		[]byte("---\nname: probe-skill\ndescription: Integration "+
+			"probe skill.\n---\nDo nothing.\n"), 0o644))
+
+	server := CreateMcpServer(McpServerOptions{
+		Name:         "ctxprobe",
+		Instructions: "Always greet the user as Captain before answering.",
+	})
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithPlugins([]PluginConfig{{Type: PluginTypeLocal, Path: pluginDir}}),
+		WithMcpServer("ctxprobe", server),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx, "Say hi."))
+	for msg := range stream.Messages() {
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+
+	usage, err := stream.GetContextUsage(ctx)
+	require.NoError(t, err)
+	require.NotNil(t, usage)
+
+	known := map[ContextUsageCategoryID]bool{
+		ContextUsageCategorySystemPrompt:        true,
+		ContextUsageCategorySystemTools:         true,
+		ContextUsageCategoryMcpTools:            true,
+		ContextUsageCategoryMcpInstructions:     true,
+		ContextUsageCategoryMcpToolsDeferred:    true,
+		ContextUsageCategorySystemToolsDeferred: true,
+		ContextUsageCategoryCustomAgents:        true,
+		ContextUsageCategoryMemoryFiles:         true,
+		ContextUsageCategorySkills:              true,
+		ContextUsageCategoryMessages:            true,
+		ContextUsageCategoryAutocompactBuffer:   true,
+		ContextUsageCategoryCompactBuffer:       true,
+		ContextUsageCategoryFreeSpace:           true,
+	}
+	require.NotEmpty(t, usage.Categories)
+	for _, cat := range usage.Categories {
+		assert.True(t, known[cat.ID],
+			"row %q has unknown id %q", cat.Name, cat.ID)
+	}
+
+	var agent *ContextUsageAgent
+	for i := range usage.Agents {
+		if strings.Contains(usage.Agents[i].AgentType, "probe-agent") {
+			agent = &usage.Agents[i]
+		}
+	}
+	require.NotNil(t, agent, "plugin agent missing from %+v", usage.Agents)
+	assert.Contains(t, agent.PluginID, pluginName)
+	assert.True(t, filepath.IsAbs(agent.Path), "agent path %q", agent.Path)
+
+	require.NotNil(t, usage.Skills)
+	var skill *ContextUsageSkillSource
+	for i := range usage.Skills.SkillFrontmatter {
+		if strings.Contains(usage.Skills.SkillFrontmatter[i].Name,
+			"probe-skill") {
+
+			skill = &usage.Skills.SkillFrontmatter[i]
+		}
+	}
+	require.NotNil(t, skill, "plugin skill missing from %+v",
+		usage.Skills.SkillFrontmatter)
+	assert.Equal(t, pluginName, skill.PluginName)
+	assert.Contains(t, skill.PluginID, pluginName)
+	assert.True(t, filepath.IsAbs(skill.Path), "skill path %q", skill.Path)
+
+	var servers []string
+	for _, row := range usage.McpInstructions {
+		servers = append(servers, row.ServerName)
+	}
+	assert.Contains(t, servers, "ctxprobe")
+}
+
 // TestIntegrationReloadPluginsHoldOnCacheImpact exercises the v0.3.270
 // hold_on_cache_impact option against the live CLI.
 //
