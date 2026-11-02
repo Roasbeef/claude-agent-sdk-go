@@ -5207,6 +5207,9 @@ func TestParseControlResponsePendingElicitationRequests(t *testing.T) {
 				`"pending_elicitation_requests":[{"type":"control_request",` +
 				`"request_id":"req-elicit-1","request":{"subtype":"elicitation",` +
 				`"mcp_server_name":"forms","message":"Pick a color",` +
+				`"mode":"form","url":"https://example.com/e",` +
+				`"elicitation_id":"el-1","title":"Colors",` +
+				`"display_name":"Forms","description":"Favorite color",` +
 				`"requested_schema":{"type":"object","properties":{` +
 				`"b":{"type":"string"},"a":{"type":"string"}}},` +
 				`"property_order":["b","a"]}}]}}`
@@ -5224,6 +5227,12 @@ func TestParseControlResponsePendingElicitationRequests(t *testing.T) {
 			el := pending[0].Elicitation()
 			assert.Equal(t, "forms", el.ServerName)
 			assert.Equal(t, "Pick a color", el.Message)
+			assert.Equal(t, "form", el.Mode)
+			assert.Equal(t, "https://example.com/e", el.URL)
+			assert.Equal(t, "el-1", el.ElicitationID)
+			assert.Equal(t, "Colors", el.Title)
+			assert.Equal(t, "Forms", el.DisplayName)
+			assert.Equal(t, "Favorite color", el.Description)
 			assert.Equal(t, []string{"b", "a"}, el.PropertyOrder)
 			assert.Contains(t, el.RequestedSchema, "properties")
 

@@ -1243,7 +1243,11 @@ type SDKControlResponse struct {
 // PendingElicitationRequests lists the elicitation requests MCP servers have
 // raised through this CLI process and that are not yet answered or
 // withdrawn. Not every session lists them yet, so nil says nothing about
-// what is pending (sdk.d.ts v0.3.316 L423).
+// what is pending (sdk.d.ts v0.3.316 L426/L453).
+//
+// Client and Protocol keep only Response from the initialize reply, so none
+// of the three lists reaches them today; they are visible to callers that
+// run ParseMessage on the raw stream.
 type SDKControlResponseBody struct {
 	Subtype                    string                      `json:"subtype"`                                // "success" or "error"
 	RequestID                  string                      `json:"request_id"`                             // Correlates to request
@@ -1256,14 +1260,14 @@ type SDKControlResponseBody struct {
 
 // PendingElicitationRequest is an elicitation control_request as the CLI
 // first sent it, replayed on a control response so a client that joins after
-// an MCP server asked can still show the question. The same RequestID can
-// also arrive as a live or replayed control_request frame, which goes to
-// OnElicitation; render it once.
+// an MCP server asked can still show the question. The CLI may also deliver
+// the same request_id as a live or replayed control_request frame; a reader
+// that renders both should key on RequestID.
 //
 // Upstream types the list as SDKControlRequest[]. Request stays a raw map
 // here because SDKControlRequestBody.Message is the mcp_message JSON-RPC
 // object, and an elicitation's message is a string: decoding one into the
-// other would fail the whole control response (sdk.d.ts v0.3.316 L423).
+// other would fail the whole control response (sdk.d.ts v0.3.316 L426).
 type PendingElicitationRequest struct {
 	Type      string                 `json:"type"`       // Always "control_request"
 	RequestID string                 `json:"request_id"` // Correlates to the response
