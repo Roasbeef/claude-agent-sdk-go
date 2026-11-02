@@ -814,8 +814,8 @@ const (
 	PermissionRuleSourceCommand         PermissionRuleSource = "command"
 	PermissionRuleSourceSession         PermissionRuleSource = "session"
 	// PermissionRuleSourceMcpMount marks rules added by a Remote Control
-	// server mount; like cliArg, command and session they last for the
-	// session only (sdk.d.ts v0.3.316 L5844).
+	// server mount. list_permission_rules reports them as readonly
+	// (sdk.d.ts v0.3.316 L5844, L5856).
 	PermissionRuleSourceMcpMount        PermissionRuleSource = "mcpMount"
 	PermissionRuleSourceToolsNarrowing  PermissionRuleSource = "toolsNarrowing"
 	PermissionRuleSourceMcpServerPolicy PermissionRuleSource = "mcpServerPolicy"

@@ -251,9 +251,9 @@ func TestPermissionRuleEntryMcpMountSource(t *testing.T) {
 		"behavior": "allow",
 		"source": "mcpMount",
 		"rule": "mcp__remote__read",
-		"editability": "session"
+		"editability": "readonly"
 	}`), &got))
 
 	assert.Equal(t, PermissionRuleSourceMcpMount, got.Source)
-	assert.Equal(t, PermissionRuleEditabilitySession, got.Editability)
+	assert.Equal(t, PermissionRuleEditabilityReadonly, got.Editability)
 }
