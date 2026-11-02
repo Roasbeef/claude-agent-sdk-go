@@ -242,3 +242,18 @@ func TestMcpServerStatusDisabledAndError(t *testing.T) {
 	assert.Equal(t, McpServerStateFailed, got[1].Status)
 	assert.Equal(t, "spawn ENOENT", got[1].Error)
 }
+
+// TestPermissionRuleEntryMcpMountSource decodes a list_permission_rules
+// entry from a Remote Control server mount, the source added in v0.3.316.
+func TestPermissionRuleEntryMcpMountSource(t *testing.T) {
+	var got PermissionRuleEntry
+	require.NoError(t, json.Unmarshal([]byte(`{
+		"behavior": "allow",
+		"source": "mcpMount",
+		"rule": "mcp__remote__read",
+		"editability": "session"
+	}`), &got))
+
+	assert.Equal(t, PermissionRuleSourceMcpMount, got.Source)
+	assert.Equal(t, PermissionRuleEditabilitySession, got.Editability)
+}

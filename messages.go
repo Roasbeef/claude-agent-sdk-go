@@ -821,6 +821,12 @@ const (
 	// does not allow Claude Code for this account. Signing in again or an
 	// admin's change is the fix, not a retry (sdk.d.ts v0.3.296 L5952).
 	StartupFailureOrgConfigRefused StartupFailureReason = "org_config_refused"
+	// StartupFailureSandboxRequiredUnavailable means a working sandbox is
+	// required and cannot run in this session, for example because
+	// bubblewrap is missing or the platform is unsupported. The fix is to
+	// make the sandbox available or have the requirement changed
+	// (sdk.d.ts v0.3.316 L6211).
+	StartupFailureSandboxRequiredUnavailable StartupFailureReason = "sandbox_required_unavailable"
 )
 
 // MessageType implements Message.
