@@ -6138,6 +6138,56 @@ func TestIntegrationSettingsParityV0_3_310(t *testing.T) {
 		"a stalled managed-settings handshake shows up as no result at all")
 }
 
+// TestIntegrationSettingsParityV0_3_316 hands the v0.3.316 settings to the
+// CLI and checks the session still runs: the auto mode and permission keys
+// as managed settings, blockReadsExemptPaths through --settings, the only
+// file source that reads it. pluginDigests is left out because it needs a
+// marketplace entry, which the CLI would try to fetch.
+func TestIntegrationSettingsParityV0_3_316(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	on, off := true, false
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithManagedSettings(Settings{
+			Permissions: &SettingsPermissions{
+				BlockWritesOutsideWorkingDirectories: &on,
+				DisableAutoMode:                      "disable",
+			},
+			UseAutoModeDuringPlan: &off,
+			AutoMode: &SettingsAutoMode{
+				SoftDeny:         []string{"$defaults"},
+				ClassifyAllShell: &on,
+			},
+		}),
+		WithSettings(Settings{
+			Permissions: &SettingsPermissions{
+				BlockReadsExemptPaths: []string{t.TempDir()},
+			},
+		}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var gotResult bool
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(ResultMessage); ok {
+			assert.False(t, m.IsError,
+				"the v0.3.316 settings must not fail the session: %s", m.Result)
+			gotResult = true
+			break
+		}
+	}
+	assert.True(t, gotResult,
+		"a stalled managed-settings handshake shows up as no result at all")
+}
+
 // TestIntegrationAllowedProvidersRefusesStartup sets an allowedProviders list
 // that leaves out the provider this session uses, and checks the CLI refuses
 // to start with the provider_not_allowed reason (sdk.d.ts v0.3.290 L8610,
