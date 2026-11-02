@@ -5149,6 +5149,7 @@ func TestSDKControlResponseBodyPendingPermissionRequestsOmitEmpty(t *testing.T) 
 
 			assert.NotContains(t, got, "pending_permission_requests")
 			assert.NotContains(t, got, "pending_user_dialog_requests")
+			assert.NotContains(t, got, "pending_elicitation_requests")
 		})
 	}
 }
@@ -5190,6 +5191,45 @@ func TestSDKControlResponseBodyPendingUserDialogRequestsRoundTrip(t *testing.T) 
 			var decoded SDKControlResponseBody
 			require.NoError(t, json.Unmarshal(data, &decoded))
 			assert.Equal(t, pending, decoded.PendingUserDialogRequests)
+		})
+	}
+}
+
+// TestParseControlResponsePendingElicitationRequests feeds a control
+// response listing a pending elicitation through ParseMessage. The
+// elicitation's message is a string, which SDKControlRequestBody could not
+// decode; the response must still parse and the question must survive.
+func TestParseControlResponsePendingElicitationRequests(t *testing.T) {
+	for _, subtype := range []string{"success", "error"} {
+		t.Run(subtype, func(t *testing.T) {
+			wire := `{"type":"control_response","response":{` +
+				`"subtype":"` + subtype + `","request_id":"req-init-1",` +
+				`"pending_elicitation_requests":[{"type":"control_request",` +
+				`"request_id":"req-elicit-1","request":{"subtype":"elicitation",` +
+				`"mcp_server_name":"forms","message":"Pick a color",` +
+				`"requested_schema":{"type":"object","properties":{` +
+				`"b":{"type":"string"},"a":{"type":"string"}}},` +
+				`"property_order":["b","a"]}}]}}`
+
+			msg, err := ParseMessage([]byte(wire))
+			require.NoError(t, err)
+			resp, ok := msg.(SDKControlResponse)
+			require.True(t, ok, "got %T", msg)
+
+			pending := resp.Response.PendingElicitationRequests
+			require.Len(t, pending, 1)
+			assert.Equal(t, "req-elicit-1", pending[0].RequestID)
+			assert.Equal(t, "elicitation", pending[0].Request["subtype"])
+
+			el := pending[0].Elicitation()
+			assert.Equal(t, "forms", el.ServerName)
+			assert.Equal(t, "Pick a color", el.Message)
+			assert.Equal(t, []string{"b", "a"}, el.PropertyOrder)
+			assert.Contains(t, el.RequestedSchema, "properties")
+
+			data, err := json.Marshal(resp)
+			require.NoError(t, err)
+			assert.Contains(t, string(data), `"pending_elicitation_requests":[`)
 		})
 	}
 }

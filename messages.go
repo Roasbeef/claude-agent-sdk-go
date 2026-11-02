@@ -1239,13 +1239,40 @@ type SDKControlResponse struct {
 // control_cancel_request; a session_state of "requires_action" on the same
 // reply signals one the CLI is holding, though not every inherited prompt is
 // signaled. See sdk.d.ts v0.3.270 L306-L333.
+//
+// PendingElicitationRequests lists the elicitation requests MCP servers have
+// raised through this CLI process and that are not yet answered or
+// withdrawn. Not every session lists them yet, so nil says nothing about
+// what is pending (sdk.d.ts v0.3.316 L423).
 type SDKControlResponseBody struct {
-	Subtype                   string                 `json:"subtype"`                                // "success" or "error"
-	RequestID                 string                 `json:"request_id"`                             // Correlates to request
-	Response                  map[string]interface{} `json:"response,omitempty"`                     // Success response data
-	Error                     string                 `json:"error,omitempty"`                        // Error message
-	PendingPermissionRequests []SDKControlRequest    `json:"pending_permission_requests,omitempty"`  // In-flight permission prompts (success+error)
-	PendingUserDialogRequests []SDKControlRequest    `json:"pending_user_dialog_requests,omitempty"` // In-flight user dialogs (success+error)
+	Subtype                    string                      `json:"subtype"`                                // "success" or "error"
+	RequestID                  string                      `json:"request_id"`                             // Correlates to request
+	Response                   map[string]interface{}      `json:"response,omitempty"`                     // Success response data
+	Error                      string                      `json:"error,omitempty"`                        // Error message
+	PendingPermissionRequests  []SDKControlRequest         `json:"pending_permission_requests,omitempty"`  // In-flight permission prompts (success+error)
+	PendingUserDialogRequests  []SDKControlRequest         `json:"pending_user_dialog_requests,omitempty"` // In-flight user dialogs (success+error)
+	PendingElicitationRequests []PendingElicitationRequest `json:"pending_elicitation_requests,omitempty"` // In-flight MCP elicitations (success+error)
+}
+
+// PendingElicitationRequest is an elicitation control_request as the CLI
+// first sent it, replayed on a control response so a client that joins after
+// an MCP server asked can still show the question. The same RequestID can
+// also arrive as a live or replayed control_request frame, which goes to
+// OnElicitation; render it once.
+//
+// Upstream types the list as SDKControlRequest[]. Request stays a raw map
+// here because SDKControlRequestBody.Message is the mcp_message JSON-RPC
+// object, and an elicitation's message is a string: decoding one into the
+// other would fail the whole control response (sdk.d.ts v0.3.316 L423).
+type PendingElicitationRequest struct {
+	Type      string                 `json:"type"`       // Always "control_request"
+	RequestID string                 `json:"request_id"` // Correlates to the response
+	Request   map[string]interface{} `json:"request"`    // The elicitation request body
+}
+
+// Elicitation returns the request as OnElicitation would receive it.
+func (r PendingElicitationRequest) Elicitation() ElicitationRequest {
+	return elicitationRequestFromPayload(r.Request)
 }
 
 // MessageType implements Message.
