@@ -559,12 +559,12 @@ type ResultMessage struct {
 	//
 	// It is set only on the zeroed error_during_execution result a
 	// stream-json run writes before exiting on a KNOWN startup failure;
-	// Errors carries the same text the process put on stderr. Failures that
-	// historically ended with stderr alone write that result at all only when
-	// the host sets CLAUDE_CODE_STARTUP_FAILURE_RESULTS. Absent on every
-	// other result, on startup failures with no recognized cause, and from
-	// producers older than v0.3.278 — so empty means "no machine-readable
-	// cause", never "started fine" (sdk.d.ts v0.3.278 L5388).
+	// Errors carries the failure message. Failures that otherwise end with
+	// stderr alone write that result at all only when the host sets
+	// CLAUDE_CODE_STARTUP_FAILURE_RESULTS. Absent on every other result, on
+	// startup failures with no recognized cause, and from producers older
+	// than v0.3.278 — so empty means "no machine-readable cause", never
+	// "started fine" (sdk.d.ts v0.3.316 L5989).
 	StartupFailureReason StartupFailureReason `json:"startup_failure_reason,omitempty"`
 
 	DurationMs    int64 `json:"duration_ms,omitempty"`     // Total duration in milliseconds
@@ -1706,7 +1706,10 @@ type SystemMessage struct {
 	// alongside the abort and listed on the response's cancelled field (see
 	// Stream.InterruptCancelQueued). "queued_notifications" means the CLI
 	// accepts inbound queued_notification stream messages and drains them via
-	// the ReadNotifications tool. Absent on older CLIs.
+	// the ReadNotifications tool. "ask_user_question_unanswered_v1" means an
+	// AskUserQuestion answer may mark a question skipped, replied in chat or
+	// dismissed; this SDK answers AskUserQuestion with a tool result and
+	// does not send that marker. Absent on older CLIs.
 	Capabilities []string `json:"capabilities,omitempty"`
 	// ViewMode says whether the transcript is in focus view: "focus" means
 	// the model is told the user sees only its final message per turn, so a
