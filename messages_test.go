@@ -6125,12 +6125,14 @@ func TestSystemMessageMCPServerSource(t *testing.T) {
 	assert.False(t, sys.MCPServers[2].IsSDK())
 }
 
-// TestResultStartupFailureReason covers startup_failure_reason and the
-// StartupFailureReason enum added in TS SDK v0.3.278 (sdk.d.ts L5388, L5561).
+// TestResultStartupFailureReasonOrgConfig covers the StartupFailureReason
+// values added after v0.3.278: org_config_* (v0.3.296) and
+// sandbox_required_unavailable (v0.3.316).
 func TestResultStartupFailureReasonOrgConfig(t *testing.T) {
 	for _, reason := range []StartupFailureReason{
 		StartupFailureOrgConfigRequiredUnavailable,
 		StartupFailureOrgConfigRefused,
+		StartupFailureSandboxRequiredUnavailable,
 	} {
 		raw := []byte(`{"type":"result","subtype":"error_during_execution",` +
 			`"session_id":"s","uuid":"u","is_error":true,` +

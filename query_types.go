@@ -813,6 +813,10 @@ const (
 	PermissionRuleSourceCLIArg          PermissionRuleSource = "cliArg"
 	PermissionRuleSourceCommand         PermissionRuleSource = "command"
 	PermissionRuleSourceSession         PermissionRuleSource = "session"
+	// PermissionRuleSourceMcpMount marks rules added by a Remote Control
+	// server mount. list_permission_rules reports them as readonly
+	// (sdk.d.ts v0.3.316 L5844, L5856).
+	PermissionRuleSourceMcpMount        PermissionRuleSource = "mcpMount"
 	PermissionRuleSourceToolsNarrowing  PermissionRuleSource = "toolsNarrowing"
 	PermissionRuleSourceMcpServerPolicy PermissionRuleSource = "mcpServerPolicy"
 	PermissionRuleSourceHostCredential  PermissionRuleSource = "hostCredential" //nolint:gosec // G101: wire enum value, not a credential
