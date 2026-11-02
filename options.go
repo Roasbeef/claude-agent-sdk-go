@@ -1077,8 +1077,9 @@ type SettingsPermissions struct {
 	// BlockReadsOutsideWorkingDirectories refuses file-tool reads (Read,
 	// Grep, Glob, LSP) outside the working directories in every permission
 	// mode. True in any settings source wins, so a lower source cannot
-	// relax it. Also set when the user answers "block" to the one-time
-	// auto-mode prompt for such a read (sdk.d.ts v0.3.263 L5889).
+	// relax it, and no allow rule lifts it. Also set when the user answers
+	// "block" to the one-time auto-mode prompt for such a read (sdk.d.ts
+	// v0.3.316 L7190).
 	BlockReadsOutsideWorkingDirectories *bool `json:"blockReadsOutsideWorkingDirectories,omitempty"`
 	// BlockWritesOutsideWorkingDirectories refuses file-tool writes (Write,
 	// Edit, NotebookEdit) outside the working directories in every
@@ -1096,10 +1097,13 @@ type SettingsPermissions struct {
 	// lets through. It grants nothing: allow rules, the permission mode or
 	// the user still decide each read. Only read from --settings (see
 	// WithSettings) and settings the host sends while the session runs;
-	// ignored in user, project, local and managed settings. Paths are taken
-	// as written — links are not followed and patterns not expanded — and
-	// an entry starting with ~, containing "..", relative, a network path
-	// or a filesystem root is ignored (sdk.d.ts v0.3.316 L7200).
+	// ignored in user, project, local and managed settings. The paths do not
+	// become working directories, so BlockWritesOutsideWorkingDirectories
+	// still refuses writes to them, and sandboxed commands' reads are
+	// unchanged. Paths are taken as written — links are not followed and
+	// patterns not expanded — and an entry starting with ~, containing
+	// "..", with white space at either end, relative, a network path or a
+	// filesystem root is ignored (sdk.d.ts v0.3.316 L7200).
 	BlockReadsExemptPaths []string `json:"blockReadsExemptPaths,omitempty"`
 	// DisableAutoMode set to "disable" turns off auto mode, like
 	// DisableBypassPermissionsMode does for bypass (sdk.d.ts v0.3.316
@@ -1471,14 +1475,15 @@ type SettingsMarketplace struct {
 	// by managed settings loads its hooks module only from a folder whose
 	// digest matches one of them, and is then seated in that tier; any
 	// other copy does not load. An empty list, or a string of any other
-	// form, matches no folder. See sdk.d.ts v0.3.316 L7998 for how the
-	// digest is computed.
+	// form, matches no folder; use []string{} rather than a nil slice, which
+	// marshals as null. See sdk.d.ts v0.3.316 L7998 for how the digest is
+	// computed.
 	PluginDigests map[string][]string `json:"pluginDigests,omitempty"`
 }
 
 // SettingsAutoMode customizes the auto mode classifier prompt. In each list
 // the literal entry "$defaults" inherits the built-in entries at that
-// position; without it the list replaces them.
+// position.
 type SettingsAutoMode struct {
 	// Allow holds rules for the classifier's allow section.
 	Allow []string `json:"allow,omitempty"`

@@ -6139,10 +6139,12 @@ func TestIntegrationSettingsParityV0_3_310(t *testing.T) {
 }
 
 // TestIntegrationSettingsParityV0_3_316 hands the v0.3.316 settings to the
-// CLI and checks the session still runs: the auto mode and permission keys
-// as managed settings, blockReadsExemptPaths through --settings, the only
-// file source that reads it. pluginDigests is left out because it needs a
-// marketplace entry, which the CLI would try to fetch.
+// CLI and checks the session still runs. The restrictive permission keys go
+// in as managed settings, which a nested key the CLI rejects would stall.
+// The rest go through --settings: inline managed settings keep only
+// restrictive keys, and blockReadsExemptPaths is read from --settings alone.
+// pluginDigests is left out because it needs a marketplace entry, which the
+// CLI would try to fetch.
 func TestIntegrationSettingsParityV0_3_316(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
@@ -6155,15 +6157,16 @@ func TestIntegrationSettingsParityV0_3_316(t *testing.T) {
 				BlockWritesOutsideWorkingDirectories: &on,
 				DisableAutoMode:                      "disable",
 			},
-			UseAutoModeDuringPlan: &off,
-			AutoMode: &SettingsAutoMode{
-				SoftDeny:         []string{"$defaults"},
-				ClassifyAllShell: &on,
-			},
 		}),
 		WithSettings(Settings{
 			Permissions: &SettingsPermissions{
 				BlockReadsExemptPaths: []string{t.TempDir()},
+			},
+			SkipAutoPermissionPrompt: &off,
+			UseAutoModeDuringPlan:    &off,
+			AutoMode: &SettingsAutoMode{
+				SoftDeny:         []string{"$defaults"},
+				ClassifyAllShell: &on,
 			},
 		}),
 		WithMaxTurns(1),
