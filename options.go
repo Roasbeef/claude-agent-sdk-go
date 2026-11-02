@@ -2666,8 +2666,10 @@ type PermissionContext struct {
 	// a person, which no stored grant may answer. Another is an MCP server
 	// whose name spells a claude.ai connector's key but came from neither
 	// claude.ai nor whoever launched the session. The last is an ask whose
-	// title and description the SDK host worded itself. In every case the
-	// user must open the session to answer.
+	// title and description the SDK host worded itself. As of v0.3.316 it
+	// also marks the ask made before the first upload by file reference to a
+	// connector, which no stored grant may answer either (sdk.d.ts L5086).
+	// In every case the user must open the session to answer.
 	RequiresUserInteraction bool
 	// SuppressAlwaysAllowRule is true when the dialog must not offer the
 	// persistent "don't ask again" affordance for this ask: accepting it would

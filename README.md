@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.310 catchup work, using Go idioms where the API shape differs.
+v0.3.316 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -1080,6 +1080,39 @@ Follow-ups filed: #311 (human-in-the-loop callbacks block the message pump,
 which is also why `TestIntegrationSdkMcpServerTimeout` fails), #312 (reattach
 `pending_user_dialog_requests` lose their payload) and #315 (the HTTP hook
 allowlists can't send an empty list).
+
+The v0.3.316 catchup added:
+
+- `SDKControlResponseBody.PendingElicitationRequests`: MCP elicitations
+  the CLI has outstanding, next to the pending permission and dialog lists.
+  Each is a `PendingElicitationRequest` with a raw `Request` map and an
+  `Elicitation()` accessor that returns what `OnElicitation` would receive.
+  It isn't `[]SDKControlRequest` as upstream types it, because an
+  elicitation's string `message` can't decode into
+  `SDKControlRequestBody.Message`, which would fail the whole response.
+- `ModelUsage.CacheCreationEphemeral5mInputTokens` and
+  `CacheCreationEphemeral1hInputTokens`: cache writes split by lifetime,
+  both already inside `CacheCreationInputTokens`.
+- `PermissionRuleSourceMcpMount` (rules from a Remote Control server
+  mount) and `StartupFailureSandboxRequiredUnavailable`.
+- Settings: `blockWritesOutsideWorkingDirectories`, `blockReadsExemptPaths`
+  (read only from `--settings` and host-sent settings) and
+  `disableAutoMode` under `permissions`; `SkipAutoPermissionPrompt`,
+  `UseAutoModeDuringPlan` and `AutoMode` (the auto mode classifier rules);
+  and the managed-only marketplace `PluginDigests`.
+
+PRs in this cycle (squash-merged): #317 pending elicitations, #318 cache
+lifetimes, #319 enums, #320 settings, plus this docs refresh.
+
+Deferred in v0.3.316:
+
+- AskUserQuestion's `annotations[question].unanswered` and the
+  `ask_user_question_unanswered_v1` capability that gates it. Go answers
+  AskUserQuestion with a tool result, not the permission `updatedInput`
+  that carries annotations, so there is nowhere to put it.
+- The `prewarm()` / `claim()` doc rework (#292) and
+  `USAGE_TRANSITION_PREFIXES`, which Go has never mirrored.
+- `sdk-tools.d.ts` churn, the standing deferral.
 
 ### Porting from the TypeScript SDK - Go-side differences
 
