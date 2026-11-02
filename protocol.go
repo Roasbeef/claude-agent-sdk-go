@@ -437,21 +437,29 @@ func (p *Protocol) handleHostAuthTokenRefresh(
 	}
 }
 
-// handleElicitationRequest processes an MCP elicitation request from the CLI.
-func (p *Protocol) handleElicitationRequest(ctx context.Context, req ControlRequest) SDKControlResponse {
+// elicitationRequestFromPayload maps an elicitation control_request body
+// onto the ElicitationRequest handed to OnElicitation.
+func elicitationRequestFromPayload(payload map[string]interface{}) ElicitationRequest {
 	elReq := ElicitationRequest{}
-	elReq.ServerName, _ = req.Payload["mcp_server_name"].(string)
-	elReq.Message, _ = req.Payload["message"].(string)
-	elReq.Mode, _ = req.Payload["mode"].(string)
-	elReq.URL, _ = req.Payload["url"].(string)
-	elReq.ElicitationID, _ = req.Payload["elicitation_id"].(string)
-	if rs, ok := req.Payload["requested_schema"].(map[string]interface{}); ok {
+	elReq.ServerName, _ = payload["mcp_server_name"].(string)
+	elReq.Message, _ = payload["message"].(string)
+	elReq.Mode, _ = payload["mode"].(string)
+	elReq.URL, _ = payload["url"].(string)
+	elReq.ElicitationID, _ = payload["elicitation_id"].(string)
+	if rs, ok := payload["requested_schema"].(map[string]interface{}); ok {
 		elReq.RequestedSchema = rs
 	}
-	elReq.PropertyOrder = getStringSlice(req.Payload, "property_order")
-	elReq.Title, _ = req.Payload["title"].(string)
-	elReq.DisplayName, _ = req.Payload["display_name"].(string)
-	elReq.Description, _ = req.Payload["description"].(string)
+	elReq.PropertyOrder = getStringSlice(payload, "property_order")
+	elReq.Title, _ = payload["title"].(string)
+	elReq.DisplayName, _ = payload["display_name"].(string)
+	elReq.Description, _ = payload["description"].(string)
+
+	return elReq
+}
+
+// handleElicitationRequest processes an MCP elicitation request from the CLI.
+func (p *Protocol) handleElicitationRequest(ctx context.Context, req ControlRequest) SDKControlResponse {
+	elReq := elicitationRequestFromPayload(req.Payload)
 
 	result := ElicitationResult{Action: ElicitationActionDecline}
 	if p.options.OnElicitation != nil {
