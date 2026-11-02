@@ -3805,6 +3805,64 @@ func TestIntegrationModelUsageCostBasis(t *testing.T) {
 	}
 }
 
+// TestIntegrationModelUsageCacheCreationByLifetime checks the v0.3.316
+// lifetime split of cache writes against the total it is carved from. The
+// first turn of a fresh session writes the system prompt to the cache, so a
+// recording CLI should report at least one of the two.
+func TestIntegrationModelUsageCacheCreationByLifetime(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	var result *ResultMessage
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(ResultMessage); ok {
+			result = &m
+			break
+		}
+	}
+	require.NotNil(t, result, "expected a result message")
+	require.NotEmpty(t, result.ModelUsage, "expected per-model usage")
+
+	var saw bool
+	for model, usage := range result.ModelUsage {
+		five := usage.CacheCreationEphemeral5mInputTokens
+		hour := usage.CacheCreationEphemeral1hInputTokens
+		if five == nil && hour == nil {
+			continue
+		}
+		saw = true
+
+		var split int
+		if five != nil {
+			split += *five
+		}
+		if hour != nil {
+			split += *hour
+		}
+		t.Logf("%s: cacheCreation=%d split=%d",
+			model, usage.CacheCreationInputTokens, split)
+
+		assert.LessOrEqual(t, split, usage.CacheCreationInputTokens,
+			"the lifetime split is counted inside cacheCreationInputTokens")
+	}
+
+	if !saw {
+		t.Skip("not triggerable from CLI: this CLI build reports no " +
+			"cache-lifetime split on any modelUsage entry")
+	}
+}
+
 // TestIntegrationPerTaskStopAffordance asserts the CLI accepts the
 // perTaskStopAffordance declaration added to the initialize request in TS SDK
 // v0.3.251. The behavior it selects — an interrupt sparing background tasks —

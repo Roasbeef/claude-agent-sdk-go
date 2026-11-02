@@ -2767,6 +2767,20 @@ type ModelUsage struct {
 	ContextWindow            int     `json:"contextWindow"`            // Context window size
 	MaxOutputTokens          int     `json:"maxOutputTokens"`          // Max output tokens for this model
 
+	// CacheCreationEphemeral5mInputTokens and
+	// CacheCreationEphemeral1hInputTokens split CacheCreationInputTokens by
+	// cache lifetime; both are already counted there. They can sum to less
+	// than it, since a response that does not say how long its writes live
+	// adds to neither. CostUSD prices 5-minute writes at the 5-minute rate
+	// and 1-hour writes at the 1-hour rate when the model's price table has
+	// one, except on a response a fallback model served after a refusal; a
+	// managed-settings modelPricing row has a single cache-write rate for
+	// both. Like ThinkingTokens they tally only turns
+	// that ran on a CLI recording them: nil when none did, an undercount
+	// across a resume from an older CLI (sdk.d.ts v0.3.316 L1493).
+	CacheCreationEphemeral5mInputTokens *int `json:"cacheCreationEphemeral5mInputTokens,omitempty"`
+	CacheCreationEphemeral1hInputTokens *int `json:"cacheCreationEphemeral1hInputTokens,omitempty"`
+
 	// CanonicalModel is the model id the pricing lookup used, which can
 	// differ from the raw model string this entry is keyed by — a
 	// provider-specific id or an alias resolves to it (sdk.d.ts v0.3.251

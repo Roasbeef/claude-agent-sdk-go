@@ -5368,6 +5368,58 @@ func TestModelUsagePricingProvenanceRoundTrip(t *testing.T) {
 	assert.Equal(t, usage, decoded)
 }
 
+// TestModelUsageCacheCreationByLifetime pins that the two lifetime tallies
+// are a split of cacheCreationInputTokens, not additions to it, and that
+// absent is not zero.
+func TestModelUsageCacheCreationByLifetime(t *testing.T) {
+	t.Run("split of cacheCreationInputTokens", func(t *testing.T) {
+		var decoded ModelUsage
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"inputTokens": 10,
+			"outputTokens": 20,
+			"cacheReadInputTokens": 0,
+			"cacheCreationInputTokens": 1500,
+			"cacheCreationEphemeral5mInputTokens": 1000,
+			"cacheCreationEphemeral1hInputTokens": 400,
+			"webSearchRequests": 0,
+			"costUSD": 0.01,
+			"contextWindow": 200000,
+			"maxOutputTokens": 32000
+		}`), &decoded))
+
+		require.NotNil(t, decoded.CacheCreationEphemeral5mInputTokens)
+		require.NotNil(t, decoded.CacheCreationEphemeral1hInputTokens)
+		assert.Equal(t, 1000, *decoded.CacheCreationEphemeral5mInputTokens)
+		assert.Equal(t, 400, *decoded.CacheCreationEphemeral1hInputTokens)
+
+		// Writes with no reported lifetime count toward neither, so the
+		// split can fall short of the total but never exceed it.
+		assert.LessOrEqual(t,
+			*decoded.CacheCreationEphemeral5mInputTokens+
+				*decoded.CacheCreationEphemeral1hInputTokens,
+			decoded.CacheCreationInputTokens)
+	})
+
+	t.Run("absent and zero", func(t *testing.T) {
+		var decoded ModelUsage
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"inputTokens": 10,
+			"outputTokens": 20,
+			"cacheCreationInputTokens": 0,
+			"cacheCreationEphemeral1hInputTokens": 0
+		}`), &decoded))
+
+		assert.Nil(t, decoded.CacheCreationEphemeral5mInputTokens)
+		require.NotNil(t, decoded.CacheCreationEphemeral1hInputTokens)
+		assert.Zero(t, *decoded.CacheCreationEphemeral1hInputTokens)
+
+		data, err := json.Marshal(decoded)
+		require.NoError(t, err)
+		assert.NotContains(t, string(data), "cacheCreationEphemeral5mInputTokens")
+		assert.Contains(t, string(data), `"cacheCreationEphemeral1hInputTokens":0`)
+	})
+}
+
 // TestModelUsageThinkingTokens pins the two things a caller can get wrong
 // about the v0.3.263 field: it is contained in OutputTokens rather than
 // additional to it, and absent is not zero.
