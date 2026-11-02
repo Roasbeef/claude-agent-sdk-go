@@ -540,12 +540,13 @@ type Settings struct {
 	DefaultShell               string                           `json:"defaultShell,omitempty"`
 	// BashEditDiffEnabled controls whether the Bash tool shows a diff of the
 	// files a Bash command changed; PostToolUse Bash hooks then get the
-	// changed-file list in tool_response. Defaults to on wherever the Bash
-	// tool handles file edits, so a pointer is needed to turn it off — a
-	// plain bool could not express the only setting worth writing.
+	// changed-file list in tool_response. Defaults to off, except in auto
+	// and bypassPermissions modes when the Bash tool handles file edits or
+	// the model's configuration turns it on. A pointer keeps an explicit
+	// false distinct from unset.
 	//
 	// Outside auto and bypassPermissions modes only user, flag or policy
-	// settings can turn it on (sdk.d.ts v0.3.270 L6682).
+	// settings can turn it on (sdk.d.ts v0.3.316 L7629).
 	BashEditDiffEnabled *bool `json:"bashEditDiffEnabled,omitempty"`
 	// BashOutputMaxChars caps how many characters of a successful Bash or
 	// PowerShell command's output Claude receives inline (default 30000,
@@ -825,8 +826,8 @@ type Settings struct {
 	// Mirrors sdk.d.ts v0.3.220 L6545.
 	PrecomputeCompactionEnabled *bool `json:"precomputeCompactionEnabled,omitempty"`
 	// IdleCompaction set to false stops Claude Code from compacting a long
-	// conversation while the session is idle. True does not turn idle
-	// compaction on (sdk.d.ts v0.3.290 L9235).
+	// conversation while the session is idle. Defaults to true (sdk.d.ts
+	// v0.3.316 L9645).
 	IdleCompaction *bool `json:"idleCompaction,omitempty"`
 	// SwitchModelsOnFlag switches models automatically when safety measures flag a message. Mirrors sdk.d.ts v0.3.168 L5620.
 	SwitchModelsOnFlag *bool `json:"switchModelsOnFlag,omitempty"`
@@ -861,6 +862,18 @@ type Settings struct {
 	AutoUploadSessions      *bool  `json:"autoUploadSessions,omitempty"`
 	InputNeededNotifEnabled *bool  `json:"inputNeededNotifEnabled,omitempty"`
 	AgentPushNotifEnabled   *bool  `json:"agentPushNotifEnabled,omitempty"`
+
+	// SkipAutoPermissionPrompt records that the user accepted the auto mode
+	// opt-in dialog (sdk.d.ts v0.3.316 L9718).
+	SkipAutoPermissionPrompt *bool `json:"skipAutoPermissionPrompt,omitempty"`
+	// UseAutoModeDuringPlan makes plan mode use auto mode semantics when
+	// auto mode is available. Defaults to true, so a pointer is needed to
+	// turn it off (sdk.d.ts v0.3.316 L9722).
+	UseAutoModeDuringPlan *bool `json:"useAutoModeDuringPlan,omitempty"`
+	// AutoMode customizes the auto mode classifier prompt (sdk.d.ts
+	// v0.3.316 L9726).
+	AutoMode *SettingsAutoMode `json:"autoMode,omitempty"`
+
 	// Managed-org / policy tier additions (sdk.d.ts v0.3.150).
 	// DisableAgentView disables the agent view. Typically set in managed settings. Mirrors sdk.d.ts v0.3.150 L4375.
 	DisableAgentView *bool `json:"disableAgentView,omitempty"`
@@ -1064,10 +1077,39 @@ type SettingsPermissions struct {
 	// BlockReadsOutsideWorkingDirectories refuses file-tool reads (Read,
 	// Grep, Glob, LSP) outside the working directories in every permission
 	// mode. True in any settings source wins, so a lower source cannot
-	// relax it. Also set when the user answers "block" to the one-time
-	// auto-mode prompt for such a read (sdk.d.ts v0.3.263 L5889).
-	BlockReadsOutsideWorkingDirectories *bool                  `json:"blockReadsOutsideWorkingDirectories,omitempty"`
-	Extra                               map[string]interface{} `json:"-"`
+	// relax it, and no allow rule lifts it. Also set when the user answers
+	// "block" to the one-time auto-mode prompt for such a read (sdk.d.ts
+	// v0.3.316 L7190).
+	BlockReadsOutsideWorkingDirectories *bool `json:"blockReadsOutsideWorkingDirectories,omitempty"`
+	// BlockWritesOutsideWorkingDirectories refuses file-tool writes (Write,
+	// Edit, NotebookEdit) outside the working directories in every
+	// permission mode; true in any settings source wins and no allow rule
+	// lifts it. Files Claude Code keeps for the session (plan files,
+	// scratchpad, background job folder, this project's auto-memory) stay
+	// writable. It also refuses file-tool writes to Claude Code settings
+	// files anywhere and removes EnterWorktree and ExitWorktree. Shell
+	// commands, MCP tools, hook programs and the memory tools are not
+	// limited, and cloud sessions may not apply it (sdk.d.ts v0.3.316
+	// L7196).
+	BlockWritesOutsideWorkingDirectories *bool `json:"blockWritesOutsideWorkingDirectories,omitempty"`
+	// BlockReadsExemptPaths lists absolute paths, each a folder and all
+	// below it or a single file, that BlockReadsOutsideWorkingDirectories
+	// lets through. It grants nothing: allow rules, the permission mode or
+	// the user still decide each read. Only read from --settings (see
+	// WithSettings) and settings the host sends while the session runs;
+	// ignored in user, project, local and managed settings. The paths do not
+	// become working directories, so BlockWritesOutsideWorkingDirectories
+	// still refuses writes to them, and sandboxed commands' reads are
+	// unchanged. Paths are taken as written — links are not followed and
+	// patterns not expanded — and an entry starting with ~, containing
+	// "..", with white space at either end, relative, a network path or a
+	// filesystem root is ignored (sdk.d.ts v0.3.316 L7200).
+	BlockReadsExemptPaths []string `json:"blockReadsExemptPaths,omitempty"`
+	// DisableAutoMode set to "disable" turns off auto mode, like
+	// DisableBypassPermissionsMode does for bypass (sdk.d.ts v0.3.316
+	// L7204).
+	DisableAutoMode string                 `json:"disableAutoMode,omitempty"`
+	Extra           map[string]interface{} `json:"-"`
 }
 
 func (p SettingsPermissions) MarshalJSON() ([]byte, error) {
@@ -1426,6 +1468,37 @@ type SettingsMarketplace struct {
 	Source          SettingsMarketplaceSource `json:"source"`
 	InstallLocation string                    `json:"installLocation,omitempty"`
 	AutoUpdate      *bool                     `json:"autoUpdate,omitempty"`
+
+	// PluginDigests, honored only in managed settings, maps plugin names in
+	// this marketplace to the "sha256-<base64>" digests of their releases.
+	// A plugin also enabled and listed in PrependPlugins or AppendPlugins
+	// by managed settings loads its hooks module only from a folder whose
+	// digest matches one of them, and is then seated in that tier; any
+	// other copy does not load. An empty list, or a string of any other
+	// form, matches no folder; use []string{} rather than a nil slice, which
+	// marshals as null. See sdk.d.ts v0.3.316 L7998 for how the digest is
+	// computed.
+	PluginDigests map[string][]string `json:"pluginDigests,omitempty"`
+}
+
+// SettingsAutoMode customizes the auto mode classifier prompt. In each list
+// the literal entry "$defaults" inherits the built-in entries at that
+// position.
+type SettingsAutoMode struct {
+	// Allow holds rules for the classifier's allow section.
+	Allow []string `json:"allow,omitempty"`
+	// SoftDeny holds rules for the soft block section: destructive or
+	// irreversible actions that user intent can clear.
+	SoftDeny []string `json:"soft_deny,omitempty"`
+	// HardDeny holds rules for the hard block section: security boundaries
+	// that user intent does not clear.
+	HardDeny []string `json:"hard_deny,omitempty"`
+	// Environment holds entries for the classifier's environment section.
+	Environment []string `json:"environment,omitempty"`
+	// ClassifyAllShell suspends every Bash/PowerShell allow rule while auto
+	// mode is active, so all shell commands go through the classifier.
+	// Defaults to false.
+	ClassifyAllShell *bool `json:"classifyAllShell,omitempty"`
 }
 
 // SettingsMarketplaceSource is the opaque marketplace source descriptor. Required key "source"

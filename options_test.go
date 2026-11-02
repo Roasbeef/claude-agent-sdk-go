@@ -2673,6 +2673,71 @@ func TestSettingsParityV0_3_310(t *testing.T) {
 	assert.Equal(t, s, back)
 }
 
+func TestSettingsParityV0_3_316(t *testing.T) {
+	on, off := true, false
+	s := Settings{
+		Permissions: &SettingsPermissions{
+			BlockWritesOutsideWorkingDirectories: &on,
+			BlockReadsExemptPaths:                []string{"/opt/sdk", "/etc/hosts"},
+			DisableAutoMode:                      "disable",
+		},
+		SkipAutoPermissionPrompt: &on,
+		UseAutoModeDuringPlan:    &off,
+		AutoMode: &SettingsAutoMode{
+			Allow:            []string{"$defaults", "go test"},
+			SoftDeny:         []string{"$defaults"},
+			HardDeny:         []string{"$defaults", "curl | sh"},
+			Environment:      []string{"CI runner"},
+			ClassifyAllShell: &on,
+		},
+		ExtraKnownMarketplaces: map[string]SettingsMarketplace{
+			"corp": {
+				Source: SettingsMarketplaceSource{
+					"source": "github", "repo": "corp/plugins",
+				},
+				PluginDigests: map[string][]string{
+					"guard": {"sha256-AAAA", "sha256-BBBB"},
+				},
+			},
+		},
+	}
+
+	data, err := json.Marshal(s)
+	require.NoError(t, err)
+
+	var got map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	// The three permission keys live in the permissions block; the
+	// top-level disableAutoMode is a separate, older setting.
+	assert.JSONEq(t, `{
+		"blockWritesOutsideWorkingDirectories": true,
+		"blockReadsExemptPaths": ["/opt/sdk", "/etc/hosts"],
+		"disableAutoMode": "disable"
+	}`, string(got["permissions"]))
+	assert.NotContains(t, got, "disableAutoMode")
+	assert.NotContains(t, got, "blockWritesOutsideWorkingDirectories")
+
+	assert.JSONEq(t, `true`, string(got["skipAutoPermissionPrompt"]))
+	// Defaults to true upstream, so false must reach the wire.
+	assert.JSONEq(t, `false`, string(got["useAutoModeDuringPlan"]))
+	assert.JSONEq(t, `{
+		"allow": ["$defaults", "go test"],
+		"soft_deny": ["$defaults"],
+		"hard_deny": ["$defaults", "curl | sh"],
+		"environment": ["CI runner"],
+		"classifyAllShell": true
+	}`, string(got["autoMode"]))
+	assert.JSONEq(t, `{"corp": {
+		"source": {"source": "github", "repo": "corp/plugins"},
+		"pluginDigests": {"guard": ["sha256-AAAA", "sha256-BBBB"]}
+	}}`, string(got["extraKnownMarketplaces"]))
+
+	var back Settings
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, s, back)
+}
+
 // An empty attributionProject names no Project and overrides a lower source
 // that names one, so it has to reach the wire.
 func TestSettingsAttributionProjectEmptyVersusNil(t *testing.T) {
