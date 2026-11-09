@@ -1068,6 +1068,26 @@ func (s *Stream) SetMaxThinkingTokens(ctx context.Context, tokens *int, opts ...
 	return err
 }
 
+// SetHasSubscribers tells the CLI whether anyone is watching the output the
+// host reads from stdout and passes on: false for nobody, true for somebody,
+// nil when the host does not know (counted as true).
+//
+// It only matters to a CLI started with CLAUDE_CODE_STREAM_EVENT_HOLD_MS,
+// which holds content_block_delta and thinking_tokens lines to join them,
+// and CLAUDE_CODE_STREAM_EVENT_NO_SUBSCRIBER_HOLD_MS, whose longer hold
+// applies after false. No line is dropped. Each request also ends the hold
+// that is running, so send one only when the answer changes. A new CLI
+// process starts as watched. An older CLI answers with an unsupported
+// subtype error, and a CLI driving a cloud-hosted session refuses it
+// (sdk.d.ts v0.3.319 L5380).
+func (s *Stream) SetHasSubscribers(ctx context.Context, hasSubscribers *bool) error {
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype:        "set_has_subscribers",
+		HasSubscribers: &HasSubscribersValue{Watched: hasSubscribers},
+	})
+	return err
+}
+
 type registerRepoRootOptions struct {
 	reloadClaudeMD *bool
 	reloadPlugins  *bool
@@ -1622,9 +1642,20 @@ func (s *Stream) InitializationResult() (*SDKControlInitializeResponse, error) {
 // control requests the loop is still blocked on; the SDK dedupes in-flight
 // request_ids, but callbacks should be idempotent per request_id since a
 // request whose response was lost in the gap is dispatched again.
+//
+// With a HookConfig set to HookOnFailureBlock it fails with
+// *ErrHookBlockNotHonored when the reply does not say the CLI honors it,
+// and closes the client and this stream the way the TS SDK tears its query
+// down: carrying on would run with block hooks that do not block. Messages
+// then ends without an error of its own.
 func (s *Stream) Reinitialize(ctx context.Context) (*SDKControlInitializeResponse, error) {
 	initResp, err := s.client.protocol.Reinitialize(ctx)
 	if err != nil {
+		var notHonored *ErrHookBlockNotHonored
+		if errors.As(err, &notHonored) {
+			_ = s.Close()
+			_ = s.client.Close()
+		}
 		return nil, err
 	}
 	if initResp == nil {
