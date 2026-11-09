@@ -2693,9 +2693,12 @@ const (
 // SessionWritesLostMessage reports that the CLI could not save transcript
 // lines, ~/.claude.json changes, or both, because the disk was full or over
 // quota. It is sent at most once, as the CLI exits with status 0, after the
-// last result, so a consumer that stops reading at the ResultMessage never
-// sees it. A run that exits 1 reports the loss on stderr only. The results
-// already received stand; this is safe to ignore (sdk.d.ts v0.3.319 L6272).
+// last result if there was one, so a consumer that stops reading at the
+// ResultMessage never sees it. A run that exits 1 reports the loss on stderr
+// only, though CLI 2.1.317 and some later releases sent this message there
+// too, so it can follow an error result. Never sent under --sdk-url or a
+// Claude Desktop entrypoint. The results already received stand; this is
+// safe to ignore (sdk.d.ts v0.3.319 L6272).
 type SessionWritesLostMessage struct {
 	Type    string `json:"type"`    // Always "system"
 	Subtype string `json:"subtype"` // "session_writes_lost"
