@@ -540,10 +540,11 @@ type Settings struct {
 	// DisableReplyCheck turns off the check that re-prompts Claude (at most
 	// four times a turn) when a Claude Tag turn on a self-hosted runner ends
 	// without calling a reply tool, along with the service-requested
-	// progress nudge and prompt reminder for such sessions. It is not a
-	// hook, so DisableAllHooks does not touch it. Honored only from managed
-	// settings, and has no effect on sessions Anthropic hosts (sdk.d.ts
-	// v0.3.319 L7715).
+	// progress nudge and prompt reminder for such sessions, and stops
+	// holding back Claude Code's built-in progress-update reminder. It is
+	// not a hook, so DisableAllHooks does not touch it. Honored only from
+	// managed settings, where an explicit false keeps the check on; has no
+	// effect on sessions Anthropic hosts (sdk.d.ts v0.3.319 L7715).
 	DisableReplyCheck *bool `json:"disableReplyCheck,omitempty"`
 	// DisableWindowsBashCommandSplit, on Windows, keeps every Bash command in
 	// a single argument to bash so endpoint security tools matching process
@@ -1131,9 +1132,10 @@ type SettingsPermissions struct {
 	// allows nothing, and a listed path stays listed until the process
 	// ends. Entries that are not already normalized (relative, starting
 	// with ~, with a ".." segment, a trailing separator other than a root,
-	// surrounding white space) are ignored. Only read from --settings (see
-	// WithSettings) and settings the host sends while the session runs
-	// (sdk.d.ts v0.3.319 L7322).
+	// forward slashes on Windows, surrounding white space) are ignored. Only
+	// read from --settings (see WithSettings) and settings the host sends
+	// while the session runs; ignored in user, project, local and managed
+	// settings (sdk.d.ts v0.3.319 L7322).
 	WorkingDirectoriesAsGiven []string `json:"workingDirectoriesAsGiven,omitempty"`
 	// DenyInsteadOfPrompting denies at once any tool call that would
 	// prompt a person, tells the model, and lets the turn carry on: what

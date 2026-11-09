@@ -6721,7 +6721,9 @@ func TestIntegrationSetHasSubscribers(t *testing.T) {
 // through --settings and reads them back off get_settings. That proves the
 // shape round-trips through the CLI's schema, not that the CLI acts on it:
 // 2.1.283 echoes them too. The two managed-only keys ride
-// --managed-settings, which must not stall the handshake on either CLI.
+// --managed-settings, which must not stall the handshake on either CLI;
+// nothing is asserted on them because inline managed settings keep only
+// restrictive keys, so they need not show up in effective.
 func TestIntegrationSettingsParityV0_3_319(t *testing.T) {
 	skipIfNoToken(t)
 	skipIfNoCLI(t)
@@ -6811,13 +6813,19 @@ func TestIntegrationDenyInsteadOfPrompting(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 
+	var result *ResultMessage
 	for msg := range client.Query(ctx, "Run the Bash command `echo ran > ran.txt`.") {
-		if _, ok := msg.(ResultMessage); ok {
+		if m, ok := msg.(ResultMessage); ok {
+			result = &m
 			break
 		}
 	}
 
+	require.NotNil(t, result, "no result message")
 	assert.False(t, asked.Load(),
 		"denyInsteadOfPrompting must not ask the CanUseTool callback")
 	assert.NoFileExists(t, marker, "the prompting command must be denied")
+	// Without a recorded denial, a model that never tried Bash would pass.
+	assert.NotEmpty(t, result.PermissionDenials,
+		"the Bash call must be denied outright; result: %s", result.Result)
 }
