@@ -781,9 +781,13 @@ func (s *Stream) Interrupt(ctx context.Context) error {
 // the "interrupt_receipt_v1" capability (see SystemMessage.Capabilities).
 type InterruptReceipt struct {
 	// StillQueued holds the uuids of async user messages that survive this
-	// interrupt: queued commands plus any batch already dequeued for the
-	// imminent turn but not yet reachable by the abort. They will run unless
-	// cancelled first. Empty on older CLIs, which do not report a receipt.
+	// interrupt: queued commands, any batch already dequeued for the
+	// imminent turn but not yet reachable by the abort, and (as of v0.3.319)
+	// any user message the CLI has read but not yet queued, held behind a
+	// model change check or start-up work. They will run unless cancelled
+	// first. A held one is not cancellable yet: CancelAsyncMessage answers
+	// false for it but plants a mark the queue honors once it lands
+	// (sdk.d.ts v0.3.319 L4896). Empty on older CLIs, which do not report a receipt.
 	// Always empty when the interrupt requested cancel_queued (see
 	// InterruptCancelQueued) — the survivors move to Cancelled instead.
 	StillQueued []string `json:"still_queued"`
@@ -1853,7 +1857,11 @@ func (s *Stream) ToggleMcpServer(
 
 // SetMcpServers replaces the dynamically-added MCP servers for this session
 // with the supplied set. Servers omitted from the new map are disconnected;
-// new entries are connected.
+// new entries are connected. Plugin servers stay up when omitted, and as of
+// v0.3.319 so do the .mcp.json and local-scope servers of the session's
+// current folder until a payload names one, after which a later payload
+// that omits it removes it. An empty map therefore does not guarantee zero
+// dynamic MCP servers (sdk.d.ts v0.3.319 L3321).
 //
 // Process-based servers only: stdio, sse, http. In-process SDK MCP servers
 // (Options.SDKMcpServers) are static for the lifetime of the client.

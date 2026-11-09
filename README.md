@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.316 catchup work, using Go idioms where the API shape differs.
+v0.3.319 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -1112,6 +1112,37 @@ Deferred in v0.3.316:
   that carries annotations, so there is nowhere to put it.
 - The `prewarm()` / `claim()` doc rework (#292) and
   `USAGE_TRANSITION_PREFIXES`, which Go has never mirrored.
+- `sdk-tools.d.ts` churn, the standing deferral.
+
+The v0.3.319 catchup added:
+
+- `HookConfig.OnFailure`: set `HookOnFailureBlock` and a callback that
+  errors blocks the action its event guards. A CLI that predates the option
+  ignores it, so Connect refuses with `*ErrHookBlockNotHonored` unless the
+  initialize reply's `HookOnFailureSupported` is true, and also when a first
+  initialize reports `HooksApplied` false. The initialize hooks payload is
+  now built once, so a Reinitialize keeps the callback IDs.
+- `SessionWritesLostMessage` (`system/session_writes_lost`): the disk filled
+  up or ran out of quota and transcript lines or `~/.claude.json` changes
+  were lost. It arrives after the last result, as the CLI exits 0.
+- `Stream.SetHasSubscribers`: tells a CLI holding stream deltas under
+  `CLAUDE_CODE_STREAM_EVENT_HOLD_MS` whether anyone is watching; nil goes
+  out as an explicit null.
+- `ResultMessage.CredentialExpiresAt`, `SDKControlReadFileResponse.Lossy`,
+  and `StartupFailureInitializeNotFirst` / `StartupFailureConfigFileInvalid`.
+- Settings: `workingDirectoriesAsGiven` and `denyInsteadOfPrompting` under
+  `permissions`, and the managed-only `DisableReplyCheck` and
+  `DisableWindowsBashCommandSplit`.
+
+PRs in this cycle (squash-merged): #324 hook onFailure, #325
+session_writes_lost, #326 set_has_subscribers, #327 result/enum parity,
+#328 settings, plus this docs refresh.
+
+Deferred in v0.3.319:
+
+- `mcp_call`'s `check_permissions`: Go has no `mcp_call` surface.
+- bridge.d.ts's `session_security_tier_below_org_policy` terminal reason,
+  since there's no Go bridge.
 - `sdk-tools.d.ts` churn, the standing deferral.
 
 ### Porting from the TypeScript SDK - Go-side differences
