@@ -261,9 +261,10 @@ type SDKControlReadFileResponse struct {
 	// bytes read were not all valid UTF-8, so Contents has U+FFFD in place of
 	// replaced bytes and is not the file's own text (a binary file, another
 	// encoding, or a cut inside a character when Truncated is set); false
-	// when Contents is exactly the bytes read. Nil on a base64 answer, which
-	// is exact, and from an older CLI, in which case a utf-8 answer may or
-	// may not be exact (sdk.d.ts v0.3.319 L5185).
+	// when Contents is exactly the bytes read, even if the file itself
+	// contains U+FFFD. Nil on a base64 answer, which is exact, and from an
+	// older CLI or tool container, in which case a utf-8 answer may or may
+	// not be exact (sdk.d.ts v0.3.319 L5185).
 	Lossy *bool `json:"lossy,omitempty"`
 }
 

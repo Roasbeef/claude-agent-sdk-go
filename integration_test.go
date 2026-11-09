@@ -5722,7 +5722,9 @@ func TestIntegrationStartupFailureConfigFileInvalid(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	// The CLI exits at once, but Connect waits out ctx for an initialize
+	// reply that never comes (#289), so keep this short.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	var result *ResultMessage
