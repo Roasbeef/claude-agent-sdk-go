@@ -6606,3 +6606,9 @@ func TestIntegrationHookOnFailureBlock(t *testing.T) {
 	assert.NoFileExists(t, marker,
 		"a failing block hook must stop the command it guards")
 }
+
+func TestIntegrationSessionWritesLost(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	t.Skip("not triggerable from CLI: session_writes_lost needs a transcript or ~/.claude.json write to fail with ENOSPC/EDQUOT on a run that still exits 0; a /dev/full symlink at the transcript path trips --session-id's in-use check instead, and the runner cannot mount a full filesystem; tracked in INTEGRATION-FOLLOWUPS.md")
+}

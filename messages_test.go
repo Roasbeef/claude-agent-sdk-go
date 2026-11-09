@@ -4754,6 +4754,92 @@ func TestParseMessageWorkerShuttingDown(t *testing.T) {
 	assert.Equal(t, "sess_misc_012", shutdownMsg.SessionID)
 }
 
+// TestParseMessageSessionWritesLost covers the system subtype v0.3.319 adds
+// (sdk.d.ts L6272). Codes and kinds are open sets, so an unknown value must
+// still decode rather than fail the frame.
+func TestParseMessageSessionWritesLost(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  SessionWritesLostMessage
+	}{
+		{
+			name: "transcript and config",
+			input: `{
+				"type": "system",
+				"subtype": "session_writes_lost",
+				"error_code": "ENOSPC",
+				"lost": ["transcript", "global_config"],
+				"transcript_session_ids": ["sess_old", "sess_new"],
+				"uuid": "550e8400-e29b-41d4-a716-4466554402D0",
+				"session_id": "sess_new"
+			}`,
+			want: SessionWritesLostMessage{
+				Type:      "system",
+				Subtype:   "session_writes_lost",
+				ErrorCode: SessionWritesLostENOSPC,
+				Lost: []SessionWritesLostKind{
+					SessionWritesLostTranscript,
+					SessionWritesLostGlobalConfig,
+				},
+				TranscriptSessionIDs: []string{"sess_old", "sess_new"},
+				UUID:                 "550e8400-e29b-41d4-a716-4466554402D0",
+				SessionID:            "sess_new",
+			},
+		},
+		{
+			name: "config only, no transcript ids",
+			input: `{
+				"type": "system",
+				"subtype": "session_writes_lost",
+				"error_code": "EDQUOT",
+				"lost": ["global_config"],
+				"uuid": "u1",
+				"session_id": "s1"
+			}`,
+			want: SessionWritesLostMessage{
+				Type:      "system",
+				Subtype:   "session_writes_lost",
+				ErrorCode: SessionWritesLostEDQUOT,
+				Lost:      []SessionWritesLostKind{SessionWritesLostGlobalConfig},
+				UUID:      "u1",
+				SessionID: "s1",
+			},
+		},
+		{
+			name: "unknown code and kind",
+			input: `{
+				"type": "system",
+				"subtype": "session_writes_lost",
+				"error_code": "EROFS",
+				"lost": ["plans"],
+				"uuid": "u2",
+				"session_id": "s2"
+			}`,
+			want: SessionWritesLostMessage{
+				Type:      "system",
+				Subtype:   "session_writes_lost",
+				ErrorCode: "EROFS",
+				Lost:      []SessionWritesLostKind{"plans"},
+				UUID:      "u2",
+				SessionID: "s2",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg, err := ParseMessage([]byte(tt.input))
+			require.NoError(t, err)
+
+			got, ok := msg.(SessionWritesLostMessage)
+			require.True(t, ok, "expected SessionWritesLostMessage, got %T", msg)
+			assert.Equal(t, "system", got.MessageType())
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestParseMessageInformational(t *testing.T) {
 	input := `{
 		"type": "system",
