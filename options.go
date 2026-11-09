@@ -490,8 +490,9 @@ type Settings struct {
 	Env                        map[string]string    `json:"env,omitempty"`
 	Attribution                *SettingsAttribution `json:"attribution,omitempty"`
 	// AttributionProject names the claude.ai Project this session counts
-	// toward in the organization's usage reports: the Project's UUID or its
-	// "claude_proj_" ID. Pointer so an explicit empty string, which names
+	// toward in the organization's usage reports: the Project's ID, starting
+	// with "claude_proj_" or (as of v0.3.319) "chan_", or the UUID of a
+	// "claude_proj_" Project. Pointer so an explicit empty string, which names
 	// none and stops lower-precedence files from naming one, reaches the
 	// wire; the organization default still applies then. Sent only with a
 	// claude.ai login talking to the Anthropic API directly, outside cloud
@@ -2694,9 +2695,13 @@ type ToolPermissionRequest struct {
 // tool-minted ask, so the rule rides here instead of a "rule"
 // decision_reason_type. Hosts making policy on the decision reason (e.g.
 // auto-deny a safetyCheck) or running host-side auto-approval should treat asks
-// carrying this as rule-forced: the user's stated intent is a human prompt. The
-// values are producer-authored and render-unsafe like a decision reason —
-// sanitize before display (sdk.d.ts v0.3.215).
+// carrying this as rule-forced: the user's stated intent is a human prompt.
+// Since v0.3.319 it may also be set, whatever the decision reason, when an ask
+// rule reaches an MCP tool only under another name of its server (a
+// connector's id or its claude.ai name): a host looking the rule up by the
+// request's tool name will not find it. The values are producer-authored and
+// render-unsafe like a decision reason — sanitize before display (sdk.d.ts
+// v0.3.319 L5112).
 type MatchedAskRule struct {
 	Source      string `json:"source"`
 	ToolName    string `json:"tool_name"`
@@ -2779,16 +2784,21 @@ type PermissionContext struct {
 	// a person, which no stored grant may answer. Another is an MCP server
 	// whose name spells a claude.ai connector's key but came from neither
 	// claude.ai nor whoever launched the session. The last is an ask whose
-	// title and description the SDK host worded itself. As of v0.3.316 it
-	// also marks the ask made before the first upload by file reference to a
-	// connector, which no stored grant may answer either (sdk.d.ts L5086).
-	// In every case the user must open the session to answer.
+	// title and description the SDK host worded itself. As of v0.3.319 the
+	// connector-key case also covers two tools of one server getting the
+	// same name while Claude Code enforces grants, and the v0.3.316
+	// file-reference-upload case is gone, replaced by an ask standing in for
+	// the classifier's verdict on a call to Claude Desktop's Cowork shell,
+	// which no stored grant may answer either (sdk.d.ts L5126). In every
+	// case the user must open the session to answer.
 	RequiresUserInteraction bool
 	// SuppressAlwaysAllowRule is true when the dialog must not offer the
 	// persistent "don't ask again" affordance for this ask: accepting it would
-	// write a whole-tool allow rule broader than the ask's own verb. Hosts
+	// write a whole-tool allow rule broader than the ask's own verb, or (as
+	// of v0.3.319) the ask comes from a run a plugin started, where Claude
+	// Code saves no rule from the answer, not even for the session. Hosts
 	// rendering approve options should omit any persistent-rule row when set
-	// (sdk.d.ts v0.3.215).
+	// (sdk.d.ts v0.3.319 L5104).
 	SuppressAlwaysAllowRule bool
 	// DefaultToNo is true when the ask must not be approvable by a single
 	// stray keystroke: a terminal-style prompt opens on its decline option

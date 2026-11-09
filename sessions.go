@@ -246,6 +246,7 @@ func TagSession(sessionID, tag string, opts *SessionMutationOptions) error {
 }
 
 // DeleteSession removes a session transcript and any subagent transcripts.
+// It deletes data only on this computer, not anything stored by Anthropic.
 func DeleteSession(sessionID string, opts *SessionMutationOptions) error {
 	if !validSessionID(sessionID) {
 		return fmt.Errorf("invalid sessionId: %s", sessionID)
