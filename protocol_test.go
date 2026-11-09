@@ -910,6 +910,111 @@ func TestProtocolInitializeHookOnFailure(t *testing.T) {
 	}
 }
 
+// TestProtocolReinitializeKeepsHookIDs pins that a Reinitialize resends the
+// first initialize's callback IDs. A CLI that ignores a repeated
+// initialize's hooks keeps routing by the first set, so a reshuffle would
+// send one event's hook_callback to another event's callback, which under
+// OnFailure block can turn a failing hook into a passing one.
+func TestProtocolReinitializeKeepsHookIDs(t *testing.T) {
+	var fired []HookType
+	hookFor := func(hookType HookType) HookConfig {
+		return HookConfig{
+			Matcher: "*",
+			Callback: func(ctx context.Context, input HookInput) (HookResult, error) {
+				fired = append(fired, hookType)
+				return HookResult{Continue: true}, nil
+			},
+		}
+	}
+	hookTypes := []HookType{
+		HookTypePreToolUse, HookTypePostToolUse, HookTypeSessionStart,
+		HookTypeStop, HookTypeUserPromptSubmit, HookTypeNotification,
+	}
+	hooks := make(map[HookType][]HookConfig)
+	for _, hookType := range hookTypes {
+		hooks[hookType] = []HookConfig{hookFor(hookType)}
+	}
+
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	opts.Hooks = hooks
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	protocol := NewProtocol(transport, opts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, transport.Connect(ctx))
+	defer transport.Close()
+
+	const rounds = 5
+	initReqCh := make(chan SDKControlRequest, rounds)
+	go func() {
+		decoder := json.NewDecoder(runner.StdinPipe)
+		for range rounds {
+			var initReq SDKControlRequest
+			if err := decoder.Decode(&initReq); err != nil {
+				return
+			}
+			initReqCh <- initReq
+			data, _ := json.Marshal(SDKControlResponse{
+				Type: "control_response",
+				Response: SDKControlResponseBody{
+					Subtype:   "success",
+					RequestID: initReq.RequestID,
+					Response:  map[string]interface{}{},
+				},
+			})
+			runner.StdoutPipe.Write(append(data, '\n'))
+		}
+	}()
+	go func() {
+		for msg, err := range transport.ReadMessages(ctx) {
+			if err != nil {
+				continue
+			}
+			if ctrlResp, ok := msg.(SDKControlResponse); ok {
+				protocol.handleSDKControlResponse(ctrlResp)
+			}
+		}
+	}()
+
+	idsOf := func(req SDKControlRequest) map[string]string {
+		ids := make(map[string]string)
+		for hookType, matchers := range req.Request.Hooks {
+			require.Len(t, matchers, 1)
+			require.Len(t, matchers[0].HookCallbackIDs, 1)
+			ids[hookType] = matchers[0].HookCallbackIDs[0]
+		}
+		return ids
+	}
+
+	require.NoError(t, protocol.Initialize(ctx))
+	first := idsOf(<-initReqCh)
+	require.Len(t, first, len(hookTypes))
+	for range rounds - 1 {
+		_, err := protocol.Reinitialize(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, first, idsOf(<-initReqCh))
+	}
+
+	// Each first-round ID still dispatches to its own event's callback.
+	for _, hookType := range hookTypes {
+		fired = nil
+		resp := protocol.handleSDKHookCallback(ctx, SDKControlRequest{
+			RequestID: "cb",
+			Request: SDKControlRequestBody{
+				Subtype:    "hook_callback",
+				CallbackID: first[string(hookType)],
+				Input: map[string]interface{}{
+					"hook_event_name": string(hookType),
+				},
+			},
+		})
+		require.Equal(t, "success", resp.Response.Subtype)
+		assert.Equal(t, []HookType{hookType}, fired)
+	}
+}
+
 func marshalHookMatcher(t *testing.T, matcher SDKHookCallbackMatcher) map[string]interface{} {
 	t.Helper()
 
