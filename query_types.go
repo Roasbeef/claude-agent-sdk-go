@@ -257,6 +257,14 @@ type SDKControlReadFileResponse struct {
 	// Encoding is set to "base64" when the CLI honored a base64 request.
 	// Empty string means utf-8, including when older CLIs ignore the request.
 	Encoding string `json:"encoding,omitempty"`
+	// Lossy is set on every utf-8 answer from a current CLI: true when the
+	// bytes read were not all valid UTF-8, so Contents has U+FFFD in place of
+	// replaced bytes and is not the file's own text (a binary file, another
+	// encoding, or a cut inside a character when Truncated is set); false
+	// when Contents is exactly the bytes read. Nil on a base64 answer, which
+	// is exact, and from an older CLI, in which case a utf-8 answer may or
+	// may not be exact (sdk.d.ts v0.3.319 L5185).
+	Lossy *bool `json:"lossy,omitempty"`
 }
 
 // SDKControlReloadPluginsResponse reports refreshed session components.

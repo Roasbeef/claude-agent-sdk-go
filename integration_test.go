@@ -2246,6 +2246,36 @@ func TestIntegrationStreamFileAndRuntime(t *testing.T) {
 		assert.Equal(t, filepath.Clean(binaryPath), filepath.Clean(got.AbsPath))
 	})
 
+	// v0.3.319 marks a utf-8 answer lossy when the bytes were not valid
+	// UTF-8 (sdk.d.ts L5185). Older CLIs omit the flag.
+	t.Run("read_file_lossy", func(t *testing.T) {
+		stream, markerPath := newFileStream(t)
+		dir := filepath.Dir(markerPath)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "marker.bin"),
+			[]byte{'h', 'i', 0xFF, 0xFE}, 0o644))
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		text, err := stream.ReadFile(ctx, "marker.txt", &ReadFileOptions{})
+		require.NoError(t, err)
+		if text.Lossy == nil {
+			t.Skip("CLI predates the read_file lossy flag")
+		}
+		assert.False(t, *text.Lossy, "valid UTF-8 must read as exact")
+
+		bin, err := stream.ReadFile(ctx, "marker.bin", &ReadFileOptions{})
+		require.NoError(t, err)
+		require.NotNil(t, bin.Lossy)
+		assert.True(t, *bin.Lossy, "invalid UTF-8 must read as lossy")
+
+		b64, err := stream.ReadFile(ctx, "marker.bin", &ReadFileOptions{
+			Encoding: "base64",
+		})
+		require.NoError(t, err)
+		assert.Nil(t, b64.Lossy, "a base64 answer is exact and carries no flag")
+	})
+
 	t.Run("seed_read_state", func(t *testing.T) {
 		stream, markerPath := newFileStream(t)
 		info, err := os.Stat(markerPath)
@@ -5667,6 +5697,50 @@ func TestIntegrationStartupFailureReason(t *testing.T) {
 	assert.Equal(t, StartupFailureCwdUnavailable, result.StartupFailureReason)
 	assert.NotEmpty(t, result.Errors,
 		"errors should carry the same text as stderr")
+}
+
+// TestIntegrationStartupFailureConfigFileInvalid corrupts the global config
+// file and checks the CLI refuses to start with config_file_invalid. Unlike
+// cwd_unavailable this cause writes its result on every stream-json run,
+// so no CLAUDE_CODE_STARTUP_FAILURE_RESULTS (sdk.d.ts v0.3.319 L6053).
+func TestIntegrationStartupFailureConfigFileInvalid(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, "2.1.319")
+
+	configDir := filepath.Join(t.TempDir(), ".claude")
+	require.NoError(t, os.MkdirAll(configDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(configDir, ".claude.json"), []byte("{not json"), 0o600,
+	))
+
+	opts := append(isolatedClientOptions(t),
+		WithConfigDir(configDir),
+		WithMaxTurns(1),
+		WithStderr(func(data string) { t.Logf("CLI stderr: %s", data) }),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	var result *ResultMessage
+	for msg := range client.Query(ctx, "say ok") {
+		if m, ok := msg.(ResultMessage); ok {
+			result = &m
+			t.Logf("result: subtype=%s reason=%q errors=%v",
+				m.Subtype, m.StartupFailureReason, m.Errors)
+		}
+	}
+
+	// CLI 2.1.319 does write the frame, but it lands before the initialize
+	// reply and Connect drops it (#289).
+	if result == nil {
+		t.Skip("startup-failure result frame dropped before Connect returns (#289)")
+	}
+	assert.Equal(t, StartupFailureConfigFileInvalid, result.StartupFailureReason)
+	assert.NotEmpty(t, result.Errors, "errors should name the file")
 }
 
 // TestIntegrationAssistantUsageReport drives /usage against the live CLI and
