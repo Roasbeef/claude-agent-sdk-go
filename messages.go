@@ -1215,6 +1215,9 @@ type SDKHookCallbackMatcher struct {
 	Matcher         string   `json:"matcher,omitempty"`
 	HookCallbackIDs []string `json:"hookCallbackIds"`
 	Timeout         int      `json:"timeout,omitempty"` // Timeout in seconds
+	// OnFailure is HookConfig.OnFailure on the wire (sdk.d.ts v0.3.319
+	// L5514).
+	OnFailure HookOnFailure `json:"onFailure,omitempty"`
 }
 
 // MessageType implements Message.

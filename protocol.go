@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sync"
 	"sync/atomic"
 )
@@ -22,9 +23,14 @@ type Protocol struct {
 	requestID     atomic.Uint64
 	pendingReqs   sync.Map                // requestID -> chan ControlResponse
 	hookCallbacks map[string]HookCallback // hookID -> callback
-	sdkMcpServers map[string]*McpServer   // serverName -> server (in-process MCP)
-	initResponse  atomic.Pointer[SDKControlInitializeResponse]
-	initialized   atomic.Bool
+	// initHooks is the initialize hooks payload, built once so a
+	// Reinitialize sends the same callback IDs. A CLI that ignores a
+	// repeated initialize's hooks keeps routing by the first set's IDs.
+	initHooks      map[string][]SDKHookCallbackMatcher
+	initHooksBuilt bool
+	sdkMcpServers  map[string]*McpServer // serverName -> server (in-process MCP)
+	initResponse   atomic.Pointer[SDKControlInitializeResponse]
+	initialized    atomic.Bool
 }
 
 // NewProtocol creates a new protocol handler.
@@ -51,7 +57,7 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 	if p.initialized.Load() {
 		return nil // Already initialized
 	}
-	return p.doInitialize(ctx)
+	return p.doInitialize(ctx, true)
 }
 
 // Reinitialize re-sends the initialize control request to an already-running
@@ -61,13 +67,13 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 // daemon whose ring buffer evicted frames) so the CLI redelivers any
 // control requests the loop is still blocked on.
 func (p *Protocol) Reinitialize(ctx context.Context) (*SDKControlInitializeResponse, error) {
-	if err := p.doInitialize(ctx); err != nil {
+	if err := p.doInitialize(ctx, false); err != nil {
 		return nil, err
 	}
 	return p.initResult(), nil
 }
 
-func (p *Protocol) doInitialize(ctx context.Context) error {
+func (p *Protocol) doInitialize(ctx context.Context, first bool) error {
 	// SupportedDialogKinds is meaningless without a dialog handler, and the
 	// CLI would never route a dialog to a consumer that can't render it.
 	// Mirror the TS SDK and reject the contradictory option pairing here.
@@ -75,30 +81,11 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 		return fmt.Errorf("SupportedDialogKinds requires WithOnUserDialog")
 	}
 
-	// Build hook configuration in TypeScript SDK format.
-	var hooks map[string][]SDKHookCallbackMatcher
-	if len(p.options.Hooks) > 0 {
-		hooks = make(map[string][]SDKHookCallbackMatcher)
-		hookID := 0
-
-		for hookType, configs := range p.options.Hooks {
-			hookMatchers := []SDKHookCallbackMatcher{}
-			for _, cfg := range configs {
-				id := fmt.Sprintf("hook_%d", hookID)
-				hookID++
-
-				// Register callback.
-				p.hookCallbacks[id] = cfg.Callback
-
-				hookMatchers = append(hookMatchers, SDKHookCallbackMatcher{
-					Matcher:         cfg.Matcher,
-					HookCallbackIDs: []string{id},
-					Timeout:         cfg.Timeout,
-				})
-			}
-			hooks[string(hookType)] = hookMatchers
-		}
+	if !p.initHooksBuilt {
+		p.initHooks = p.buildInitHooks()
+		p.initHooksBuilt = true
 	}
+	hooks := p.initHooks
 
 	// Build list of SDK MCP server names, plus per-server config for the
 	// subset that carries any. The config map stays absent when no server
@@ -221,9 +208,78 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 	if err := json.Unmarshal(bytes, &initResp); err != nil {
 		return fmt.Errorf("failed to parse initialization response: %w", err)
 	}
+	if err := p.checkHookBlockHonored(&initResp, first); err != nil {
+		return err
+	}
 	p.initResponse.Store(&initResp)
 	p.initialized.Store(true)
 	return nil
+}
+
+// buildInitHooks registers every hook callback under an ID and returns the
+// initialize hooks payload in TypeScript SDK format. Hook types are visited
+// in sorted order so the IDs do not depend on map iteration.
+func (p *Protocol) buildInitHooks() map[string][]SDKHookCallbackMatcher {
+	if len(p.options.Hooks) == 0 {
+		return nil
+	}
+
+	hookTypes := make([]HookType, 0, len(p.options.Hooks))
+	for hookType := range p.options.Hooks {
+		hookTypes = append(hookTypes, hookType)
+	}
+	slices.Sort(hookTypes)
+
+	hooks := make(map[string][]SDKHookCallbackMatcher, len(hookTypes))
+	hookID := 0
+	for _, hookType := range hookTypes {
+		hookMatchers := []SDKHookCallbackMatcher{}
+		for _, cfg := range p.options.Hooks[hookType] {
+			id := fmt.Sprintf("hook_%d", hookID)
+			hookID++
+
+			p.hookCallbacks[id] = cfg.Callback
+
+			hookMatchers = append(hookMatchers, SDKHookCallbackMatcher{
+				Matcher:         cfg.Matcher,
+				HookCallbackIDs: []string{id},
+				Timeout:         cfg.Timeout,
+				OnFailure:       cfg.OnFailure,
+			})
+		}
+		hooks[string(hookType)] = hookMatchers
+	}
+	return hooks
+}
+
+// checkHookBlockHonored mirrors the TS SDK's refusal to run a session whose
+// block hooks would not block. Only a first initialize can read
+// hooks_applied false as "joined a session someone else configured"; a
+// repeated one from this process replaces the hook set.
+func (p *Protocol) checkHookBlockHonored(
+	resp *SDKControlInitializeResponse, first bool,
+) error {
+	if !p.hasHookSetToBlock() {
+		return nil
+	}
+	if resp.HookOnFailureSupported == nil || !*resp.HookOnFailureSupported {
+		return &ErrHookBlockNotHonored{}
+	}
+	if first && resp.HooksApplied != nil && !*resp.HooksApplied {
+		return &ErrHookBlockNotHonored{HooksNotApplied: true}
+	}
+	return nil
+}
+
+func (p *Protocol) hasHookSetToBlock() bool {
+	for _, configs := range p.options.Hooks {
+		for _, cfg := range configs {
+			if cfg.OnFailure != "" && cfg.OnFailure != HookOnFailureContinue {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (p *Protocol) initResult() *SDKControlInitializeResponse {

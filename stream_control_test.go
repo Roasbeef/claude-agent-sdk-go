@@ -596,3 +596,35 @@ func TestStreamSendMessageAfterClose(t *testing.T) {
 	var closed *ErrTransportClosed
 	assert.ErrorAs(t, err, &closed)
 }
+
+// TestStreamReinitializeRefusesBlockHooksAndCloses pins that a Reinitialize
+// whose reply drops hook_on_failure_supported tears the client down, as TS
+// cleanup does, instead of leaving a session with block hooks that would
+// not block.
+func TestStreamReinitializeRefusesBlockHooksAndCloses(t *testing.T) {
+	stream, _, protocol := newStreamControlTest(successSDKControlResponse)
+	protocol.options.Hooks = map[HookType][]HookConfig{
+		HookTypePreToolUse: {{
+			Matcher:   "*",
+			OnFailure: HookOnFailureBlock,
+			Callback: func(ctx context.Context, input HookInput) (HookResult, error) {
+				return HookResult{Continue: true}, nil
+			},
+		}},
+	}
+	stream.client.connected = true
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		_, err := stream.Reinitialize(ctx)
+		return err
+	})
+
+	var notHonored *ErrHookBlockNotHonored
+	require.ErrorAs(t, err, &notHonored)
+	assert.False(t, stream.client.connected, "the client must be closed")
+	select {
+	case <-stream.closeCh:
+	default:
+		t.Fatal("the stream must be closed")
+	}
+}

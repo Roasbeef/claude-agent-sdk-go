@@ -1622,9 +1622,20 @@ func (s *Stream) InitializationResult() (*SDKControlInitializeResponse, error) {
 // control requests the loop is still blocked on; the SDK dedupes in-flight
 // request_ids, but callbacks should be idempotent per request_id since a
 // request whose response was lost in the gap is dispatched again.
+//
+// With a HookConfig set to HookOnFailureBlock it fails with
+// *ErrHookBlockNotHonored when the reply does not say the CLI honors it,
+// and closes the client and this stream the way the TS SDK tears its query
+// down: carrying on would run with block hooks that do not block. Messages
+// then ends without an error of its own.
 func (s *Stream) Reinitialize(ctx context.Context) (*SDKControlInitializeResponse, error) {
 	initResp, err := s.client.protocol.Reinitialize(ctx)
 	if err != nil {
+		var notHonored *ErrHookBlockNotHonored
+		if errors.As(err, &notHonored) {
+			_ = s.Close()
+			_ = s.client.Close()
+		}
 		return nil, err
 	}
 	if initResp == nil {
