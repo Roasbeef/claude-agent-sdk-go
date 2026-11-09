@@ -1625,13 +1625,15 @@ func (s *Stream) InitializationResult() (*SDKControlInitializeResponse, error) {
 //
 // With a HookConfig set to HookOnFailureBlock it fails with
 // *ErrHookBlockNotHonored when the reply does not say the CLI honors it,
-// and closes the client the way the TS SDK tears its query down: carrying
-// on would run with block hooks that do not block.
+// and closes the client and this stream the way the TS SDK tears its query
+// down: carrying on would run with block hooks that do not block. Messages
+// then ends without an error of its own.
 func (s *Stream) Reinitialize(ctx context.Context) (*SDKControlInitializeResponse, error) {
 	initResp, err := s.client.protocol.Reinitialize(ctx)
 	if err != nil {
 		var notHonored *ErrHookBlockNotHonored
 		if errors.As(err, &notHonored) {
+			_ = s.Close()
 			_ = s.client.Close()
 		}
 		return nil, err
