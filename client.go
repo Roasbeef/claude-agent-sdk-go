@@ -1624,11 +1624,16 @@ func (s *Stream) InitializationResult() (*SDKControlInitializeResponse, error) {
 // request whose response was lost in the gap is dispatched again.
 //
 // With a HookConfig set to HookOnFailureBlock it fails with
-// *ErrHookBlockNotHonored when the reply does not say the CLI honors it;
-// the stream is left open, so close it rather than carry on.
+// *ErrHookBlockNotHonored when the reply does not say the CLI honors it,
+// and closes the client the way the TS SDK tears its query down: carrying
+// on would run with block hooks that do not block.
 func (s *Stream) Reinitialize(ctx context.Context) (*SDKControlInitializeResponse, error) {
 	initResp, err := s.client.protocol.Reinitialize(ctx)
 	if err != nil {
+		var notHonored *ErrHookBlockNotHonored
+		if errors.As(err, &notHonored) {
+			_ = s.client.Close()
+		}
 		return nil, err
 	}
 	if initResp == nil {

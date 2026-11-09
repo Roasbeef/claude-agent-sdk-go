@@ -2942,8 +2942,14 @@ type HookConfig struct {
 	// to block would let the action run. With any matcher set to block,
 	// Connect therefore fails with *ErrHookBlockNotHonored unless the
 	// initialize reply says the CLI honors it, and also when the session was
-	// already running and did not register these hooks. The first prompt is
-	// only sent after Connect returns (sdk.d.ts v0.3.319 L1025, L4838).
+	// already running and did not register these hooks (Stream.Reinitialize
+	// checks only the first). The first prompt is only sent after Connect
+	// returns. Client.Query swallows a Connect error and yields nothing, so
+	// call Connect or Stream to see the refusal (sdk.d.ts v0.3.319 L1025,
+	// L4838).
+	//
+	// SettingsHook.OnFailure is the same policy for command and http hooks
+	// in settings; this one is for SDK callbacks.
 	OnFailure HookOnFailure
 }
 
