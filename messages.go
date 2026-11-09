@@ -1206,8 +1206,8 @@ type SDKControlRequestBody struct {
 	Mode              string                   `json:"mode,omitempty"`                // For set_permission_mode
 	Model             string                   `json:"model,omitempty"`               // For set_model
 	MaxThinkingTokens *MaxThinkingTokensValue  `json:"max_thinking_tokens,omitempty"` // For set_max_thinking_tokens
-	HasSubscribers    *HasSubscribersValue     `json:"has_subscribers,omitempty"`     // For set_has_subscribers
 	ThinkingDisplay   *ThinkingDisplayOverride `json:"thinking_display,omitempty"`    // For set_max_thinking_tokens
+	HasSubscribers    *HasSubscribersValue     `json:"has_subscribers,omitempty"`     // For set_has_subscribers
 	Directory         string                   `json:"directory,omitempty"`           // For register_repo_root
 	ReloadClaudeMD    *bool                    `json:"reload_claude_md,omitempty"`    // For register_repo_root
 	ReloadPlugins     *bool                    `json:"reload_plugins,omitempty"`      // For register_repo_root
