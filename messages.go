@@ -1117,6 +1117,35 @@ func (v *MaxThinkingTokensValue) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// HasSubscribersValue is the set_has_subscribers answer. The key is required
+// on the wire, so a nil Watched marshals as an explicit null: the host does
+// not know, which the CLI counts as watched (sdk.d.ts v0.3.319 L5387).
+type HasSubscribersValue struct {
+	Watched *bool
+}
+
+// MarshalJSON implements json.Marshaler.
+func (v HasSubscribersValue) MarshalJSON() ([]byte, error) {
+	if v.Watched == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(*v.Watched)
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (v *HasSubscribersValue) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		v.Watched = nil
+		return nil
+	}
+	var watched bool
+	if err := json.Unmarshal(data, &watched); err != nil {
+		return err
+	}
+	v.Watched = &watched
+	return nil
+}
+
 // SDKMCPServerConfig carries per-server settings for an in-process MCP server
 // named in SDKControlRequestBody.SDKMCPServers. The name list stays a bare
 // []string; this map sits beside it and is keyed by the same names
@@ -1178,6 +1207,7 @@ type SDKControlRequestBody struct {
 	Model             string                   `json:"model,omitempty"`               // For set_model
 	MaxThinkingTokens *MaxThinkingTokensValue  `json:"max_thinking_tokens,omitempty"` // For set_max_thinking_tokens
 	ThinkingDisplay   *ThinkingDisplayOverride `json:"thinking_display,omitempty"`    // For set_max_thinking_tokens
+	HasSubscribers    *HasSubscribersValue     `json:"has_subscribers,omitempty"`     // For set_has_subscribers
 	Directory         string                   `json:"directory,omitempty"`           // For register_repo_root
 	ReloadClaudeMD    *bool                    `json:"reload_claude_md,omitempty"`    // For register_repo_root
 	ReloadPlugins     *bool                    `json:"reload_plugins,omitempty"`      // For register_repo_root
