@@ -538,7 +538,22 @@ type Settings struct {
 	Worktree                   *SettingsWorktree                `json:"worktree,omitempty"`
 	DisableAllHooks            *bool                            `json:"disableAllHooks,omitempty"`
 	DisableSkillShellExecution *bool                            `json:"disableSkillShellExecution,omitempty"`
-	DefaultShell               string                           `json:"defaultShell,omitempty"`
+	// DisableReplyCheck turns off the check that re-prompts Claude (at most
+	// four times a turn) when a Claude Tag turn on a self-hosted runner ends
+	// without calling a reply tool, along with the service-requested
+	// progress nudge and prompt reminder for such sessions, and stops
+	// holding back Claude Code's built-in progress-update reminder. It is
+	// not a hook, so DisableAllHooks does not touch it. Honored only from
+	// managed settings, where an explicit false keeps the check on; has no
+	// effect on sessions Anthropic hosts (sdk.d.ts v0.3.319 L7715).
+	DisableReplyCheck *bool `json:"disableReplyCheck,omitempty"`
+	// DisableWindowsBashCommandSplit, on Windows, keeps every Bash command in
+	// a single argument to bash so endpoint security tools matching process
+	// command lines see it whole. A command of about 7,000 characters or
+	// more (fewer if full of quotes) may then reach bash cut short. Honored
+	// only from managed settings (sdk.d.ts v0.3.319 L7755).
+	DisableWindowsBashCommandSplit *bool  `json:"disableWindowsBashCommandSplit,omitempty"`
+	DefaultShell                   string `json:"defaultShell,omitempty"`
 	// BashEditDiffEnabled controls whether the Bash tool shows a diff of the
 	// files a Bash command changed; PostToolUse Bash hooks then get the
 	// changed-file list in tool_response. Defaults to off, except in auto
@@ -1109,8 +1124,33 @@ type SettingsPermissions struct {
 	// DisableAutoMode set to "disable" turns off auto mode, like
 	// DisableBypassPermissionsMode does for bypass (sdk.d.ts v0.3.316
 	// L7204).
-	DisableAutoMode string                 `json:"disableAutoMode,omitempty"`
-	Extra           map[string]interface{} `json:"-"`
+	DisableAutoMode string `json:"disableAutoMode,omitempty"`
+	// WorkingDirectoriesAsGiven lists absolute working-directory paths
+	// (the session folder, --add-dir, AdditionalDirectories) spelled
+	// exactly as passed, letter case included, that Claude Code takes as
+	// written when deciding what lies inside them: it follows no link at
+	// the listed path, so list real paths. It adds no working directory and
+	// allows nothing, and a listed path stays listed until the process
+	// ends. Entries that are not already normalized (relative, starting
+	// with ~, with a ".." segment, a trailing separator other than a root,
+	// forward slashes on Windows, surrounding white space) are ignored. Only
+	// read from --settings (see WithSettings) and settings the host sends
+	// while the session runs; ignored in user, project, local and managed
+	// settings (sdk.d.ts v0.3.319 L7322).
+	WorkingDirectoriesAsGiven []string `json:"workingDirectoriesAsGiven,omitempty"`
+	// DenyInsteadOfPrompting denies at once any tool call that would
+	// prompt a person, tells the model, and lets the turn carry on: what
+	// --permission-prompts none does for -p, in every kind of session.
+	// Allow rules, the permission mode, auto mode's classifier and
+	// PermissionRequest hooks still decide first; it only ever denies.
+	// Claude's questions and plan mode's tools are not offered, and an MCP
+	// elicitation is cancelled unless an Elicitation hook answers it. A
+	// CanUseTool callback or permission prompt tool is not asked either, so
+	// answer from a PermissionRequest hook instead. Read from user settings,
+	// --settings and managed settings; true in any of them wins (sdk.d.ts
+	// v0.3.319 L7330).
+	DenyInsteadOfPrompting *bool                  `json:"denyInsteadOfPrompting,omitempty"`
+	Extra                  map[string]interface{} `json:"-"`
 }
 
 func (p SettingsPermissions) MarshalJSON() ([]byte, error) {
@@ -2922,12 +2962,45 @@ const (
 	HookTypeWorktreeRemove HookType = "WorktreeRemove"
 )
 
+// HookOnFailure is the HookConfig.OnFailure policy.
+type HookOnFailure string
+
+const (
+	// HookOnFailureContinue reports a failed callback in a warning and lets
+	// the action go ahead. It is the CLI's default.
+	HookOnFailureContinue HookOnFailure = "continue"
+
+	// HookOnFailureBlock treats a failed callback as a block, as a command
+	// hook's exit code 2 is.
+	HookOnFailureBlock HookOnFailure = "block"
+)
+
 // HookConfig defines a lifecycle callback.
 type HookConfig struct {
 	Type     HookType     // Hook event type
 	Matcher  string       // Glob pattern for tool names (e.g., "*", "fetch_*")
 	Timeout  int          // Optional timeout in seconds; 0 = use default
 	Callback HookCallback // Callback function
+
+	// OnFailure decides what a failure of Callback does: it returns an
+	// error, or a result the CLI rejects. Empty leaves the CLI default,
+	// HookOnFailureContinue. HookOnFailureBlock blocks the action the event
+	// guards (a tool call, a permission request, a prompt). The CLI ignores
+	// it on Stop, SubagentStop, TaskCompleted and TeammateIdle.
+	//
+	// A CLI that predates the option ignores it, so a failing callback set
+	// to block would let the action run. With any matcher set to block,
+	// Connect therefore fails with *ErrHookBlockNotHonored unless the
+	// initialize reply says the CLI honors it, and also when the session was
+	// already running and did not register these hooks (Stream.Reinitialize
+	// checks only the first). The first prompt is only sent after Connect
+	// returns. Client.Query swallows a Connect error and yields nothing, so
+	// call Connect or Stream to see the refusal (sdk.d.ts v0.3.319 L1025,
+	// L4838).
+	//
+	// SettingsHook.OnFailure is the same policy for command and http hooks
+	// in settings; this one is for SDK callbacks.
+	OnFailure HookOnFailure
 }
 
 // HookCallback is invoked when a hook event fires.

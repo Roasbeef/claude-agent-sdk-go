@@ -561,11 +561,26 @@ type ResultMessage struct {
 	// stream-json run writes before exiting on a KNOWN startup failure;
 	// Errors carries the failure message. Failures that otherwise end with
 	// stderr alone write that result at all only when the host sets
-	// CLAUDE_CODE_STARTUP_FAILURE_RESULTS. Absent on every other result, on
-	// startup failures with no recognized cause, and from producers older
-	// than v0.3.278 — so empty means "no machine-readable cause", never
-	// "started fine" (sdk.d.ts v0.3.316 L5989).
+	// CLAUDE_CODE_STARTUP_FAILURE_RESULTS, except org_config_required_unavailable,
+	// org_config_refused and config_file_invalid, which every stream-json run
+	// writes. Absent on every other result, on startup failures with no
+	// recognized cause, and from producers older than v0.3.278 — so empty
+	// means "no machine-readable cause", never "started fine" (sdk.d.ts
+	// v0.3.319 L6053).
 	StartupFailureReason StartupFailureReason `json:"startup_failure_reason,omitempty"`
+
+	// CredentialExpiresAt is when the claude.ai credential this process's
+	// requests send ends for good, as an ISO 8601 instant read as the result
+	// is written. For a stored claude.ai login it is the end of the refresh
+	// chain as stored at sign-in, which renewing the access token does not
+	// move: the server's date when it sent one, else a 30-day estimate, and
+	// the real end can be up to 3 days earlier. The server is not asked, so
+	// a login revoked early still shows its date, and a past date means the
+	// login has probably ended, not that it has. Empty when no date is known,
+	// for every other credential (an API key, a token from the environment,
+	// another provider), on results this process did not number, and from
+	// older producers (sdk.d.ts v0.3.319 L6081, L6206).
+	CredentialExpiresAt string `json:"credential_expires_at,omitempty"`
 
 	DurationMs    int64 `json:"duration_ms,omitempty"`     // Total duration in milliseconds
 	DurationAPIMs int64 `json:"duration_api_ms,omitempty"` // API call duration in milliseconds
@@ -827,6 +842,18 @@ const (
 	// make the sandbox available or have the requirement changed
 	// (sdk.d.ts v0.3.316 L6211).
 	StartupFailureSandboxRequiredUnavailable StartupFailureReason = "sandbox_required_unavailable"
+	// StartupFailureInitializeNotFirst means Claude Code was started with
+	// --await-initialize and its first stdin line was not the initialize
+	// control request. The host or a wrapper script between it and Claude
+	// Code wrote or changed that line; the fix is there, not a retry
+	// (sdk.d.ts v0.3.319 L6312).
+	StartupFailureInitializeNotFirst StartupFailureReason = "initialize_not_first"
+	// StartupFailureConfigFileInvalid means a configuration file read at
+	// start-up is not valid JSON; Errors names the file and, for the global
+	// one, how to restore or repair it. The file is left unchanged and every
+	// start without a terminal is refused until it is repaired, so a retry
+	// alone does not help (sdk.d.ts v0.3.319 L6312).
+	StartupFailureConfigFileInvalid StartupFailureReason = "config_file_invalid"
 )
 
 // MessageType implements Message.
@@ -1117,6 +1144,35 @@ func (v *MaxThinkingTokensValue) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// HasSubscribersValue is the set_has_subscribers answer. The key is required
+// on the wire, so a nil Watched marshals as an explicit null: the host does
+// not know, which the CLI counts as watched (sdk.d.ts v0.3.319 L5387).
+type HasSubscribersValue struct {
+	Watched *bool
+}
+
+// MarshalJSON implements json.Marshaler.
+func (v HasSubscribersValue) MarshalJSON() ([]byte, error) {
+	if v.Watched == nil {
+		return []byte("null"), nil
+	}
+	return json.Marshal(*v.Watched)
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (v *HasSubscribersValue) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		v.Watched = nil
+		return nil
+	}
+	var watched bool
+	if err := json.Unmarshal(data, &watched); err != nil {
+		return err
+	}
+	v.Watched = &watched
+	return nil
+}
+
 // SDKMCPServerConfig carries per-server settings for an in-process MCP server
 // named in SDKControlRequestBody.SDKMCPServers. The name list stays a bare
 // []string; this map sits beside it and is keyed by the same names
@@ -1178,6 +1234,7 @@ type SDKControlRequestBody struct {
 	Model             string                   `json:"model,omitempty"`               // For set_model
 	MaxThinkingTokens *MaxThinkingTokensValue  `json:"max_thinking_tokens,omitempty"` // For set_max_thinking_tokens
 	ThinkingDisplay   *ThinkingDisplayOverride `json:"thinking_display,omitempty"`    // For set_max_thinking_tokens
+	HasSubscribers    *HasSubscribersValue     `json:"has_subscribers,omitempty"`     // For set_has_subscribers
 	Directory         string                   `json:"directory,omitempty"`           // For register_repo_root
 	ReloadClaudeMD    *bool                    `json:"reload_claude_md,omitempty"`    // For register_repo_root
 	ReloadPlugins     *bool                    `json:"reload_plugins,omitempty"`      // For register_repo_root
@@ -1215,6 +1272,9 @@ type SDKHookCallbackMatcher struct {
 	Matcher         string   `json:"matcher,omitempty"`
 	HookCallbackIDs []string `json:"hookCallbackIds"`
 	Timeout         int      `json:"timeout,omitempty"` // Timeout in seconds
+	// OnFailure is HookConfig.OnFailure on the wire (sdk.d.ts v0.3.319
+	// L5514).
+	OnFailure HookOnFailure `json:"onFailure,omitempty"`
 }
 
 // MessageType implements Message.
@@ -2663,6 +2723,67 @@ type WorkerShuttingDownMessage struct {
 // MessageType implements Message.
 func (m WorkerShuttingDownMessage) MessageType() string { return "system" }
 
+// SessionWritesLostErrorCode says why SessionWritesLostMessage writes failed.
+// The set is open: more codes may be added.
+type SessionWritesLostErrorCode string
+
+const (
+	// SessionWritesLostENOSPC means the disk was full.
+	SessionWritesLostENOSPC SessionWritesLostErrorCode = "ENOSPC"
+
+	// SessionWritesLostEDQUOT means the disk quota was used up.
+	SessionWritesLostEDQUOT SessionWritesLostErrorCode = "EDQUOT"
+)
+
+// SessionWritesLostKind names what SessionWritesLostMessage says was not
+// saved. The set is open: more values may be added.
+type SessionWritesLostKind string
+
+const (
+	// SessionWritesLostTranscript means lines of a session transcript were
+	// lost, so resuming a session in TranscriptSessionIDs may miss part of
+	// its conversation.
+	SessionWritesLostTranscript SessionWritesLostKind = "transcript"
+
+	// SessionWritesLostGlobalConfig means changes this run made to
+	// ~/.claude.json were lost.
+	SessionWritesLostGlobalConfig SessionWritesLostKind = "global_config"
+)
+
+// SessionWritesLostMessage reports that the CLI could not save transcript
+// lines, ~/.claude.json changes, or both, because the disk was full or over
+// quota. It is sent at most once, as the CLI exits with status 0, after the
+// last result if there was one, so a consumer that stops reading at the
+// ResultMessage never sees it. A run that exits 1 reports the loss on stderr
+// only, though CLI 2.1.317 and some later releases sent this message there
+// too, so it can follow an error result. Never sent under --sdk-url or a
+// Claude Desktop entrypoint. The results already received stand; this is
+// safe to ignore (sdk.d.ts v0.3.319 L6272).
+type SessionWritesLostMessage struct {
+	Type    string `json:"type"`    // Always "system"
+	Subtype string `json:"subtype"` // "session_writes_lost"
+
+	// ErrorCode says why the writes failed. When both kinds were lost for
+	// different reasons, it is the transcript's.
+	ErrorCode SessionWritesLostErrorCode `json:"error_code"`
+
+	// Lost says what was not saved. Never empty.
+	Lost []SessionWritesLostKind `json:"lost"`
+
+	// TranscriptSessionIDs lists the sessions whose transcripts lost lines,
+	// in the order each first lost one. Present only when Lost has
+	// SessionWritesLostTranscript. Usually SessionID alone, but after a new
+	// session started (as /clear does) it lists the earlier one, and lists
+	// SessionID only if that session lost lines too.
+	TranscriptSessionIDs []string `json:"transcript_session_ids,omitempty"`
+
+	UUID      string `json:"uuid"`       // Unique message ID
+	SessionID string `json:"session_id"` // Session the CLI is in
+}
+
+// MessageType implements Message.
+func (m SessionWritesLostMessage) MessageType() string { return "system" }
+
 // InformationalLevel is the render level of an InformationalMessage.
 type InformationalLevel string
 
@@ -2996,6 +3117,10 @@ func ParseMessage(data []byte) (Message, error) {
 			return msg, err
 		case "worker_shutting_down":
 			var msg WorkerShuttingDownMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "session_writes_lost":
+			var msg SessionWritesLostMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
 		default:
