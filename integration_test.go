@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"os"
@@ -2244,6 +2245,36 @@ func TestIntegrationStreamFileAndRuntime(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, binaryBytes, decoded)
 		assert.Equal(t, filepath.Clean(binaryPath), filepath.Clean(got.AbsPath))
+	})
+
+	// v0.3.319 marks a utf-8 answer lossy when the bytes were not valid
+	// UTF-8 (sdk.d.ts L5185). Older CLIs omit the flag.
+	t.Run("read_file_lossy", func(t *testing.T) {
+		stream, markerPath := newFileStream(t)
+		dir := filepath.Dir(markerPath)
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "marker.bin"),
+			[]byte{'h', 'i', 0xFF, 0xFE}, 0o644))
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		text, err := stream.ReadFile(ctx, "marker.txt", &ReadFileOptions{})
+		require.NoError(t, err)
+		if text.Lossy == nil {
+			t.Skip("CLI predates the read_file lossy flag")
+		}
+		assert.False(t, *text.Lossy, "valid UTF-8 must read as exact")
+
+		bin, err := stream.ReadFile(ctx, "marker.bin", &ReadFileOptions{})
+		require.NoError(t, err)
+		require.NotNil(t, bin.Lossy)
+		assert.True(t, *bin.Lossy, "invalid UTF-8 must read as lossy")
+
+		b64, err := stream.ReadFile(ctx, "marker.bin", &ReadFileOptions{
+			Encoding: "base64",
+		})
+		require.NoError(t, err)
+		assert.Nil(t, b64.Lossy, "a base64 answer is exact and carries no flag")
 	})
 
 	t.Run("seed_read_state", func(t *testing.T) {
@@ -5669,6 +5700,52 @@ func TestIntegrationStartupFailureReason(t *testing.T) {
 		"errors should carry the same text as stderr")
 }
 
+// TestIntegrationStartupFailureConfigFileInvalid corrupts the global config
+// file and checks the CLI refuses to start with config_file_invalid. Unlike
+// cwd_unavailable this cause writes its result on every stream-json run,
+// so no CLAUDE_CODE_STARTUP_FAILURE_RESULTS (sdk.d.ts v0.3.319 L6053).
+func TestIntegrationStartupFailureConfigFileInvalid(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, "2.1.319")
+
+	configDir := filepath.Join(t.TempDir(), ".claude")
+	require.NoError(t, os.MkdirAll(configDir, 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(configDir, ".claude.json"), []byte("{not json"), 0o600,
+	))
+
+	opts := append(isolatedClientOptions(t),
+		WithConfigDir(configDir),
+		WithMaxTurns(1),
+		WithStderr(func(data string) { t.Logf("CLI stderr: %s", data) }),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	// The CLI exits at once, but Connect waits out ctx for an initialize
+	// reply that never comes (#289), so keep this short.
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	var result *ResultMessage
+	for msg := range client.Query(ctx, "say ok") {
+		if m, ok := msg.(ResultMessage); ok {
+			result = &m
+			t.Logf("result: subtype=%s reason=%q errors=%v",
+				m.Subtype, m.StartupFailureReason, m.Errors)
+		}
+	}
+
+	// CLI 2.1.319 does write the frame, but it lands before the initialize
+	// reply and Connect drops it (#289).
+	if result == nil {
+		t.Skip("startup-failure result frame dropped before Connect returns (#289)")
+	}
+	assert.Equal(t, StartupFailureConfigFileInvalid, result.StartupFailureReason)
+	assert.NotEmpty(t, result.Errors, "errors should name the file")
+}
+
 // TestIntegrationAssistantUsageReport drives /usage against the live CLI and
 // checks the structured sibling on the assistant message carrying the text.
 //
@@ -6488,6 +6565,156 @@ func TestIntegrationStreamSendMessage(t *testing.T) {
 	composed := result()
 	assert.Empty(t, composed.LocalCommand,
 		"a client_composed message must not dispatch a slash command")
+}
+
+// TestIntegrationHookOnFailureGate checks that Connect enforces the
+// onFailure gate against the real CLI: a block hook connects only when the
+// initialize reply says hook_on_failure_supported, and fails with
+// ErrHookBlockNotHonored otherwise (sdk.d.ts v0.3.319 L1025, L4838).
+func TestIntegrationHookOnFailureGate(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	callback := func(ctx context.Context, input HookInput) (HookResult, error) {
+		return HookResult{Continue: true}, nil
+	}
+	connect := func(policy HookOnFailure) (*SDKControlInitializeResponse, error) {
+		opts := append(isolatedClientOptions(t),
+			WithMaxTurns(1),
+			WithHooks(map[HookType][]HookConfig{
+				HookTypePreToolUse: {
+					{Matcher: "*", Callback: callback, OnFailure: policy},
+				},
+			}),
+		)
+		client, err := NewClient(opts...)
+		require.NoError(t, err)
+		defer client.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		stream, err := client.Stream(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer stream.Close()
+		return stream.InitializationResult()
+	}
+
+	// Continue needs nothing from the CLI, so it shows what this build
+	// reports without the gate in the way.
+	probe, err := connect(HookOnFailureContinue)
+	require.NoError(t, err)
+
+	_, err = connect(HookOnFailureBlock)
+	if probe.HookOnFailureSupported == nil || !*probe.HookOnFailureSupported {
+		var notHonored *ErrHookBlockNotHonored
+		require.ErrorAs(t, err, &notHonored,
+			"a CLI that does not honor onFailure must be refused")
+		assert.False(t, notHonored.HooksNotApplied)
+		return
+	}
+	require.NoError(t, err)
+}
+
+// TestIntegrationHookOnFailureBlock checks that a PreToolUse callback set to
+// HookOnFailureBlock stops the tool when it fails: the Bash command it
+// guards must not run.
+func TestIntegrationHookOnFailureBlock(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "ran.txt")
+
+	var called atomic.Bool
+	failing := func(ctx context.Context, input HookInput) (HookResult, error) {
+		called.Store(true)
+		return HookResult{}, errors.New("hook callback failed on purpose")
+	}
+
+	opts := append(isolatedClientOptions(t),
+		WithCwd(dir),
+		WithSystemPrompt(
+			"You are a helpful assistant. When asked to run a shell command, "+
+				"use Bash immediately and do not describe it first. If the "+
+				"command is blocked, reply BLOCKED and stop.",
+		),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(2),
+		WithHooks(map[HookType][]HookConfig{
+			HookTypePreToolUse: {
+				{
+					Matcher:   "Bash",
+					Callback:  failing,
+					OnFailure: HookOnFailureBlock,
+				},
+			},
+		}),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	var notHonored *ErrHookBlockNotHonored
+	if errors.As(err, &notHonored) {
+		t.Skip("CLI predates onFailure on hook matchers")
+	}
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx,
+		"Run the Bash command `echo ran > ran.txt`.",
+	))
+	for msg := range stream.Messages() {
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+
+	require.True(t, called.Load(), "the PreToolUse callback never fired")
+	assert.NoFileExists(t, marker,
+		"a failing block hook must stop the command it guards")
+}
+
+func TestIntegrationSessionWritesLost(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	t.Skip("not triggerable from CLI: session_writes_lost needs a transcript or ~/.claude.json write to fail with ENOSPC/EDQUOT on a run that still exits 0; a /dev/full symlink at the transcript path trips --session-id's in-use check instead, and the runner cannot mount a full filesystem; tracked in INTEGRATION-FOLLOWUPS.md")
+}
+
+// TestIntegrationSetHasSubscribers sends every set_has_subscribers answer to
+// the live CLI. The hold it tunes is only observable under the
+// CLAUDE_CODE_STREAM_EVENT_* env vars, so this pins that the CLI accepts
+// false, true and the explicit null (sdk.d.ts v0.3.319 L5380).
+func TestIntegrationSetHasSubscribers(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	client, err := NewClient(isolatedClientOptions(t)...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	err = stream.SetHasSubscribers(ctx, boolPtr(false))
+	if err != nil && strings.Contains(err.Error(), "Unsupported control request subtype") {
+		t.Skip("CLI predates set_has_subscribers")
+	}
+	require.NoError(t, err)
+	require.NoError(t, stream.SetHasSubscribers(ctx, boolPtr(true)))
+	require.NoError(t, stream.SetHasSubscribers(ctx, nil))
 }
 
 // TestIntegrationSettingsParityV0_3_319 sends the v0.3.319 permissions keys

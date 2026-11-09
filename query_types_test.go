@@ -66,6 +66,46 @@ func TestSDKControlInitializeResponseHooksAppliedOmitEmpty(t *testing.T) {
 	assert.NotContains(t, raw, "hooks_applied")
 }
 
+// TestSDKControlInitializeResponseHookOnFailureSupported covers the field
+// v0.3.319 adds to the initialize reply (sdk.d.ts L4838). Absent and false
+// both mean onFailure is not honored, but only absent is what older CLIs
+// send, so the pointer keeps them apart.
+func TestSDKControlInitializeResponseHookOnFailureSupported(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want *bool
+	}{
+		{
+			name: "true from a CLI that honors onFailure",
+			body: `{"hook_on_failure_supported": true}`,
+			want: boolPtr(true),
+		},
+		{
+			name: "false",
+			body: `{"hook_on_failure_supported": false}`,
+			want: boolPtr(false),
+		},
+		{
+			name: "nil when absent",
+			body: `{}`,
+			want: nil,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var resp SDKControlInitializeResponse
+			require.NoError(t, json.Unmarshal([]byte(tc.body), &resp))
+			assert.Equal(t, tc.want, resp.HookOnFailureSupported)
+		})
+	}
+
+	data, err := json.Marshal(SDKControlInitializeResponse{})
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "hook_on_failure_supported")
+}
+
 // TestMcpServerStatusSource covers the source field v0.3.278 adds to the
 // mcp_status rows (sdk.d.ts L1197). It is the reporting-side twin of the
 // provenance carried on permission and hook payloads.

@@ -355,6 +355,39 @@ func TestStreamSetMaxThinkingTokensRoundTrip(t *testing.T) {
 	}
 }
 
+func TestStreamSetHasSubscribersRoundTrip(t *testing.T) {
+	// has_subscribers is required upstream, so "don't know" has to go out
+	// as an explicit null rather than a missing key.
+	tests := []struct {
+		name  string
+		value *bool
+		want  interface{}
+	}{
+		{name: "nil sends null", value: nil, want: nil},
+		{name: "false present", value: boolPtr(false), want: false},
+		{name: "true present", value: boolPtr(true), want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+			err := callWithTimeout(t, func(ctx context.Context) error {
+				return stream.SetHasSubscribers(ctx, tt.value)
+			})
+			require.NoError(t, err)
+
+			_, generic := decodeWrittenSDKControlRequest(t, transport)
+			body := genericRequestBody(t, generic)
+			assert.Equal(t, "set_has_subscribers", body["subtype"])
+
+			got, ok := body["has_subscribers"]
+			require.True(t, ok, "has_subscribers should be present")
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestStreamSetMaxThinkingTokensThinkingDisplay(t *testing.T) {
 	t.Run("omitted when no option", func(t *testing.T) {
 		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
@@ -595,4 +628,36 @@ func TestStreamSendMessageAfterClose(t *testing.T) {
 	err := stream.SendMessage(context.Background(), UserMessage{})
 	var closed *ErrTransportClosed
 	assert.ErrorAs(t, err, &closed)
+}
+
+// TestStreamReinitializeRefusesBlockHooksAndCloses pins that a Reinitialize
+// whose reply drops hook_on_failure_supported tears the client down, as TS
+// cleanup does, instead of leaving a session with block hooks that would
+// not block.
+func TestStreamReinitializeRefusesBlockHooksAndCloses(t *testing.T) {
+	stream, _, protocol := newStreamControlTest(successSDKControlResponse)
+	protocol.options.Hooks = map[HookType][]HookConfig{
+		HookTypePreToolUse: {{
+			Matcher:   "*",
+			OnFailure: HookOnFailureBlock,
+			Callback: func(ctx context.Context, input HookInput) (HookResult, error) {
+				return HookResult{Continue: true}, nil
+			},
+		}},
+	}
+	stream.client.connected = true
+
+	err := callWithTimeout(t, func(ctx context.Context) error {
+		_, err := stream.Reinitialize(ctx)
+		return err
+	})
+
+	var notHonored *ErrHookBlockNotHonored
+	require.ErrorAs(t, err, &notHonored)
+	assert.False(t, stream.client.connected, "the client must be closed")
+	select {
+	case <-stream.closeCh:
+	default:
+		t.Fatal("the stream must be closed")
+	}
 }

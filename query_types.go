@@ -78,6 +78,12 @@ type SDKControlInitializeResponse struct {
 	// registered, and its own callbacks will never fire (sdk.d.ts v0.3.241
 	// L3752).
 	HooksApplied *bool `json:"hooks_applied,omitempty"`
+	// HookOnFailureSupported is true on every initialize reply from a CLI
+	// that honors HookConfig.OnFailure. Nil from CLIs that predate the
+	// option, which ignore it, and from responders that do not run the
+	// host's hooks. It says nothing about this request's hooks; HooksApplied
+	// does (sdk.d.ts v0.3.319 L4838).
+	HookOnFailureSupported *bool `json:"hook_on_failure_supported,omitempty"`
 	// PluginsApplied reports whether every plugin this initialize listed is
 	// loaded in the process: true when each one is among the plugins loaded at
 	// launch, whether they arrived through PluginDeliveryInitialize under
@@ -257,6 +263,15 @@ type SDKControlReadFileResponse struct {
 	// Encoding is set to "base64" when the CLI honored a base64 request.
 	// Empty string means utf-8, including when older CLIs ignore the request.
 	Encoding string `json:"encoding,omitempty"`
+	// Lossy is set on every utf-8 answer from a current CLI: true when the
+	// bytes read were not all valid UTF-8, so Contents has U+FFFD in place of
+	// replaced bytes and is not the file's own text (a binary file, another
+	// encoding, or a cut inside a character when Truncated is set); false
+	// when Contents is exactly the bytes read, even if the file itself
+	// contains U+FFFD. Nil on a base64 answer, which is exact, and from an
+	// older CLI or tool container, in which case a utf-8 answer may or may
+	// not be exact (sdk.d.ts v0.3.319 L5185).
+	Lossy *bool `json:"lossy,omitempty"`
 }
 
 // SDKControlReloadPluginsResponse reports refreshed session components.
