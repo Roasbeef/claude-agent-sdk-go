@@ -169,6 +169,52 @@ func TestStreamReadFileNoOpts(t *testing.T) {
 	})
 }
 
+// TestStreamReadFileLossy covers the v0.3.319 lossy flag (sdk.d.ts L5185).
+// Absent has to stay distinguishable from false: only a current CLI's
+// false says the utf-8 contents are exact.
+func TestStreamReadFileLossy(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload map[string]interface{}
+		want    *bool
+	}{
+		{
+			name:    "true",
+			payload: map[string]interface{}{"lossy": true},
+			want:    boolPtr(true),
+		},
+		{
+			name:    "false",
+			payload: map[string]interface{}{"lossy": false},
+			want:    boolPtr(false),
+		},
+		{
+			name:    "absent",
+			payload: map[string]interface{}{},
+			want:    nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tt.payload["contents"] = "x"
+			tt.payload["absPath"] = "/tmp/x"
+			stream, _, _ := newStreamControlTest(
+				successSDKControlResponseWithPayload(tt.payload),
+			)
+
+			var got *SDKControlReadFileResponse
+			err := callWithTimeout(t, func(ctx context.Context) error {
+				var err error
+				got, err = stream.ReadFile(ctx, "x", nil)
+				return err
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got.Lossy)
+		})
+	}
+}
+
 func TestStreamReadFileWithMaxBytes(t *testing.T) {
 	stream, transport, _ := newStreamControlTest(
 		successSDKControlResponseWithPayload(map[string]interface{}{}),

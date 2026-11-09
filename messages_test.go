@@ -6212,13 +6212,16 @@ func TestSystemMessageMCPServerSource(t *testing.T) {
 }
 
 // TestResultStartupFailureReasonOrgConfig covers the StartupFailureReason
-// values added after v0.3.278: org_config_* (v0.3.296) and
-// sandbox_required_unavailable (v0.3.316).
+// values added after v0.3.278: org_config_* (v0.3.296),
+// sandbox_required_unavailable (v0.3.316), and initialize_not_first /
+// config_file_invalid (v0.3.319).
 func TestResultStartupFailureReasonOrgConfig(t *testing.T) {
 	for _, reason := range []StartupFailureReason{
 		StartupFailureOrgConfigRequiredUnavailable,
 		StartupFailureOrgConfigRefused,
 		StartupFailureSandboxRequiredUnavailable,
+		StartupFailureInitializeNotFirst,
+		StartupFailureConfigFileInvalid,
 	} {
 		raw := []byte(`{"type":"result","subtype":"error_during_execution",` +
 			`"session_id":"s","uuid":"u","is_error":true,` +
@@ -6231,6 +6234,29 @@ func TestResultStartupFailureReasonOrgConfig(t *testing.T) {
 		require.True(t, ok)
 		assert.Equal(t, reason, res.StartupFailureReason)
 	}
+}
+
+// TestResultCredentialExpiresAt covers credential_expires_at, which v0.3.319
+// adds to both success and error results (sdk.d.ts L6081, L6206).
+func TestResultCredentialExpiresAt(t *testing.T) {
+	for _, subtype := range []string{"success", "error_during_execution"} {
+		t.Run(subtype, func(t *testing.T) {
+			raw := []byte(`{"type":"result","subtype":"` + subtype + `",` +
+				`"session_id":"s","uuid":"u","duration_ms":1,"num_turns":1,` +
+				`"total_cost_usd":0,` +
+				`"credential_expires_at":"2026-12-09T17:07:00.000Z"}`)
+
+			msg, err := ParseMessage(raw)
+			require.NoError(t, err)
+			res, ok := msg.(ResultMessage)
+			require.True(t, ok)
+			assert.Equal(t, "2026-12-09T17:07:00.000Z", res.CredentialExpiresAt)
+		})
+	}
+
+	data, err := json.Marshal(ResultMessage{Type: "result"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "credential_expires_at")
 }
 
 func TestResultStartupFailureReason(t *testing.T) {

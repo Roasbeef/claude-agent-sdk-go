@@ -561,11 +561,26 @@ type ResultMessage struct {
 	// stream-json run writes before exiting on a KNOWN startup failure;
 	// Errors carries the failure message. Failures that otherwise end with
 	// stderr alone write that result at all only when the host sets
-	// CLAUDE_CODE_STARTUP_FAILURE_RESULTS. Absent on every other result, on
-	// startup failures with no recognized cause, and from producers older
-	// than v0.3.278 — so empty means "no machine-readable cause", never
-	// "started fine" (sdk.d.ts v0.3.316 L5989).
+	// CLAUDE_CODE_STARTUP_FAILURE_RESULTS, except org_config_required_unavailable,
+	// org_config_refused and config_file_invalid, which every stream-json run
+	// writes. Absent on every other result, on startup failures with no
+	// recognized cause, and from producers older than v0.3.278 — so empty
+	// means "no machine-readable cause", never "started fine" (sdk.d.ts
+	// v0.3.319 L6053).
 	StartupFailureReason StartupFailureReason `json:"startup_failure_reason,omitempty"`
+
+	// CredentialExpiresAt is when the claude.ai credential this process's
+	// requests send ends for good, as an ISO 8601 instant read as the result
+	// is written. For a stored claude.ai login it is the end of the refresh
+	// chain as stored at sign-in, which renewing the access token does not
+	// move: the server's date when it sent one, else a 30-day estimate, and
+	// the real end can be up to 3 days earlier. The server is not asked, so
+	// a login revoked early still shows its date, and a past date means the
+	// login has probably ended, not that it has. Empty when no date is known,
+	// for every other credential (an API key, a token from the environment,
+	// another provider), on results this process did not number, and from
+	// older producers (sdk.d.ts v0.3.319 L6081, L6206).
+	CredentialExpiresAt string `json:"credential_expires_at,omitempty"`
 
 	DurationMs    int64 `json:"duration_ms,omitempty"`     // Total duration in milliseconds
 	DurationAPIMs int64 `json:"duration_api_ms,omitempty"` // API call duration in milliseconds
@@ -827,6 +842,18 @@ const (
 	// make the sandbox available or have the requirement changed
 	// (sdk.d.ts v0.3.316 L6211).
 	StartupFailureSandboxRequiredUnavailable StartupFailureReason = "sandbox_required_unavailable"
+	// StartupFailureInitializeNotFirst means Claude Code was started with
+	// --await-initialize and its first stdin line was not the initialize
+	// control request. The host or a wrapper script between it and Claude
+	// Code wrote or changed that line; the fix is there, not a retry
+	// (sdk.d.ts v0.3.319 L6312).
+	StartupFailureInitializeNotFirst StartupFailureReason = "initialize_not_first"
+	// StartupFailureConfigFileInvalid means a configuration file read at
+	// start-up is not valid JSON; Errors names the file and, for the global
+	// one, how to restore or repair it. The file is left unchanged and every
+	// start without a terminal is refused until it is repaired, so a retry
+	// alone does not help (sdk.d.ts v0.3.319 L6312).
+	StartupFailureConfigFileInvalid StartupFailureReason = "config_file_invalid"
 )
 
 // MessageType implements Message.
