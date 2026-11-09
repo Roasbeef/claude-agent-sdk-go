@@ -78,6 +78,12 @@ type SDKControlInitializeResponse struct {
 	// registered, and its own callbacks will never fire (sdk.d.ts v0.3.241
 	// L3752).
 	HooksApplied *bool `json:"hooks_applied,omitempty"`
+	// HookOnFailureSupported is true on every initialize reply from a CLI
+	// that honors HookConfig.OnFailure. Nil from CLIs that predate the
+	// option, which ignore it, and from responders that do not run the
+	// host's hooks. It says nothing about this request's hooks; HooksApplied
+	// does (sdk.d.ts v0.3.319 L4838).
+	HookOnFailureSupported *bool `json:"hook_on_failure_supported,omitempty"`
 	// PluginsApplied reports whether every plugin this initialize listed is
 	// loaded in the process: true when each one is among the plugins loaded at
 	// launch, whether they arrived through PluginDeliveryInitialize under

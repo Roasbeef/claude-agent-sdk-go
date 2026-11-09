@@ -51,7 +51,7 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 	if p.initialized.Load() {
 		return nil // Already initialized
 	}
-	return p.doInitialize(ctx)
+	return p.doInitialize(ctx, true)
 }
 
 // Reinitialize re-sends the initialize control request to an already-running
@@ -61,13 +61,13 @@ func (p *Protocol) Initialize(ctx context.Context) error {
 // daemon whose ring buffer evicted frames) so the CLI redelivers any
 // control requests the loop is still blocked on.
 func (p *Protocol) Reinitialize(ctx context.Context) (*SDKControlInitializeResponse, error) {
-	if err := p.doInitialize(ctx); err != nil {
+	if err := p.doInitialize(ctx, false); err != nil {
 		return nil, err
 	}
 	return p.initResult(), nil
 }
 
-func (p *Protocol) doInitialize(ctx context.Context) error {
+func (p *Protocol) doInitialize(ctx context.Context, first bool) error {
 	// SupportedDialogKinds is meaningless without a dialog handler, and the
 	// CLI would never route a dialog to a consumer that can't render it.
 	// Mirror the TS SDK and reject the contradictory option pairing here.
@@ -94,6 +94,7 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 					Matcher:         cfg.Matcher,
 					HookCallbackIDs: []string{id},
 					Timeout:         cfg.Timeout,
+					OnFailure:       cfg.OnFailure,
 				})
 			}
 			hooks[string(hookType)] = hookMatchers
@@ -221,9 +222,42 @@ func (p *Protocol) doInitialize(ctx context.Context) error {
 	if err := json.Unmarshal(bytes, &initResp); err != nil {
 		return fmt.Errorf("failed to parse initialization response: %w", err)
 	}
+	if err := p.checkHookBlockHonored(&initResp, first); err != nil {
+		return err
+	}
 	p.initResponse.Store(&initResp)
 	p.initialized.Store(true)
 	return nil
+}
+
+// checkHookBlockHonored mirrors the TS SDK's refusal to run a session whose
+// block hooks would not block. Only a first initialize can read
+// hooks_applied false as "joined a session someone else configured"; a
+// repeated one from this process replaces the hook set.
+func (p *Protocol) checkHookBlockHonored(
+	resp *SDKControlInitializeResponse, first bool,
+) error {
+	if !p.hasHookSetToBlock() {
+		return nil
+	}
+	if resp.HookOnFailureSupported == nil || !*resp.HookOnFailureSupported {
+		return &ErrHookBlockNotHonored{}
+	}
+	if first && resp.HooksApplied != nil && !*resp.HooksApplied {
+		return &ErrHookBlockNotHonored{HooksNotApplied: true}
+	}
+	return nil
+}
+
+func (p *Protocol) hasHookSetToBlock() bool {
+	for _, configs := range p.options.Hooks {
+		for _, cfg := range configs {
+			if cfg.OnFailure != "" && cfg.OnFailure != HookOnFailureContinue {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (p *Protocol) initResult() *SDKControlInitializeResponse {

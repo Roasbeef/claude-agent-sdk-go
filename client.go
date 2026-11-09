@@ -1622,6 +1622,10 @@ func (s *Stream) InitializationResult() (*SDKControlInitializeResponse, error) {
 // control requests the loop is still blocked on; the SDK dedupes in-flight
 // request_ids, but callbacks should be idempotent per request_id since a
 // request whose response was lost in the gap is dispatched again.
+//
+// With a HookConfig set to HookOnFailureBlock it fails with
+// *ErrHookBlockNotHonored when the reply does not say the CLI honors it;
+// the stream is left open, so close it rather than carry on.
 func (s *Stream) Reinitialize(ctx context.Context) (*SDKControlInitializeResponse, error) {
 	initResp, err := s.client.protocol.Reinitialize(ctx)
 	if err != nil {

@@ -2912,12 +2912,39 @@ const (
 	HookTypeWorktreeRemove HookType = "WorktreeRemove"
 )
 
+// HookOnFailure is the HookConfig.OnFailure policy.
+type HookOnFailure string
+
+const (
+	// HookOnFailureContinue reports a failed callback in a warning and lets
+	// the action go ahead. It is the CLI's default.
+	HookOnFailureContinue HookOnFailure = "continue"
+
+	// HookOnFailureBlock treats a failed callback as a block, as a command
+	// hook's exit code 2 is.
+	HookOnFailureBlock HookOnFailure = "block"
+)
+
 // HookConfig defines a lifecycle callback.
 type HookConfig struct {
 	Type     HookType     // Hook event type
 	Matcher  string       // Glob pattern for tool names (e.g., "*", "fetch_*")
 	Timeout  int          // Optional timeout in seconds; 0 = use default
 	Callback HookCallback // Callback function
+
+	// OnFailure decides what a failure of Callback does: it returns an
+	// error, or a result the CLI rejects. Empty leaves the CLI default,
+	// HookOnFailureContinue. HookOnFailureBlock blocks the action the event
+	// guards (a tool call, a permission request, a prompt). The CLI ignores
+	// it on Stop, SubagentStop, TaskCompleted and TeammateIdle.
+	//
+	// A CLI that predates the option ignores it, so a failing callback set
+	// to block would let the action run. With any matcher set to block,
+	// Connect therefore fails with *ErrHookBlockNotHonored unless the
+	// initialize reply says the CLI honors it, and also when the session was
+	// already running and did not register these hooks. The first prompt is
+	// only sent after Connect returns (sdk.d.ts v0.3.319 L1025, L4838).
+	OnFailure HookOnFailure
 }
 
 // HookCallback is invoked when a hook event fires.

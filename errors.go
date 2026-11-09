@@ -119,6 +119,29 @@ func (e *ErrHookFailed) Unwrap() error {
 	return e.Cause
 }
 
+// ErrHookBlockNotHonored is returned when a HookConfig sets OnFailure to
+// HookOnFailureBlock and the session would not enforce it, so a failing
+// callback would let the guarded action run.
+type ErrHookBlockNotHonored struct {
+	// HooksNotApplied is false when the process answering initialize does
+	// not report honoring onFailure (an older CLI, or a responder that does
+	// not run the host's hooks). It is true when it does, but the session was
+	// already running and did not register these hooks, so they never run.
+	HooksNotApplied bool
+}
+
+// Error implements the error interface.
+func (e *ErrHookBlockNotHonored) Error() string {
+	if e.HooksNotApplied {
+		return "this session was already running and did not register " +
+			"your hooks, so a hook set to OnFailure block would never run; " +
+			"start a new session, or drop OnFailure block from your hooks"
+	}
+	return "the process answering initialize does not honor onFailure on " +
+		"hook matchers, so a hook that fails would not block; update " +
+		"Claude Code if it is old, or drop OnFailure block from your hooks"
+}
+
 // ErrInvalidConfiguration indicates that client configuration is invalid.
 type ErrInvalidConfiguration struct {
 	Field  string
