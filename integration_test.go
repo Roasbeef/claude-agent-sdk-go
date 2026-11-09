@@ -6489,3 +6489,31 @@ func TestIntegrationStreamSendMessage(t *testing.T) {
 	assert.Empty(t, composed.LocalCommand,
 		"a client_composed message must not dispatch a slash command")
 }
+
+// TestIntegrationSetHasSubscribers sends every set_has_subscribers answer to
+// the live CLI. The hold it tunes is only observable under the
+// CLAUDE_CODE_STREAM_EVENT_* env vars, so this pins that the CLI accepts
+// false, true and the explicit null (sdk.d.ts v0.3.319 L5380).
+func TestIntegrationSetHasSubscribers(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	client, err := NewClient(isolatedClientOptions(t)...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	err = stream.SetHasSubscribers(ctx, boolPtr(false))
+	if err != nil && strings.Contains(err.Error(), "Unsupported control request subtype") {
+		t.Skip("CLI predates set_has_subscribers")
+	}
+	require.NoError(t, err)
+	require.NoError(t, stream.SetHasSubscribers(ctx, boolPtr(true)))
+	require.NoError(t, stream.SetHasSubscribers(ctx, nil))
+}

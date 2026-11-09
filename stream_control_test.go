@@ -355,6 +355,39 @@ func TestStreamSetMaxThinkingTokensRoundTrip(t *testing.T) {
 	}
 }
 
+func TestStreamSetHasSubscribersRoundTrip(t *testing.T) {
+	// has_subscribers is required upstream, so "don't know" has to go out
+	// as an explicit null rather than a missing key.
+	tests := []struct {
+		name  string
+		value *bool
+		want  interface{}
+	}{
+		{name: "nil sends null", value: nil, want: nil},
+		{name: "false present", value: boolPtr(false), want: false},
+		{name: "true present", value: boolPtr(true), want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+			err := callWithTimeout(t, func(ctx context.Context) error {
+				return stream.SetHasSubscribers(ctx, tt.value)
+			})
+			require.NoError(t, err)
+
+			_, generic := decodeWrittenSDKControlRequest(t, transport)
+			body := genericRequestBody(t, generic)
+			assert.Equal(t, "set_has_subscribers", body["subtype"])
+
+			got, ok := body["has_subscribers"]
+			require.True(t, ok, "has_subscribers should be present")
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
 func TestStreamSetMaxThinkingTokensThinkingDisplay(t *testing.T) {
 	t.Run("omitted when no option", func(t *testing.T) {
 		stream, transport, _ := newStreamControlTest(successSDKControlResponse)

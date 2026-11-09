@@ -1068,6 +1068,26 @@ func (s *Stream) SetMaxThinkingTokens(ctx context.Context, tokens *int, opts ...
 	return err
 }
 
+// SetHasSubscribers tells the CLI whether anyone is watching the output the
+// host reads from stdout and passes on: false for nobody, true for somebody,
+// nil when the host does not know (counted as true).
+//
+// It only matters to a CLI started with CLAUDE_CODE_STREAM_EVENT_HOLD_MS,
+// which holds content_block_delta and thinking_tokens lines to join them,
+// and CLAUDE_CODE_STREAM_EVENT_NO_SUBSCRIBER_HOLD_MS, whose longer hold
+// applies after false. No line is dropped. Each request also ends the hold
+// that is running, so send one only when the answer changes. A new CLI
+// process starts as watched. An older CLI answers with an unsupported
+// subtype error, and a CLI driving a cloud-hosted session refuses it
+// (sdk.d.ts v0.3.319 L5380).
+func (s *Stream) SetHasSubscribers(ctx context.Context, hasSubscribers *bool) error {
+	_, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype:        "set_has_subscribers",
+		HasSubscribers: &HasSubscribersValue{Watched: hasSubscribers},
+	})
+	return err
+}
+
 type registerRepoRootOptions struct {
 	reloadClaudeMD *bool
 	reloadPlugins  *bool
