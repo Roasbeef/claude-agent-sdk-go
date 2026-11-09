@@ -6716,3 +6716,116 @@ func TestIntegrationSetHasSubscribers(t *testing.T) {
 	require.NoError(t, stream.SetHasSubscribers(ctx, boolPtr(true)))
 	require.NoError(t, stream.SetHasSubscribers(ctx, nil))
 }
+
+// TestIntegrationSettingsParityV0_3_319 sends the v0.3.319 permissions keys
+// through --settings and reads them back off get_settings. That proves the
+// shape round-trips through the CLI's schema, not that the CLI acts on it:
+// 2.1.283 echoes them too. The two managed-only keys ride
+// --managed-settings, which must not stall the handshake on either CLI;
+// nothing is asserted on them because inline managed settings keep only
+// restrictive keys, so they need not show up in effective.
+func TestIntegrationSettingsParityV0_3_319(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	on, off := true, false
+	cwd := t.TempDir()
+	opts := append(isolatedClientOptions(t),
+		WithCwd(cwd),
+		WithManagedSettings(Settings{
+			DisableReplyCheck:              &off,
+			DisableWindowsBashCommandSplit: &on,
+		}),
+		WithSettings(Settings{
+			Permissions: &SettingsPermissions{
+				WorkingDirectoriesAsGiven: []string{cwd},
+				DenyInsteadOfPrompting:    &on,
+			},
+		}),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	resp, err := stream.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "get_settings",
+	})
+	require.NoError(t, err)
+
+	raw, err := json.Marshal(resp.Response.Response)
+	require.NoError(t, err)
+	var got struct {
+		Effective Settings `json:"effective"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &got))
+	require.NotNil(t, got.Effective.Permissions)
+
+	perms := got.Effective.Permissions
+	if perms.DenyInsteadOfPrompting == nil {
+		t.Skip("CLI predates permissions.denyInsteadOfPrompting")
+	}
+	assert.True(t, *perms.DenyInsteadOfPrompting)
+	assert.Equal(t, []string{cwd}, perms.WorkingDirectoriesAsGiven)
+}
+
+// TestIntegrationDenyInsteadOfPrompting checks the behavior behind
+// permissions.denyInsteadOfPrompting: a tool call that would prompt is
+// denied at once and the CanUseTool callback is never asked (sdk.d.ts
+// v0.3.319 L7330).
+func TestIntegrationDenyInsteadOfPrompting(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, "2.1.319")
+
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "ran.txt")
+	on := true
+
+	var asked atomic.Bool
+	opts := append(isolatedClientOptions(t),
+		WithCwd(dir),
+		WithSystemPrompt(
+			"You are a helpful assistant. When asked to run a shell command, "+
+				"use Bash immediately and do not describe it first. If the "+
+				"command is denied, reply DENIED and stop.",
+		),
+		WithSettings(Settings{
+			Permissions: &SettingsPermissions{DenyInsteadOfPrompting: &on},
+		}),
+		WithCanUseTool(func(ctx context.Context,
+			req ToolPermissionRequest) PermissionResult {
+
+			asked.Store(true)
+			return PermissionAllow{}
+		}),
+		WithMaxTurns(2),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	var result *ResultMessage
+	for msg := range client.Query(ctx, "Run the Bash command `echo ran > ran.txt`.") {
+		if m, ok := msg.(ResultMessage); ok {
+			result = &m
+			break
+		}
+	}
+
+	require.NotNil(t, result, "no result message")
+	assert.False(t, asked.Load(),
+		"denyInsteadOfPrompting must not ask the CanUseTool callback")
+	assert.NoFileExists(t, marker, "the prompting command must be denied")
+	// Without a recorded denial, a model that never tried Bash would pass.
+	assert.NotEmpty(t, result.PermissionDenials,
+		"the Bash call must be denied outright; result: %s", result.Result)
+}

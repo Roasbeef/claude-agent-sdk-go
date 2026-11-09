@@ -2673,6 +2673,48 @@ func TestSettingsParityV0_3_310(t *testing.T) {
 	assert.Equal(t, s, back)
 }
 
+func TestSettingsParityV0_3_319(t *testing.T) {
+	on, off := true, false
+	s := Settings{
+		Permissions: &SettingsPermissions{
+			WorkingDirectoriesAsGiven: []string{"/work/Repo", "/mnt/share"},
+			DenyInsteadOfPrompting:    &on,
+		},
+		DisableReplyCheck:              &off,
+		DisableWindowsBashCommandSplit: &on,
+	}
+
+	data, err := json.Marshal(s)
+	require.NoError(t, err)
+
+	var got map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.JSONEq(t, `{
+		"workingDirectoriesAsGiven": ["/work/Repo", "/mnt/share"],
+		"denyInsteadOfPrompting": true
+	}`, string(got["permissions"]))
+	assert.NotContains(t, got, "workingDirectoriesAsGiven")
+	assert.NotContains(t, got, "denyInsteadOfPrompting")
+	// An explicit false is what keeps the reply check on in managed
+	// settings, so it has to survive marshaling.
+	assert.Equal(t, "false", string(got["disableReplyCheck"]))
+	assert.Equal(t, "true", string(got["disableWindowsBashCommandSplit"]))
+
+	var back Settings
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, s, back)
+
+	empty, err := json.Marshal(Settings{Permissions: &SettingsPermissions{}})
+	require.NoError(t, err)
+	for _, key := range []string{
+		"workingDirectoriesAsGiven", "denyInsteadOfPrompting",
+		"disableReplyCheck", "disableWindowsBashCommandSplit",
+	} {
+		assert.NotContains(t, string(empty), key)
+	}
+}
+
 func TestSettingsParityV0_3_316(t *testing.T) {
 	on, off := true, false
 	s := Settings{
