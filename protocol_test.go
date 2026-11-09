@@ -736,6 +736,285 @@ func TestProtocolInitializeHookTimeout(t *testing.T) {
 	}
 }
 
+// initializeAgainst runs Initialize, then Reinitialize once per extra reply,
+// against a mock CLI that answers the n-th initialize with replies[n]. It
+// returns the error from the last call and the last request sent.
+func initializeAgainst(
+	t *testing.T, hooks map[HookType][]HookConfig,
+	replies ...map[string]interface{},
+) (SDKControlRequest, error) {
+	t.Helper()
+
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	opts.Hooks = hooks
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	protocol := NewProtocol(transport, opts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	require.NoError(t, transport.Connect(ctx))
+	defer transport.Close()
+
+	initReqCh := make(chan SDKControlRequest, len(replies))
+	go func() {
+		decoder := json.NewDecoder(runner.StdinPipe)
+		for _, reply := range replies {
+			var initReq SDKControlRequest
+			if err := decoder.Decode(&initReq); err != nil {
+				return
+			}
+			initReqCh <- initReq
+
+			data, _ := json.Marshal(SDKControlResponse{
+				Type: "control_response",
+				Response: SDKControlResponseBody{
+					Subtype:   "success",
+					RequestID: initReq.RequestID,
+					Response:  reply,
+				},
+			})
+			runner.StdoutPipe.Write(append(data, '\n'))
+		}
+	}()
+
+	go func() {
+		for msg, err := range transport.ReadMessages(ctx) {
+			if err != nil {
+				continue
+			}
+			if ctrlResp, ok := msg.(SDKControlResponse); ok {
+				protocol.handleSDKControlResponse(ctrlResp)
+			}
+		}
+	}()
+
+	err := protocol.Initialize(ctx)
+	for range replies[1:] {
+		require.NoError(t, err)
+		<-initReqCh
+		_, err = protocol.Reinitialize(ctx)
+	}
+
+	select {
+	case req := <-initReqCh:
+		return req, err
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for initialize request")
+		return SDKControlRequest{}, nil
+	}
+}
+
+// TestProtocolInitializeHookOnFailure covers HookConfig.OnFailure on the
+// wire (sdk.d.ts v0.3.319 L5514) and the refusal sdk.mjs applies when a
+// matcher is set to block but the reply does not promise to honor it.
+func TestProtocolInitializeHookOnFailure(t *testing.T) {
+	callback := func(ctx context.Context, input HookInput) (HookResult, error) {
+		return HookResult{Continue: true}, nil
+	}
+	hooksWith := func(policy HookOnFailure) map[HookType][]HookConfig {
+		return map[HookType][]HookConfig{
+			HookTypePreToolUse: {
+				{Matcher: "Bash", Callback: callback},
+				{Matcher: "*", Callback: callback, OnFailure: policy},
+			},
+		}
+	}
+	type reply = map[string]interface{}
+	supported := reply{"hook_on_failure_supported": true}
+	notApplied := reply{
+		"hook_on_failure_supported": true,
+		"hooks_applied":             false,
+	}
+
+	tests := []struct {
+		name       string
+		policy     HookOnFailure
+		replies    []reply
+		wantErr    bool
+		notApplied bool
+	}{
+		{
+			name:    "unset is omitted and needs no support",
+			replies: []reply{{}},
+		},
+		{
+			name:    "continue needs no support",
+			policy:  HookOnFailureContinue,
+			replies: []reply{{}},
+		},
+		{
+			name:    "block on a CLI that honors it",
+			policy:  HookOnFailureBlock,
+			replies: []reply{supported},
+		},
+		{
+			name:    "block on a CLI that predates it",
+			policy:  HookOnFailureBlock,
+			replies: []reply{{}},
+			wantErr: true,
+		},
+		{
+			name:    "block with support explicitly false",
+			policy:  HookOnFailureBlock,
+			replies: []reply{{"hook_on_failure_supported": false}},
+			wantErr: true,
+		},
+		{
+			name:       "block on a session that did not register the hooks",
+			policy:     HookOnFailureBlock,
+			replies:    []reply{notApplied},
+			wantErr:    true,
+			notApplied: true,
+		},
+		{
+			// A repeated initialize from this process replaces the hook
+			// set, so sdk.mjs only reads hooks_applied on the first one.
+			name:    "reinitialize ignores hooks_applied false",
+			policy:  HookOnFailureBlock,
+			replies: []reply{supported, notApplied},
+		},
+		{
+			name:    "reinitialize still needs support",
+			policy:  HookOnFailureBlock,
+			replies: []reply{supported, {"hooks_applied": true}},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := initializeAgainst(
+				t, hooksWith(tt.policy), tt.replies...,
+			)
+
+			matchers := req.Request.Hooks[string(HookTypePreToolUse)]
+			require.Len(t, matchers, 2)
+			assert.NotContains(t, marshalHookMatcher(t, matchers[0]), "onFailure")
+			got := marshalHookMatcher(t, matchers[1])
+			if tt.policy == "" {
+				assert.NotContains(t, got, "onFailure")
+			} else {
+				assert.Equal(t, string(tt.policy), got["onFailure"])
+			}
+
+			if !tt.wantErr {
+				require.NoError(t, err)
+				return
+			}
+			var notHonored *ErrHookBlockNotHonored
+			require.ErrorAs(t, err, &notHonored)
+			assert.Equal(t, tt.notApplied, notHonored.HooksNotApplied)
+		})
+	}
+}
+
+// TestProtocolReinitializeKeepsHookIDs pins that a Reinitialize resends the
+// first initialize's callback IDs. A CLI that ignores a repeated
+// initialize's hooks keeps routing by the first set, so a reshuffle would
+// send one event's hook_callback to another event's callback, which under
+// OnFailure block can turn a failing hook into a passing one.
+func TestProtocolReinitializeKeepsHookIDs(t *testing.T) {
+	var fired []HookType
+	hookFor := func(hookType HookType) HookConfig {
+		return HookConfig{
+			Matcher: "*",
+			Callback: func(ctx context.Context, input HookInput) (HookResult, error) {
+				fired = append(fired, hookType)
+				return HookResult{Continue: true}, nil
+			},
+		}
+	}
+	hookTypes := []HookType{
+		HookTypePreToolUse, HookTypePostToolUse, HookTypeSessionStart,
+		HookTypeStop, HookTypeUserPromptSubmit, HookTypeNotification,
+	}
+	hooks := make(map[HookType][]HookConfig)
+	for _, hookType := range hookTypes {
+		hooks[hookType] = []HookConfig{hookFor(hookType)}
+	}
+
+	runner := NewMockSubprocessRunner()
+	opts := NewOptions()
+	opts.Hooks = hooks
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	protocol := NewProtocol(transport, opts)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, transport.Connect(ctx))
+	defer transport.Close()
+
+	const rounds = 5
+	initReqCh := make(chan SDKControlRequest, rounds)
+	go func() {
+		decoder := json.NewDecoder(runner.StdinPipe)
+		for range rounds {
+			var initReq SDKControlRequest
+			if err := decoder.Decode(&initReq); err != nil {
+				return
+			}
+			initReqCh <- initReq
+			data, _ := json.Marshal(SDKControlResponse{
+				Type: "control_response",
+				Response: SDKControlResponseBody{
+					Subtype:   "success",
+					RequestID: initReq.RequestID,
+					Response:  map[string]interface{}{},
+				},
+			})
+			runner.StdoutPipe.Write(append(data, '\n'))
+		}
+	}()
+	go func() {
+		for msg, err := range transport.ReadMessages(ctx) {
+			if err != nil {
+				continue
+			}
+			if ctrlResp, ok := msg.(SDKControlResponse); ok {
+				protocol.handleSDKControlResponse(ctrlResp)
+			}
+		}
+	}()
+
+	idsOf := func(req SDKControlRequest) map[string]string {
+		ids := make(map[string]string)
+		for hookType, matchers := range req.Request.Hooks {
+			require.Len(t, matchers, 1)
+			require.Len(t, matchers[0].HookCallbackIDs, 1)
+			ids[hookType] = matchers[0].HookCallbackIDs[0]
+		}
+		return ids
+	}
+
+	require.NoError(t, protocol.Initialize(ctx))
+	first := idsOf(<-initReqCh)
+	require.Len(t, first, len(hookTypes))
+	for range rounds - 1 {
+		_, err := protocol.Reinitialize(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, first, idsOf(<-initReqCh))
+	}
+
+	// Each first-round ID still dispatches to its own event's callback.
+	for _, hookType := range hookTypes {
+		fired = nil
+		resp := protocol.handleSDKHookCallback(ctx, SDKControlRequest{
+			RequestID: "cb",
+			Request: SDKControlRequestBody{
+				Subtype:    "hook_callback",
+				CallbackID: first[string(hookType)],
+				Input: map[string]interface{}{
+					"hook_event_name": string(hookType),
+				},
+			},
+		})
+		require.Equal(t, "success", resp.Response.Subtype)
+		assert.Equal(t, []HookType{hookType}, fired)
+	}
+}
+
 func marshalHookMatcher(t *testing.T, matcher SDKHookCallbackMatcher) map[string]interface{} {
 	t.Helper()
 

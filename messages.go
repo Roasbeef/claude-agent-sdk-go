@@ -1245,6 +1245,9 @@ type SDKHookCallbackMatcher struct {
 	Matcher         string   `json:"matcher,omitempty"`
 	HookCallbackIDs []string `json:"hookCallbackIds"`
 	Timeout         int      `json:"timeout,omitempty"` // Timeout in seconds
+	// OnFailure is HookConfig.OnFailure on the wire (sdk.d.ts v0.3.319
+	// L5514).
+	OnFailure HookOnFailure `json:"onFailure,omitempty"`
 }
 
 // MessageType implements Message.
@@ -2693,6 +2696,67 @@ type WorkerShuttingDownMessage struct {
 // MessageType implements Message.
 func (m WorkerShuttingDownMessage) MessageType() string { return "system" }
 
+// SessionWritesLostErrorCode says why SessionWritesLostMessage writes failed.
+// The set is open: more codes may be added.
+type SessionWritesLostErrorCode string
+
+const (
+	// SessionWritesLostENOSPC means the disk was full.
+	SessionWritesLostENOSPC SessionWritesLostErrorCode = "ENOSPC"
+
+	// SessionWritesLostEDQUOT means the disk quota was used up.
+	SessionWritesLostEDQUOT SessionWritesLostErrorCode = "EDQUOT"
+)
+
+// SessionWritesLostKind names what SessionWritesLostMessage says was not
+// saved. The set is open: more values may be added.
+type SessionWritesLostKind string
+
+const (
+	// SessionWritesLostTranscript means lines of a session transcript were
+	// lost, so resuming a session in TranscriptSessionIDs may miss part of
+	// its conversation.
+	SessionWritesLostTranscript SessionWritesLostKind = "transcript"
+
+	// SessionWritesLostGlobalConfig means changes this run made to
+	// ~/.claude.json were lost.
+	SessionWritesLostGlobalConfig SessionWritesLostKind = "global_config"
+)
+
+// SessionWritesLostMessage reports that the CLI could not save transcript
+// lines, ~/.claude.json changes, or both, because the disk was full or over
+// quota. It is sent at most once, as the CLI exits with status 0, after the
+// last result if there was one, so a consumer that stops reading at the
+// ResultMessage never sees it. A run that exits 1 reports the loss on stderr
+// only, though CLI 2.1.317 and some later releases sent this message there
+// too, so it can follow an error result. Never sent under --sdk-url or a
+// Claude Desktop entrypoint. The results already received stand; this is
+// safe to ignore (sdk.d.ts v0.3.319 L6272).
+type SessionWritesLostMessage struct {
+	Type    string `json:"type"`    // Always "system"
+	Subtype string `json:"subtype"` // "session_writes_lost"
+
+	// ErrorCode says why the writes failed. When both kinds were lost for
+	// different reasons, it is the transcript's.
+	ErrorCode SessionWritesLostErrorCode `json:"error_code"`
+
+	// Lost says what was not saved. Never empty.
+	Lost []SessionWritesLostKind `json:"lost"`
+
+	// TranscriptSessionIDs lists the sessions whose transcripts lost lines,
+	// in the order each first lost one. Present only when Lost has
+	// SessionWritesLostTranscript. Usually SessionID alone, but after a new
+	// session started (as /clear does) it lists the earlier one, and lists
+	// SessionID only if that session lost lines too.
+	TranscriptSessionIDs []string `json:"transcript_session_ids,omitempty"`
+
+	UUID      string `json:"uuid"`       // Unique message ID
+	SessionID string `json:"session_id"` // Session the CLI is in
+}
+
+// MessageType implements Message.
+func (m SessionWritesLostMessage) MessageType() string { return "system" }
+
 // InformationalLevel is the render level of an InformationalMessage.
 type InformationalLevel string
 
@@ -3026,6 +3090,10 @@ func ParseMessage(data []byte) (Message, error) {
 			return msg, err
 		case "worker_shutting_down":
 			var msg WorkerShuttingDownMessage
+			err := json.Unmarshal(data, &msg)
+			return msg, err
+		case "session_writes_lost":
+			var msg SessionWritesLostMessage
 			err := json.Unmarshal(data, &msg)
 			return msg, err
 		default:

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"os"
@@ -6488,6 +6489,128 @@ func TestIntegrationStreamSendMessage(t *testing.T) {
 	composed := result()
 	assert.Empty(t, composed.LocalCommand,
 		"a client_composed message must not dispatch a slash command")
+}
+
+// TestIntegrationHookOnFailureGate checks that Connect enforces the
+// onFailure gate against the real CLI: a block hook connects only when the
+// initialize reply says hook_on_failure_supported, and fails with
+// ErrHookBlockNotHonored otherwise (sdk.d.ts v0.3.319 L1025, L4838).
+func TestIntegrationHookOnFailureGate(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	callback := func(ctx context.Context, input HookInput) (HookResult, error) {
+		return HookResult{Continue: true}, nil
+	}
+	connect := func(policy HookOnFailure) (*SDKControlInitializeResponse, error) {
+		opts := append(isolatedClientOptions(t),
+			WithMaxTurns(1),
+			WithHooks(map[HookType][]HookConfig{
+				HookTypePreToolUse: {
+					{Matcher: "*", Callback: callback, OnFailure: policy},
+				},
+			}),
+		)
+		client, err := NewClient(opts...)
+		require.NoError(t, err)
+		defer client.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+
+		stream, err := client.Stream(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer stream.Close()
+		return stream.InitializationResult()
+	}
+
+	// Continue needs nothing from the CLI, so it shows what this build
+	// reports without the gate in the way.
+	probe, err := connect(HookOnFailureContinue)
+	require.NoError(t, err)
+
+	_, err = connect(HookOnFailureBlock)
+	if probe.HookOnFailureSupported == nil || !*probe.HookOnFailureSupported {
+		var notHonored *ErrHookBlockNotHonored
+		require.ErrorAs(t, err, &notHonored,
+			"a CLI that does not honor onFailure must be refused")
+		assert.False(t, notHonored.HooksNotApplied)
+		return
+	}
+	require.NoError(t, err)
+}
+
+// TestIntegrationHookOnFailureBlock checks that a PreToolUse callback set to
+// HookOnFailureBlock stops the tool when it fails: the Bash command it
+// guards must not run.
+func TestIntegrationHookOnFailureBlock(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "ran.txt")
+
+	var called atomic.Bool
+	failing := func(ctx context.Context, input HookInput) (HookResult, error) {
+		called.Store(true)
+		return HookResult{}, errors.New("hook callback failed on purpose")
+	}
+
+	opts := append(isolatedClientOptions(t),
+		WithCwd(dir),
+		WithSystemPrompt(
+			"You are a helpful assistant. When asked to run a shell command, "+
+				"use Bash immediately and do not describe it first. If the "+
+				"command is blocked, reply BLOCKED and stop.",
+		),
+		WithPermissionMode(PermissionModeBypassAll),
+		WithAllowDangerouslySkipPermissions(true),
+		WithMaxTurns(2),
+		WithHooks(map[HookType][]HookConfig{
+			HookTypePreToolUse: {
+				{
+					Matcher:   "Bash",
+					Callback:  failing,
+					OnFailure: HookOnFailureBlock,
+				},
+			},
+		}),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	var notHonored *ErrHookBlockNotHonored
+	if errors.As(err, &notHonored) {
+		t.Skip("CLI predates onFailure on hook matchers")
+	}
+	require.NoError(t, err)
+	defer stream.Close()
+
+	require.NoError(t, stream.Send(ctx,
+		"Run the Bash command `echo ran > ran.txt`.",
+	))
+	for msg := range stream.Messages() {
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+
+	require.True(t, called.Load(), "the PreToolUse callback never fired")
+	assert.NoFileExists(t, marker,
+		"a failing block hook must stop the command it guards")
+}
+
+func TestIntegrationSessionWritesLost(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+	t.Skip("not triggerable from CLI: session_writes_lost needs a transcript or ~/.claude.json write to fail with ENOSPC/EDQUOT on a run that still exits 0; a /dev/full symlink at the transcript path trips --session-id's in-use check instead, and the runner cannot mount a full filesystem; tracked in INTEGRATION-FOLLOWUPS.md")
 }
 
 // TestIntegrationSetHasSubscribers sends every set_has_subscribers answer to
