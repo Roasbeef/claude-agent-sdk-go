@@ -345,9 +345,17 @@ func writeArchiveMark(path string, data []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	// The name follows the TS SDK's temp files, which the CLI's retention
-	// sweep removes if a crash strands one before the rename.
-	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp.*")
+	// The name is the TS SDK's, <name>.tmp.<8 hex>, which the CLI's
+	// retention sweep matches exactly and removes if a crash strands one
+	// before the rename.
+	var suffix [4]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return err
+	}
+	tmp, err := os.OpenFile(
+		path+".tmp."+hex.EncodeToString(suffix[:]),
+		os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600,
+	)
 	if err != nil {
 		return err
 	}
