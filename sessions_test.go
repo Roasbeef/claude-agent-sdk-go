@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -179,4 +180,56 @@ func TestForkSession(t *testing.T) {
 	require.Len(t, messages, 2)
 	assert.Equal(t, result.SessionID, messages[0].SessionID)
 	assert.NotEqual(t, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", messages[0].UUID)
+}
+
+// TestListSessionsCLIStringPrompt covers the shape `claude -p` writes: the
+// prompt as a bare string, preceded by queue-operation entries and followed
+// by a last-prompt entry. Such a session used to be dropped from listings
+// because no block-array text was found.
+func TestListSessionsCLIStringPrompt(t *testing.T) {
+	baseDir := t.TempDir()
+	cwd := filepath.Join(t.TempDir(), "repo")
+	projectDir := filepath.Join(baseDir, "projects", projectKey(cwd))
+	require.NoError(t, os.MkdirAll(projectDir, 0700))
+
+	write := func(lines ...string) {
+		t.Helper()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(projectDir, testSessionID+".jsonl"),
+			[]byte(strings.Join(lines, "\n")+"\n"), 0600,
+		))
+	}
+	user := func(uuid, content string, extra string) string {
+		return `{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":` +
+			content + `},"uuid":"` + uuid + `","timestamp":"2026-11-16T17:13:12.583Z","cwd":"` + cwd + `"` + extra + `}`
+	}
+	list := func() SDKSessionInfo {
+		t.Helper()
+		sessions, err := ListSessions(&ListSessionsOptions{BaseDir: baseDir, Dir: cwd})
+		require.NoError(t, err)
+		require.Len(t, sessions, 1)
+		return sessions[0]
+	}
+
+	write(
+		`{"type":"queue-operation","operation":"enqueue","timestamp":"2026-11-16T17:13:12.450Z","sessionId":"`+testSessionID+`","content":"first"}`,
+		user("u0", `"<local-command-caveat>meta</local-command-caveat>"`, `,"isMeta":true`),
+		user("u1", `"<command-name>/model</command-name>\n<command-message>model</command-message>"`, ""),
+		user("u2", `"[Request interrupted by user]"`, ""),
+		user("u3", `"first"`, ""),
+		user("u4", `"second"`, ""),
+		`{"type":"last-prompt","lastPrompt":"from the cli","leafUuid":"u4","sessionId":"`+testSessionID+`"}`,
+		user("u5", `"This session is being continued from a previous conversation."`, `,"isCompactSummary":true`),
+	)
+	info := list()
+	assert.Equal(t, "first", info.FirstPrompt,
+		"meta, wrapper and interrupt entries are not prompts")
+	assert.Equal(t, "from the cli", info.Summary,
+		"the CLI's last-prompt entry wins, and a compact summary after it does not")
+	assert.Equal(t, cwd, info.Cwd)
+
+	// Without a last-prompt entry the derived last prompt is the summary.
+	write(user("u3", `"first"`, ""), user("u4", `"second"`, ""),
+		user("u5", `"This session is being continued from a previous conversation."`, `,"isCompactSummary":true`))
+	assert.Equal(t, "second", list().Summary)
 }

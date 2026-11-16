@@ -436,7 +436,7 @@ func readSessionInfo(file sessionFile) (*SDKSessionInfo, error) {
 		}
 		data.fold(entry)
 	}
-	summary := firstNonEmpty(data.customTitle, data.aiTitle, data.lastPrompt, data.summaryHint, data.firstPrompt)
+	summary := firstNonEmpty(data.customTitle, data.aiTitle, data.lastPromptEntry, data.lastPrompt, data.summaryHint, data.firstPrompt)
 	if summary == "" {
 		return nil, nil
 	}
@@ -458,12 +458,15 @@ type sessionSummaryData struct {
 	customTitle string
 	aiTitle     string
 	lastPrompt  string
-	summaryHint string
-	firstPrompt string
-	gitBranch   string
-	cwd         string
-	tag         string
-	createdAt   int64
+	// lastPromptEntry is the CLI's own last-prompt record, which wins over
+	// a prompt derived from user entries, as in the TS SDK.
+	lastPromptEntry string
+	summaryHint     string
+	firstPrompt     string
+	gitBranch       string
+	cwd             string
+	tag             string
+	createdAt       int64
 }
 
 func (d *sessionSummaryData) fold(entry map[string]interface{}) {
@@ -490,7 +493,14 @@ func (d *sessionSummaryData) fold(entry map[string]interface{}) {
 	if entry["type"] == "tag" {
 		d.tag = sessionGetString(entry, "tag")
 	}
-	if entry["type"] == "user" {
+	if entry["type"] == "last-prompt" {
+		if v := strings.TrimSpace(sessionGetString(entry, "lastPrompt")); v != "" {
+			d.lastPromptEntry = v
+		}
+	}
+	isMeta, _ := entry["isMeta"].(bool)
+	isCompactSummary, _ := entry["isCompactSummary"].(bool)
+	if entry["type"] == "user" && !isMeta && !isCompactSummary {
 		if prompt := extractTextFromMessage(entry["message"]); prompt != "" {
 			if d.firstPrompt == "" {
 				d.firstPrompt = prompt
@@ -663,8 +673,13 @@ func extractTextFromMessage(message interface{}) string {
 	if !ok {
 		return ""
 	}
-	content, ok := m["content"].([]interface{})
-	if !ok {
+	// The CLI writes a typed prompt as a bare string; block arrays come
+	// from SDK sends and from content with attachments.
+	if text, ok := m["content"].(string); ok {
+		return promptText(text)
+	}
+	content, isList := m["content"].([]interface{})
+	if !isList {
 		return ""
 	}
 	for _, item := range content {
@@ -672,14 +687,31 @@ func extractTextFromMessage(message interface{}) string {
 		if !ok || block["type"] != "text" {
 			continue
 		}
-		if text := strings.TrimSpace(sessionGetString(block, "text")); text != "" {
-			if len(text) > 200 {
-				return strings.TrimSpace(text[:200])
-			}
+		if text := promptText(sessionGetString(block, "text")); text != "" {
 			return text
 		}
 	}
 	return ""
+}
+
+// notPromptPattern matches text the CLI writes into user entries that a
+// person did not type: slash-command and shell wrappers, caveats, and the
+// interrupt marker. It mirrors the TS SDK's filter for session prompts.
+var notPromptPattern = regexp.MustCompile(`^(?:\s*<[a-z][\w-]*[\s>]|\[Request interrupted by user[^\]]*\])`)
+
+func promptText(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" || notPromptPattern.MatchString(text) {
+		return ""
+	}
+	return truncatePrompt(text)
+}
+
+func truncatePrompt(text string) string {
+	if len(text) > 200 {
+		return strings.TrimSpace(text[:200])
+	}
+	return text
 }
 
 func parseTimestampMillis(value string) int64 {
