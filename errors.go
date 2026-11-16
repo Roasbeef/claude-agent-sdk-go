@@ -1,6 +1,7 @@
 package claudeagent
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 )
@@ -259,8 +260,27 @@ func (e *ErrControlRequest) Error() string {
 // response error_code; anything else is dropped rather than trusted.
 var controlErrorCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
+// ControlErrorCode is a control response's error_code. Decoding keeps only a
+// string of the shape the TS SDK accepts and reads anything else, a number
+// included, as "". Failing the decode instead would drop the whole response,
+// and the request waiting on it would never return.
+type ControlErrorCode string
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (c *ControlErrorCode) UnmarshalJSON(data []byte) error {
+	var s string
+	if json.Unmarshal(data, &s) != nil || !controlErrorCodePattern.MatchString(s) {
+		*c = ""
+		return nil
+	}
+	*c = ControlErrorCode(s)
+	return nil
+}
+
+// newErrControlRequest checks the code's shape again because a transport can
+// hand over a response that never went through UnmarshalJSON.
 func newErrControlRequest(subtype string, body SDKControlResponseBody) error {
-	code := body.ErrorCode
+	code := string(body.ErrorCode)
 	if !controlErrorCodePattern.MatchString(code) {
 		code = ""
 	}

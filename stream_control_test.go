@@ -551,7 +551,11 @@ func TestStreamControlRequestErrorCode(t *testing.T) {
 		{"valid", "reload_plugins_busy", "reload_plugins_busy"},
 		{"absent", "", ""},
 		{"uppercase", "Reload_Busy", ""},
+		{"64 chars", strings.Repeat("a", 64), strings.Repeat("a", 64)},
 		{"too long", strings.Repeat("a", 65), ""},
+		{"leading digit", "1busy", ""},
+		{"leading underscore", "_busy", ""},
+		{"trailing newline", "busy\n", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -562,7 +566,7 @@ func TestStreamControlRequestErrorCode(t *testing.T) {
 						Subtype:   "error",
 						RequestID: req.RequestID,
 						Error:     "session is busy",
-						ErrorCode: tc.sent,
+						ErrorCode: ControlErrorCode(tc.sent),
 					},
 				}
 			})
@@ -582,13 +586,31 @@ func TestStreamControlRequestErrorCode(t *testing.T) {
 	}
 }
 
+// TestParseControlResponseErrorCode checks decoding, including that a
+// malformed or non-string code is dropped without failing the decode, which
+// would lose the response and hang its waiter.
 func TestParseControlResponseErrorCode(t *testing.T) {
-	raw := `{"type":"control_response","response":{"subtype":"error","request_id":"r1","error":"busy","error_code":"reload_plugins_busy"}}`
-	msg, err := ParseMessage([]byte(raw))
-	require.NoError(t, err)
-	resp, ok := msg.(SDKControlResponse)
-	require.True(t, ok, "got %T", msg)
-	assert.Equal(t, "reload_plugins_busy", resp.Response.ErrorCode)
+	for _, tc := range []struct {
+		name, code string
+		want       ControlErrorCode
+	}{
+		{"valid", `"reload_plugins_busy"`, "reload_plugins_busy"},
+		{"number", `42`, ""},
+		{"null", `null`, ""},
+		{"object", `{"x":1}`, ""},
+		{"bad shape", `"Busy"`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := `{"type":"control_response","response":{"subtype":"error",` +
+				`"request_id":"r1","error":"busy","error_code":` + tc.code + `}}`
+			msg, err := ParseMessage([]byte(raw))
+			require.NoError(t, err)
+			resp, ok := msg.(SDKControlResponse)
+			require.True(t, ok, "got %T", msg)
+			assert.Equal(t, "busy", resp.Response.Error)
+			assert.Equal(t, tc.want, resp.Response.ErrorCode)
+		})
+	}
 }
 
 func TestStreamControlRequestRespectsContextCancel(t *testing.T) {
