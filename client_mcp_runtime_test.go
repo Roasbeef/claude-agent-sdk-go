@@ -212,3 +212,40 @@ func TestStreamToggleMcpServerControlError(t *testing.T) {
 	require.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "unknown server"))
 }
+
+// TestStreamSetMcpServersKeepsSDKServers checks that every call re-sends the
+// session's in-process SDK servers, with the settings initialize sent for
+// them, so the CLI does not drop them as left out of the payload.
+func TestStreamSetMcpServersKeepsSDKServers(t *testing.T) {
+	stream, transport, protocol := newStreamControlTest(
+		successSDKControlResponseWithPayload(map[string]interface{}{
+			"added": []interface{}{}, "removed": []interface{}{},
+			"errors": map[string]interface{}{},
+		}),
+	)
+	timeout := 5000
+	protocol.sdkMcpServers = map[string]*McpServer{
+		"calc": CreateMcpServer(McpServerOptions{Name: "calc", Version: "1"}),
+		"slow": CreateMcpServer(McpServerOptions{
+			Name: "slow", Version: "1", Timeout: &timeout,
+			ToolPolicies: []MCPServerToolPolicy{{Name: "rm", PermissionPolicy: "always_ask"}},
+		}),
+	}
+
+	_, err := stream.SetMcpServers(context.Background(), map[string]MCPServerConfig{
+		"web": {Type: "http", URL: "https://example.com/mcp"},
+	})
+	require.NoError(t, err)
+	assert.JSONEq(t,
+		`{"type":"control_request","request_id":"req_1","request":{"subtype":"mcp_set_servers","servers":{`+
+			`"web":{"type":"http","url":"https://example.com/mcp"},`+
+			`"calc":{"type":"sdk","name":"calc"},`+
+			`"slow":{"type":"sdk","name":"slow","timeout":5000,"tools":[{"name":"rm","permission_policy":"always_ask"}]}}}}`,
+		rawWrittenSDKControlRequest(t, transport),
+	)
+
+	_, err = stream.SetMcpServers(context.Background(), map[string]MCPServerConfig{
+		"calc": {Type: "stdio", Command: "calc"},
+	})
+	assert.ErrorContains(t, err, `"calc" is an in-process SDK MCP server`)
+}

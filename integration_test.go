@@ -7109,3 +7109,61 @@ func TestIntegrationStartupFailureManagedSettingsNotDelivered(t *testing.T) {
 	assert.Equal(t, StartupFailureManagedSettingsNotDelivered, res.StartupFailureReason)
 	assert.NotEmpty(t, res.Errors)
 }
+
+// TestIntegrationSetMcpServersKeepsSDKServers calls SetMcpServers on a
+// session with an in-process SDK server that denies one of its tools. The
+// CLI drops an SDK server, and the deny rule its policy registered, when a
+// mcp_set_servers payload leaves it out, which the Go call used to do on
+// every call, since it never sent them (sdk.d.ts v0.3.325 L3390). Losing the
+// rule made a tool the host had denied callable.
+func TestIntegrationSetMcpServersKeepsSDKServers(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	server := CreateMcpServer(McpServerOptions{
+		Name: "calc", Version: "1.0.0",
+		Tools: []ToolRegistrar{ToolWithSchema("noop", "Does nothing",
+			map[string]interface{}{"type": "object"},
+			func(ctx context.Context, args map[string]interface{}) (ToolResult, error) {
+				return TextResult("ok"), nil
+			})},
+		ToolPolicies: []MCPServerToolPolicy{
+			{Name: "noop", PermissionPolicy: MCPToolPolicyDenyAlways},
+		},
+	})
+	client, err := NewClient(append(isolatedClientOptions(t),
+		WithMcpServer("calc", server))...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	denied := func() bool {
+		t.Helper()
+		state, err := stream.ListPermissionRules(ctx)
+		require.NoError(t, err)
+		for _, r := range state.Rules {
+			t.Logf("rule: %s %s %s", r.Behavior, r.Source, r.Rule)
+			if r.Behavior == PermissionRuleBehaviorDeny && r.Rule == "mcp__calc__noop" {
+				return true
+			}
+		}
+		return false
+	}
+	require.True(t, denied(), "the policy's deny rule is registered at start")
+
+	for i := 0; i < 2; i++ {
+		res, err := stream.SetMcpServers(ctx, map[string]MCPServerConfig{})
+		require.NoError(t, err)
+		t.Logf("call %d: %+v", i, res)
+		// A second call would also show calc as added again if the first
+		// had dropped it; neither may name it.
+		assert.NotContains(t, res.Removed, "calc", "the SDK server must survive")
+		assert.NotContains(t, res.Added, "calc")
+		assert.True(t, denied(), "the deny rule must survive call %d", i)
+	}
+}
