@@ -1924,18 +1924,44 @@ func (s *Stream) ToggleMcpServer(
 // dynamic MCP servers (sdk.d.ts v0.3.319 L3321).
 //
 // Process-based servers only: stdio, sse, http. In-process SDK MCP servers
-// (Options.SDKMcpServers) are static for the lifetime of the client.
+// (Options.SDKMcpServers) are static for the lifetime of the client, so
+// every call re-sends them and they stay connected. That is needed because
+// the CLI treats mcp_set_servers as replacing SDK servers too, and drops one
+// a payload leaves out (sdk.d.ts v0.3.325 L3390); the TS SDK re-sends the
+// ones its caller keeps the same way. A key in servers that names an SDK
+// server is an error.
+//
+// Outside a cloud session, a stdio, sse or http server passed to
+// WithMcpServers at launch is not disconnected or listed in Removed when a
+// call leaves it out, unless an earlier call named it. To be able to remove
+// a server later, add it with this method instead (sdk.d.ts v0.3.325
+// L3399).
 func (s *Stream) SetMcpServers(
 	ctx context.Context,
 	servers map[string]MCPServerConfig,
 ) (*McpSetServersResult, error) {
-	if servers == nil {
-		servers = map[string]MCPServerConfig{}
+	payload := make(map[string]interface{}, len(servers))
+	for name, cfg := range servers {
+		payload[name] = cfg
 	}
-	resp, err := s.sendSDKControlRequest(ctx, SDKControlRequestBody{
-		Subtype: "mcp_set_servers",
-		Servers: &servers,
-	})
+	for name, server := range s.client.protocol.sdkMcpServers {
+		if _, ok := servers[name]; ok {
+			return nil, fmt.Errorf("mcp_set_servers: %q is an in-process "+
+				"SDK MCP server and cannot be replaced", name)
+		}
+		payload[name] = sdkMcpSetServersEntry(name, server)
+	}
+
+	requestID := s.client.protocol.nextRequestID()
+	resp, err := s.dispatchControlRequest(ctx, requestID, "mcp_set_servers",
+		mcpSetServersRequest{
+			Type:      "control_request",
+			RequestID: requestID,
+			Request: mcpSetServersBody{
+				Subtype: "mcp_set_servers",
+				Servers: payload,
+			},
+		})
 	if err != nil {
 		return nil, err
 	}
@@ -1948,6 +1974,40 @@ func (s *Stream) SetMcpServers(
 		return nil, fmt.Errorf("mcp_set_servers: unmarshal: %w", err)
 	}
 	return &out, nil
+}
+
+// mcpSetServersRequest is the mcp_set_servers envelope. Its servers map
+// mixes process configs with SDK entries, which MCPServerConfig does not
+// describe, so it does not go through SDKControlRequestBody.
+type mcpSetServersRequest struct {
+	Type      string            `json:"type"`
+	RequestID string            `json:"request_id"`
+	Request   mcpSetServersBody `json:"request"`
+}
+
+type mcpSetServersBody struct {
+	Subtype string                 `json:"subtype"`
+	Servers map[string]interface{} `json:"servers"`
+}
+
+// MessageType implements Message.
+func (mcpSetServersRequest) MessageType() string { return "control_request" }
+
+// sdkMcpSetServersEntry is the entry that keeps an SDK server registered
+// across mcp_set_servers, with the settings initialize sent for it, as the
+// TS SDK builds it.
+func sdkMcpSetServersEntry(name string, server *McpServer) map[string]interface{} {
+	entry := map[string]interface{}{"type": "sdk", "name": name}
+	if server == nil {
+		return entry
+	}
+	if timeout := server.Timeout(); timeout != nil {
+		entry["timeout"] = *timeout
+	}
+	if tools := server.ToolPolicies(); len(tools) > 0 {
+		entry["tools"] = tools
+	}
+	return entry
 }
 
 func cloneInitializeResponse(
