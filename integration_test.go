@@ -7109,3 +7109,41 @@ func TestIntegrationStartupFailureManagedSettingsNotDelivered(t *testing.T) {
 	assert.Equal(t, StartupFailureManagedSettingsNotDelivered, res.StartupFailureReason)
 	assert.NotEmpty(t, res.Errors)
 }
+
+// TestIntegrationSetMcpServersKeepsSDKServers calls SetMcpServers on a
+// session with an in-process SDK server. The CLI drops an SDK server that a
+// mcp_set_servers payload leaves out, which the Go call used to do on every
+// call, since it never sent them (sdk.d.ts v0.3.325 L3390).
+func TestIntegrationSetMcpServersKeepsSDKServers(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	server := CreateMcpServer(McpServerOptions{
+		Name: "calc", Version: "1.0.0",
+		Tools: []ToolRegistrar{ToolWithSchema("noop", "Does nothing",
+			map[string]interface{}{"type": "object"},
+			func(ctx context.Context, args map[string]interface{}) (ToolResult, error) {
+				return TextResult("ok"), nil
+			})},
+	})
+	client, err := NewClient(append(isolatedClientOptions(t),
+		WithMcpServer("calc", server))...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	for i := 0; i < 2; i++ {
+		res, err := stream.SetMcpServers(ctx, map[string]MCPServerConfig{})
+		require.NoError(t, err)
+		t.Logf("call %d: %+v", i, res)
+		// A second call would also show calc as added again if the first
+		// had dropped it; neither may name it.
+		assert.NotContains(t, res.Removed, "calc", "the SDK server must survive")
+		assert.NotContains(t, res.Added, "calc")
+	}
+}
