@@ -402,8 +402,8 @@ func effectiveArchived(mark *archiveMark, entries []map[string]interface{}) *boo
 
 // humanPromptTime returns the timestamp of a transcript entry that records a
 // prompt a person sent, either as a user message or as a queued command.
-// Tool results, meta and sidechain entries, synthetic origins, and
-// slash-command or shell wrappers do not count. This approximates the CLI's
+// Tool results, meta and sidechain entries, synthetic origins, and the
+// injected text promptText drops do not count. This approximates the CLI's
 // own test, which also folds in prompt-source rules the Go SDK does not see.
 func humanPromptTime(entry map[string]interface{}) (time.Time, bool) {
 	var content, origin interface{}
@@ -460,9 +460,7 @@ func humanPromptTime(entry map[string]interface{}) (time.Time, bool) {
 		case "image", "document":
 			prompt = true
 		case "text":
-			text := strings.TrimSpace(sessionGetString(block, "text"))
-			if text != "" && !strings.HasPrefix(text, "<command-name>") &&
-				!strings.HasPrefix(text, "<local-command-") {
+			if promptText(sessionGetString(block, "text")) != "" {
 				prompt = true
 			}
 		}
