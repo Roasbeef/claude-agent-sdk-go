@@ -86,7 +86,9 @@ type ListSubagentsOptions struct {
 	BaseDir string
 }
 
-// SessionMutationOptions are shared by session mutation helpers.
+// SessionMutationOptions are shared by the session mutation helpers:
+// RenameSession, TagSession, ArchiveSession, UnarchiveSession,
+// DeleteSession and ForkSession.
 type SessionMutationOptions struct {
 	Dir     string
 	BaseDir string
@@ -95,6 +97,11 @@ type SessionMutationOptions struct {
 // ForkSessionOptions controls ForkSession.
 type ForkSessionOptions struct {
 	SessionMutationOptions
+	// UpToMessageID cuts the copy at the message with this uuid, inclusive.
+	// The TS SDK also treats compaction ids specially as of v0.3.325 (a
+	// summary's id leaves out the messages kept after it, a compact_boundary
+	// id ends before the boundary); this port cuts at the uuid as given
+	// (sdk.d.ts v0.3.325 L909).
 	UpToMessageID string
 	Title         string
 }

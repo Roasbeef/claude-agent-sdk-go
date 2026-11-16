@@ -670,7 +670,7 @@ type Settings struct {
 	DisableCommandPluginSources *bool `json:"disableCommandPluginSources,omitempty"`
 	// PluginSuggestionMarketplaces names managed marketplaces whose plugins may surface as contextual install suggestions. Honored only from managed settings. Mirrors sdk.d.ts v0.3.168 L5242.
 	PluginSuggestionMarketplaces []string `json:"pluginSuggestionMarketplaces,omitempty"`
-	// ForceLoginMethod pins the login flow: "claudeai" for a Claude subscription (individual, Team, or Enterprise plans; sdk.d.ts v0.3.325 L9335), "console" for Console billing, "gateway" for the Cloud gateway OIDC device flow (the "gateway" variant was added in v0.3.168). Mirrors sdk.d.ts v0.3.168 L5246.
+	// ForceLoginMethod pins the login flow: "claudeai" for a Claude subscription (individual, Team, or Enterprise plans), "console" for Console billing, "gateway" for the Cloud gateway OIDC device flow (the "gateway" variant was added in v0.3.168). Mirrors sdk.d.ts v0.3.325 L9335.
 	ForceLoginMethod string `json:"forceLoginMethod,omitempty"`
 	// ForceLoginGatewayURL is the Cloud gateway URL to pre-fill during
 	// login, and only means anything alongside ForceLoginMethod "gateway".
@@ -768,13 +768,15 @@ type Settings struct {
 	// session at any effort level (it no longer implies xhigh), typically via
 	// --settings or apply_flag_settings. Requires workflows to be enabled and
 	// a model that supports ultracode (sdk.d.ts v0.3.290 L8987).
-	Ultracode                    *bool  `json:"ultracode,omitempty"`
-	AutoCompactWindow            *int   `json:"autoCompactWindow,omitempty"`
-	AdvisorModel                 string `json:"advisorModel,omitempty"`
-	FastMode                     *bool  `json:"fastMode,omitempty"`
-	FastModePerSessionOptIn      *bool  `json:"fastModePerSessionOptIn,omitempty"`
-	PromptSuggestionEnabled      *bool  `json:"promptSuggestionEnabled,omitempty"`
-	ShowClearContextOnPlanAccept *bool  `json:"showClearContextOnPlanAccept,omitempty"`
+	Ultracode         *bool  `json:"ultracode,omitempty"`
+	AutoCompactWindow *int   `json:"autoCompactWindow,omitempty"`
+	AdvisorModel      string `json:"advisorModel,omitempty"`
+	// FastMode enables fast mode when true. On Vertex a saved value is
+	// ignored; use /fast each session (sdk.d.ts v0.3.325 L9756).
+	FastMode                     *bool `json:"fastMode,omitempty"`
+	FastModePerSessionOptIn      *bool `json:"fastModePerSessionOptIn,omitempty"`
+	PromptSuggestionEnabled      *bool `json:"promptSuggestionEnabled,omitempty"`
+	ShowClearContextOnPlanAccept *bool `json:"showClearContextOnPlanAccept,omitempty"`
 	// AskUserQuestionTimeout is the idle time ("60s", "5m", "10m" or
 	// "never") before Claude's questions in the terminal auto-continue with
 	// any answers selected so far. Unset, the terminal does not
@@ -1011,7 +1013,7 @@ type Settings struct {
 	FooterLinksRegexes []SettingsFooterLinkRegex `json:"footerLinksRegexes,omitempty"`
 	// WheelScrollAccelerationEnabled enables mouse-wheel scroll acceleration. Mirrors sdk.d.ts v0.3.177 L5988.
 	WheelScrollAccelerationEnabled *bool `json:"wheelScrollAccelerationEnabled,omitempty"`
-	// DisableClaudeAiConnectors, when true in any settings source, prevents claude.ai MCP cloud connectors from being auto-fetched or connected. Only gates auto-fetched connectors — a claudeai-proxy server passed explicitly (via --mcp-config or the SDK mcpServers option) still follows the normal MCP config trust flow. Any-source-true wins: a project can opt out, but a project-level false cannot override a user-level true. Mirrors sdk.d.ts v0.3.185 L4629.
+	// DisableClaudeAiConnectors, when true in any settings source, keeps claude.ai MCP cloud connectors from being auto-fetched or connected, and a claudeai-proxy server passed explicitly (via --mcp-config or WithMcpServers) does not connect either. Where a managed or served source sets it, the connectors the desktop app's Code tab hands a session do not connect either, from the app version that shows them as off. Any-source-true wins: a project can opt out, but a project-level false cannot override a user-level true. Mirrors sdk.d.ts v0.3.325 L7610.
 	DisableClaudeAiConnectors *bool `json:"disableClaudeAiConnectors,omitempty"`
 	// ProcessWrapper is the corporate launcher argv prefix for the
 	// background-agent supervisor, the sessions and workers it hosts, and the
@@ -1747,7 +1749,13 @@ type SettingsSpinnerTipsOverride struct {
 }
 
 type SettingsSandbox struct {
-	Enabled           *bool `json:"enabled,omitempty"`
+	Enabled *bool `json:"enabled,omitempty"`
+	// FailIfUnavailable exits at startup when Enabled is true but the
+	// sandbox cannot start, instead of warning and running unsandboxed. A
+	// Claude Code on the web, scheduled-task or Cowork cloud session, whose
+	// container has no command sandbox, starts anyway with a warning; the
+	// sandbox filesystem and network rules are not enforced there (sdk.d.ts
+	// v0.3.325 L9392).
 	FailIfUnavailable *bool `json:"failIfUnavailable,omitempty"`
 	// AutoAllowBashIfSandboxed approves, without a permission prompt, a Bash
 	// command that will run inside the sandbox, unless a deny rule, a
@@ -2288,6 +2296,8 @@ func WithPromptSuggestions(enable bool) Option {
 }
 
 // WithAgentProgressSummaries enables or disables agent progress summary events.
+// CLAUDE_CODE_DISABLE_AGENT_PROGRESS_SUMMARIES=1 in the CLI's environment
+// turns summaries off even when this is true (sdk.d.ts v0.3.325 L2218).
 func WithAgentProgressSummaries(enable bool) Option {
 	return func(o *Options) {
 		o.AgentProgressSummaries = &enable
@@ -4142,9 +4152,10 @@ type AgentDefinition struct {
 	Effort         AgentEffort      `json:"effort,omitempty"`
 	PermissionMode PermissionMode   `json:"permissionMode,omitempty"`
 	// Observer names an agent type auto-spawned as a background observer
-	// whenever this agent runs. The observer receives read-only activity
-	// digests and reports via the ObserverReport tool; it never
-	// participates in the task (sdk.d.ts v0.3.201).
+	// whenever this agent runs, or, as of v0.3.325, a comma-separated list
+	// of up to four, none of whose names has a comma. An observer receives
+	// read-only activity digests and reports via the ObserverReport tool;
+	// it never participates in the task (sdk.d.ts v0.3.325 L101).
 	Observer string `json:"observer,omitempty"`
 	// ObserverMessage is a supplemental postamble appended (after the
 	// harness-owned default) to each activity digest sent to the observer.

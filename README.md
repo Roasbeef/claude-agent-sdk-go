@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.319 catchup work, using Go idioms where the API shape differs.
+v0.3.325 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -1143,6 +1143,45 @@ Deferred in v0.3.319:
 - `mcp_call`'s `check_permissions`: Go has no `mcp_call` surface.
 - bridge.d.ts's `session_security_tier_below_org_policy` terminal reason,
   since there's no Go bridge.
+- `sdk-tools.d.ts` churn, the standing deferral.
+
+The v0.3.325 catchup added:
+
+- `ArchiveSession` / `UnarchiveSession` and `SDKSessionInfo.Archived`. The
+  mark is the `<session>/archived.json` sidecar the TS SDK and the CLI
+  share, and a prompt a person sends after it unarchives the session, which
+  the reader works out from the transcript the way TS does.
+- `*ErrControlRequest`: a control request the CLI refuses now carries its
+  `error_code` as `Code`, read with `errors.As`. The error text is unchanged.
+- `ReloadPluginsOptions.RefuseIfBusy`, refused with
+  `ControlErrorReloadPluginsBusy` on a busy session, and gated by
+  `CapabilityReloadPluginsRefuseIfBusy`.
+- `ResultMessage.InvalidConfigFile`, `StartupFailureManagedSettingsNotDelivered`,
+  `SystemPluginError.ManagedLock`, and `SDKControlPermissionRulesState.Withheld`.
+- Settings docs: `engines` and commit-id `ref` on marketplace sources,
+  deprecated `PluginDigests` / `SubagentStatusLine`, and
+  `AutoAllowBashIfSandboxed` defaulting to false.
+
+Fixes found along the way: `ListSessions` dropped every session `claude -p`
+wrote, because the prompt is stored as a bare string (#331), and
+`Stream.SetMcpServers` disconnected the session's in-process SDK servers on
+every call, because it never re-sent them, and with them went any deny rule
+their tool policies had registered, so a tool the host denied became
+callable (#337).
+
+PRs in this cycle (squash-merged): #331 string prompts, #332 archive, #333
+error_code, #336 refuseIfBusy, #334 result/init fields, #335 settings,
+#337 SetMcpServers, plus this docs refresh.
+
+Deferred in v0.3.325:
+
+- `matchDeniedModels` (@alpha) and `ResolvedSettings.machinePolicy`: both
+  hang off `resolveSettings`, which Go doesn't have.
+- `managedSettingsDelivery` / `--managed-settings-in-initialize`: the CLI
+  flag exists and the startup failure is mirrored, but the option that
+  sends it isn't in the public sdk.d.ts.
+- `forkSession` `upToMessageId` compaction semantics: Go still cuts at the
+  uuid as given.
 - `sdk-tools.d.ts` churn, the standing deferral.
 
 ### Porting from the TypeScript SDK - Go-side differences
