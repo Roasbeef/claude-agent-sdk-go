@@ -859,7 +859,8 @@ const (
 	// start-up is not valid JSON; Errors names the file and, for the global
 	// one, how to restore or repair it. The file is left unchanged and every
 	// start without a terminal is refused until it is repaired, so a retry
-	// alone does not help (sdk.d.ts v0.3.319 L6312).
+	// alone does not help (sdk.d.ts v0.3.319 L6312). As of v0.3.325
+	// ResultMessage.InvalidConfigFile carries the paths as fields.
 	StartupFailureConfigFileInvalid StartupFailureReason = "config_file_invalid"
 	// StartupFailureManagedSettingsNotDelivered means Claude Code was started
 	// with --managed-settings-in-initialize and could not use the managed
@@ -1786,9 +1787,14 @@ type SystemMessage struct {
 	// PluginErrors lists plugin load-time errors. A plugin that did not load
 	// at all is absent from Plugins; one that loaded without some component
 	// keeps its row and also gets an entry here. Absent when there are no
-	// errors, but also always absent on sessions whose frames are persisted
-	// server-side (Remote Control workers), so an empty slice does not assert
-	// a clean load (sdk.d.ts v0.3.290 L5958).
+	// errors, but also always absent on a Remote Control worker and the
+	// hosted worker, so an empty slice does not assert a clean load. A
+	// plugin that managed settings enable but the loader could not load is
+	// listed too, which trips a length check on every throwaway CI runner
+	// that has no copy yet; CLAUDE_CODE_SYNC_PLUGIN_INSTALL=1 makes the first
+	// turn wait for the install. Over a transport that may store its frames,
+	// such an entry carries a fixed sentence in Message, with no path or URL
+	// (sdk.d.ts v0.3.325 L6553).
 	PluginErrors  []SystemPluginError `json:"plugin_errors,omitempty"`
 	Agents        []string            `json:"agents,omitempty"`          // Available agents
 	Betas         []string            `json:"betas,omitempty"`           // Enabled beta flags

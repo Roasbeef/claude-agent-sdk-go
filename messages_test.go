@@ -6911,15 +6911,20 @@ func TestSystemInitPluginErrorManagedLock(t *testing.T) {
 	raw := []byte(`{"type":"system","subtype":"init","session_id":"s","uuid":"u",` +
 		`"plugin_errors":[` +
 		`{"plugin":"inline[0]","type":"generic-error","message":"m","path":"/p",` +
-		`"managed_lock":{"plugin_enabled":false,"name":"fmt"}},` +
+		`"managed_lock":{"plugin_enabled":true,"name":"fmt","marketplace":"acme"}},` +
+		`{"plugin":"inline[1]","type":"generic-error","message":"m","path":"/q",` +
+		`"managed_lock":{"plugin_enabled":false,"name":"lint"}},` +
 		`{"plugin":"x@y","type":"generic-error","message":"m"}]}`)
 	msg, err := ParseMessage(raw)
 	require.NoError(t, err)
 	sys, ok := msg.(SystemMessage)
 	require.True(t, ok, "got %T", msg)
-	require.Len(t, sys.PluginErrors, 2)
+	require.Len(t, sys.PluginErrors, 3)
 	require.NotNil(t, sys.PluginErrors[0].ManagedLock)
-	assert.Equal(t, PluginManagedLock{PluginEnabled: false, Name: "fmt"},
+	assert.Equal(t, PluginManagedLock{PluginEnabled: true, Name: "fmt", Marketplace: "acme"},
 		*sys.PluginErrors[0].ManagedLock)
-	assert.Nil(t, sys.PluginErrors[1].ManagedLock)
+	require.NotNil(t, sys.PluginErrors[1].ManagedLock)
+	assert.Equal(t, PluginManagedLock{PluginEnabled: false, Name: "lint"},
+		*sys.PluginErrors[1].ManagedLock)
+	assert.Nil(t, sys.PluginErrors[2].ManagedLock)
 }

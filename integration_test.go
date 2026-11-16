@@ -6852,7 +6852,14 @@ func startupFailureResult(t *testing.T, configDir, stdin string,
 	cmd.Dir = t.TempDir()
 	cmd.Env = append(os.Environ(), append(env, "CLAUDE_CONFIG_DIR="+configDir)...)
 	cmd.Stdin = strings.NewReader(stdin)
-	out, _ := cmd.Output()
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	out, runErr := cmd.Output()
+	t.Cleanup(func() {
+		if t.Failed() {
+			t.Logf("CLI exit: %v\nstderr: %s", runErr, stderr.String())
+		}
+	})
 
 	for _, line := range strings.Split(string(out), "\n") {
 		if !strings.Contains(line, `"type":"result"`) {
@@ -6886,6 +6893,16 @@ func TestIntegrationInvalidConfigFile(t *testing.T) {
 	assert.True(t, res.InvalidConfigFile.IsGlobal)
 	assert.True(t, res.InvalidConfigFile.BackupSearched)
 	assert.Empty(t, res.InvalidConfigFile.BackupPath, "a fresh dir has no backup")
+
+	// With a backup that parses under the config dir, the CLI names it.
+	backups := filepath.Join(configDir, "backups")
+	require.NoError(t, os.MkdirAll(backups, 0o700))
+	backup := filepath.Join(backups, ".claude.json.backup.1700000000000")
+	require.NoError(t, os.WriteFile(backup, []byte(`{"numStartups":1}`), 0o600))
+	res = startupFailureResult(t, configDir, "\n", nil)
+	require.NotNil(t, res, "no result frame")
+	require.NotNil(t, res.InvalidConfigFile, "errors: %v", res.Errors)
+	assert.Equal(t, backup, res.InvalidConfigFile.BackupPath)
 }
 
 // TestIntegrationStartupFailureManagedSettingsNotDelivered sends an
