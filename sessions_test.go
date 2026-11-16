@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -190,18 +191,44 @@ func TestListSessionsCLIStringPrompt(t *testing.T) {
 	cwd := filepath.Join(t.TempDir(), "repo")
 	projectDir := filepath.Join(baseDir, "projects", projectKey(cwd))
 	require.NoError(t, os.MkdirAll(projectDir, 0700))
-	transcript := `{"type":"queue-operation","operation":"enqueue","timestamp":"2026-11-16T17:13:12.450Z","sessionId":"` + testSessionID + `","content":"hello there"}
-{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":"<local-command-caveat>meta</local-command-caveat>"},"isMeta":true,"uuid":"u0","timestamp":"2026-11-16T17:13:12.500Z","cwd":"` + cwd + `"}
-{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":"hello there"},"uuid":"u1","timestamp":"2026-11-16T17:13:12.583Z","cwd":"` + cwd + `"}
-{"parentUuid":"u1","isSidechain":false,"type":"assistant","uuid":"a1","timestamp":"2026-11-16T17:13:12.768Z","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}
-{"type":"last-prompt","lastPrompt":"hello there","leafUuid":"a1","sessionId":"` + testSessionID + `"}
-`
-	require.NoError(t, os.WriteFile(filepath.Join(projectDir, testSessionID+".jsonl"), []byte(transcript), 0600))
 
-	sessions, err := ListSessions(&ListSessionsOptions{BaseDir: baseDir, Dir: cwd})
-	require.NoError(t, err)
-	require.Len(t, sessions, 1)
-	assert.Equal(t, "hello there", sessions[0].Summary)
-	assert.Equal(t, "hello there", sessions[0].FirstPrompt, "meta entries are not prompts")
-	assert.Equal(t, cwd, sessions[0].Cwd)
+	write := func(lines ...string) {
+		t.Helper()
+		require.NoError(t, os.WriteFile(
+			filepath.Join(projectDir, testSessionID+".jsonl"),
+			[]byte(strings.Join(lines, "\n")+"\n"), 0600,
+		))
+	}
+	user := func(uuid, content string, extra string) string {
+		return `{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":` +
+			content + `},"uuid":"` + uuid + `","timestamp":"2026-11-16T17:13:12.583Z","cwd":"` + cwd + `"` + extra + `}`
+	}
+	list := func() SDKSessionInfo {
+		t.Helper()
+		sessions, err := ListSessions(&ListSessionsOptions{BaseDir: baseDir, Dir: cwd})
+		require.NoError(t, err)
+		require.Len(t, sessions, 1)
+		return sessions[0]
+	}
+
+	write(
+		`{"type":"queue-operation","operation":"enqueue","timestamp":"2026-11-16T17:13:12.450Z","sessionId":"`+testSessionID+`","content":"first"}`,
+		user("u0", `"<local-command-caveat>meta</local-command-caveat>"`, `,"isMeta":true`),
+		user("u1", `"<command-name>/model</command-name>\n<command-message>model</command-message>"`, ""),
+		user("u2", `"[Request interrupted by user]"`, ""),
+		user("u3", `"first"`, ""),
+		user("u4", `"second"`, ""),
+		`{"type":"last-prompt","lastPrompt":"from the cli","leafUuid":"u4","sessionId":"`+testSessionID+`"}`,
+		user("u5", `"This session is being continued from a previous conversation."`, `,"isCompactSummary":true`),
+	)
+	info := list()
+	assert.Equal(t, "first", info.FirstPrompt,
+		"meta, wrapper and interrupt entries are not prompts")
+	assert.Equal(t, "from the cli", info.Summary,
+		"the CLI's last-prompt entry wins, and a compact summary after it does not")
+	assert.Equal(t, cwd, info.Cwd)
+
+	// Without a last-prompt entry the derived last prompt is the summary.
+	write(user("u3", `"first"`, ""), user("u4", `"second"`, ""))
+	assert.Equal(t, "second", list().Summary)
 }
