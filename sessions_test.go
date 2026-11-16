@@ -229,6 +229,7 @@ func TestListSessionsCLIStringPrompt(t *testing.T) {
 	assert.Equal(t, cwd, info.Cwd)
 
 	// Without a last-prompt entry the derived last prompt is the summary.
-	write(user("u3", `"first"`, ""), user("u4", `"second"`, ""))
+	write(user("u3", `"first"`, ""), user("u4", `"second"`, ""),
+		user("u5", `"This session is being continued from a previous conversation."`, `,"isCompactSummary":true`))
 	assert.Equal(t, "second", list().Summary)
 }
