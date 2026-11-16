@@ -541,6 +541,56 @@ func TestStreamControlRequestSurfacesError(t *testing.T) {
 	assert.True(t, strings.Contains(err.Error(), "invalid mode"))
 }
 
+// TestStreamControlRequestErrorCode checks that a control response's
+// error_code reaches the caller through *ErrControlRequest, and that a code
+// outside the TS SDK's accepted shape is dropped.
+func TestStreamControlRequestErrorCode(t *testing.T) {
+	cases := []struct {
+		name, sent, want string
+	}{
+		{"valid", "reload_plugins_busy", "reload_plugins_busy"},
+		{"absent", "", ""},
+		{"uppercase", "Reload_Busy", ""},
+		{"too long", strings.Repeat("a", 65), ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stream, _, _ := newStreamControlTest(func(req SDKControlRequest) SDKControlResponse {
+				return SDKControlResponse{
+					Type: "control_response",
+					Response: SDKControlResponseBody{
+						Subtype:   "error",
+						RequestID: req.RequestID,
+						Error:     "session is busy",
+						ErrorCode: tc.sent,
+					},
+				}
+			})
+
+			err := callWithTimeout(t, func(ctx context.Context) error {
+				_, err := stream.ReloadPlugins(ctx)
+				return err
+			})
+			var ctrlErr *ErrControlRequest
+			require.ErrorAs(t, err, &ctrlErr)
+			assert.Equal(t, "reload_plugins", ctrlErr.Subtype)
+			assert.Equal(t, "session is busy", ctrlErr.Message)
+			assert.Equal(t, tc.want, ctrlErr.Code)
+			assert.Equal(t, `control request "reload_plugins": session is busy`, err.Error(),
+				"the error text is unchanged from before the typed error")
+		})
+	}
+}
+
+func TestParseControlResponseErrorCode(t *testing.T) {
+	raw := `{"type":"control_response","response":{"subtype":"error","request_id":"r1","error":"busy","error_code":"reload_plugins_busy"}}`
+	msg, err := ParseMessage([]byte(raw))
+	require.NoError(t, err)
+	resp, ok := msg.(SDKControlResponse)
+	require.True(t, ok, "got %T", msg)
+	assert.Equal(t, "reload_plugins_busy", resp.Response.ErrorCode)
+}
+
 func TestStreamControlRequestRespectsContextCancel(t *testing.T) {
 	stream, transport, protocol := newStreamControlTest(nil)
 	ctx, cancel := context.WithCancel(context.Background())

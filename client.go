@@ -1624,7 +1624,7 @@ func (s *Stream) dispatchControlRequest(
 		return nil, ctx.Err()
 	case resp := <-ch:
 		if resp.Response.Subtype == "error" {
-			return nil, fmt.Errorf("control request %q: %s", subtype, resp.Response.Error)
+			return nil, newErrControlRequest(subtype, resp.Response)
 		}
 		return &resp, nil
 	}
