@@ -297,3 +297,19 @@ func TestPermissionRuleEntryMcpMountSource(t *testing.T) {
 	assert.Equal(t, PermissionRuleSourceMcpMount, got.Source)
 	assert.Equal(t, PermissionRuleEditabilityReadonly, got.Editability)
 }
+
+// TestPermissionRulesStateWithheld covers the withheld flag a connection that
+// stores its answers sets on list_permission_rules (sdk.d.ts v0.3.325
+// L5279).
+func TestPermissionRulesStateWithheld(t *testing.T) {
+	var resp SDKControlListPermissionRulesResponse
+	require.NoError(t, json.Unmarshal([]byte(`{"state":{"rules":[`+
+		`{"behavior":"deny","source":"session","rule":"*(withheld)","editability":"readonly"}],`+
+		`"workspaceDirectories":[],"originalCwd":"","managedOnly":false,"withheld":true}}`), &resp))
+	assert.True(t, resp.State.Withheld)
+	assert.Equal(t, "*(withheld)", resp.State.Rules[0].Rule)
+
+	data, err := json.Marshal(SDKControlPermissionRulesState{})
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "withheld")
+}

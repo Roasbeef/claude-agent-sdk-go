@@ -6865,3 +6865,66 @@ func TestAssortedParityV0_3_290(t *testing.T) {
 		assert.Equal(t, FirstPostQueuedBehind("durable_post"), got.FirstTextPostQueuedBehind)
 	})
 }
+
+// TestResultInvalidConfigFile decodes the frame CLI 2.1.325 writes for a
+// global config file that does not parse (sdk.d.ts v0.3.325 L6197).
+func TestResultInvalidConfigFile(t *testing.T) {
+	raw := []byte(`{"type":"result","subtype":"error_during_execution",` +
+		`"duration_ms":0,"is_error":true,"num_turns":0,"session_id":"s",` +
+		`"total_cost_usd":0,"uuid":"u","errors":["Configuration error in /c/.claude.json"],` +
+		`"startup_failure_reason":"config_file_invalid",` +
+		`"invalid_config_file":{"path":"/c/.claude.json","is_global":true,` +
+		`"backup_searched":true,"backup_path":"/c/backups/.claude.json.backup.1"}}`)
+
+	msg, err := ParseMessage(raw)
+	require.NoError(t, err)
+	res, ok := msg.(ResultMessage)
+	require.True(t, ok)
+	require.NotNil(t, res.InvalidConfigFile)
+	assert.Equal(t, InvalidConfigFile{
+		Path:           "/c/.claude.json",
+		IsGlobal:       true,
+		BackupSearched: true,
+		BackupPath:     "/c/backups/.claude.json.backup.1",
+	}, *res.InvalidConfigFile)
+
+	data, err := json.Marshal(ResultMessage{Type: "result"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(data), "invalid_config_file")
+}
+
+func TestResultStartupFailureManagedSettingsNotDelivered(t *testing.T) {
+	raw := []byte(`{"type":"result","subtype":"error_during_execution",` +
+		`"session_id":"s","uuid":"u","is_error":true,"duration_ms":0,` +
+		`"num_turns":0,"total_cost_usd":0,` +
+		`"startup_failure_reason":"managed_settings_not_delivered"}`)
+	msg, err := ParseMessage(raw)
+	require.NoError(t, err)
+	res, ok := msg.(ResultMessage)
+	require.True(t, ok)
+	assert.Equal(t, StartupFailureManagedSettingsNotDelivered, res.StartupFailureReason)
+}
+
+// TestSystemInitPluginErrorManagedLock covers plugin_errors[].managed_lock
+// (sdk.d.ts v0.3.325 L6563).
+func TestSystemInitPluginErrorManagedLock(t *testing.T) {
+	raw := []byte(`{"type":"system","subtype":"init","session_id":"s","uuid":"u",` +
+		`"plugin_errors":[` +
+		`{"plugin":"inline[0]","type":"generic-error","message":"m","path":"/p",` +
+		`"managed_lock":{"plugin_enabled":true,"name":"fmt","marketplace":"acme"}},` +
+		`{"plugin":"inline[1]","type":"generic-error","message":"m","path":"/q",` +
+		`"managed_lock":{"plugin_enabled":false,"name":"lint"}},` +
+		`{"plugin":"x@y","type":"generic-error","message":"m"}]}`)
+	msg, err := ParseMessage(raw)
+	require.NoError(t, err)
+	sys, ok := msg.(SystemMessage)
+	require.True(t, ok, "got %T", msg)
+	require.Len(t, sys.PluginErrors, 3)
+	require.NotNil(t, sys.PluginErrors[0].ManagedLock)
+	assert.Equal(t, PluginManagedLock{PluginEnabled: true, Name: "fmt", Marketplace: "acme"},
+		*sys.PluginErrors[0].ManagedLock)
+	require.NotNil(t, sys.PluginErrors[1].ManagedLock)
+	assert.Equal(t, PluginManagedLock{PluginEnabled: false, Name: "lint"},
+		*sys.PluginErrors[1].ManagedLock)
+	assert.Nil(t, sys.PluginErrors[2].ManagedLock)
+}

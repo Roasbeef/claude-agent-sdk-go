@@ -1461,7 +1461,9 @@ func (s *Stream) UpdateSettings(
 // ListPermissionRules returns the session's live permission rules and
 // workspace directories — the same data /permissions lists in the terminal:
 // rules from settings files plus session-only approvals, slash-command grants
-// and --allowedTools flag rules, each with its source.
+// and --allowedTools flag rules, each with its source. A connection that
+// stores its answers (a cloud or self-hosted session) cuts the state; see
+// SDKControlPermissionRulesState.Withheld.
 //
 // Read-only; this never changes a rule. The rule strings come back verbatim
 // and may carry invisible or control characters by design, so escape them

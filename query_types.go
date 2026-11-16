@@ -759,6 +759,18 @@ type SDKControlPermissionRulesState struct {
 	// Errors lists settings files skipped by the merge. When non-empty, those
 	// files' rules are not in the session and not in Rules above.
 	Errors []SDKSettingsParseError `json:"errors,omitempty"`
+	// Withheld is true when the answer was cut because the connection
+	// stores its answers (a cloud or self-hosted session). Rules then holds
+	// only rows from settings sources and mcpServerPolicy,
+	// WorkspaceDirectories only folders from settings sources, and each
+	// Errors entry only a fixed message with an empty path. Where session
+	// folders are withheld, WorkspaceDirectories is empty, OriginalCwd is
+	// "", and a rule other than a bare tool name loses its Description and
+	// reads Tool(withheld), or (withheld) when its tool name cannot be sent;
+	// an ask or deny rule of that last kind reads *(withheld), so a client
+	// matching rules by tool name treats it as covering every tool
+	// (sdk.d.ts v0.3.325 L5279).
+	Withheld bool `json:"withheld,omitempty"`
 }
 
 // PermissionRuleEntry is one permission rule with its provenance and where it
@@ -769,7 +781,8 @@ type PermissionRuleEntry struct {
 	// Rule is the stored rule string VERBATIM, exactly as the session holds
 	// it. Two stored spellings that parse identically each get their own
 	// entry rather than being deduplicated. It can carry invisible or control
-	// characters by design, so escape it before display.
+	// characters by design, so escape it before display. Where the state's
+	// Withheld is true, the text may be cut.
 	Rule string `json:"rule"`
 	// Description is the CLI's plain-language reading of the rule. Nil where
 	// the terminal shows no subtitle either.
