@@ -6830,6 +6830,94 @@ func TestIntegrationDenyInsteadOfPrompting(t *testing.T) {
 		"the Bash call must be denied outright; result: %s", result.Result)
 }
 
+// TestIntegrationReloadPluginsRefuseIfBusy holds a turn open with a
+// UserPromptSubmit command hook that waits on a file, asks for a reload with
+// RefuseIfBusy, and expects the busy refusal as a typed error; once the turn
+// ends the same request reloads. The hook keeps the session busy without a
+// model call, so a fake key covers it (sdk.d.ts v0.3.325 L3282, L5361).
+//
+// The hold is a CLI-side command hook rather than a Go HookConfig callback:
+// a callback runs on the message pump, and while it blocks no control
+// response is delivered (#311).
+func TestIntegrationReloadPluginsRefuseIfBusy(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, "2.1.325")
+
+	dir := t.TempDir()
+	entered := filepath.Join(dir, "entered")
+	release := filepath.Join(dir, "release")
+	hold := fmt.Sprintf(
+		`touch %q; i=0; while [ ! -e %q ] && [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done; printf '{"continue":true}\n'`,
+		entered, release,
+	)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithSettings(Settings{
+			Hooks: map[string][]SettingsHookMatcher{
+				"UserPromptSubmit": {{
+					Hooks: []SettingsHook{{Type: "command", Command: hold}},
+				}},
+			},
+		}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	var (
+		capabilities []string
+		resultSeen   = make(chan struct{})
+	)
+	go func() {
+		defer close(resultSeen)
+		for msg := range stream.Messages() {
+			switch m := msg.(type) {
+			case SystemMessage:
+				if m.Subtype == "init" {
+					capabilities = m.Capabilities
+				}
+			case ResultMessage:
+				return
+			}
+		}
+	}()
+
+	require.NoError(t, stream.Send(ctx, "Reply with the single word OK."))
+	require.Eventually(t, func() bool {
+		_, err := os.Stat(entered)
+		return err == nil
+	}, 30*time.Second, 50*time.Millisecond, "UserPromptSubmit hook never ran")
+
+	_, err = stream.ReloadPlugins(ctx, ReloadPluginsOptions{RefuseIfBusy: true})
+	require.NoError(t, os.WriteFile(release, nil, 0o600))
+	var ctrlErr *ErrControlRequest
+	require.ErrorAs(t, err, &ctrlErr, "a reload mid-turn must be refused")
+	assert.Equal(t, ControlErrorReloadPluginsBusy, ctrlErr.Code)
+	assert.Equal(t, "reload_plugins", ctrlErr.Subtype)
+
+	select {
+	case <-resultSeen:
+	case <-ctx.Done():
+		t.Fatal("turn never ended")
+	}
+	assert.Contains(t, capabilities, CapabilityReloadPluginsRefuseIfBusy)
+
+	// The turn's result can land a beat before the session reads as idle.
+	require.Eventually(t, func() bool {
+		_, err := stream.ReloadPlugins(ctx, ReloadPluginsOptions{RefuseIfBusy: true})
+		return err == nil
+	}, 15*time.Second, 250*time.Millisecond, "an idle session reloads")
+}
+
 // TestIntegrationArchiveSession archives a session the CLI wrote and resumes
 // it with a new prompt. CLI 2.1.325 then rewrites the mark itself
 // ({"archived":false,"by":"cli"}). It does that only on the prompt paths it
