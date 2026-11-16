@@ -541,6 +541,78 @@ func TestStreamControlRequestSurfacesError(t *testing.T) {
 	assert.True(t, strings.Contains(err.Error(), "invalid mode"))
 }
 
+// TestStreamControlRequestErrorCode checks that a control response's
+// error_code reaches the caller through *ErrControlRequest, and that a code
+// outside the TS SDK's accepted shape is dropped.
+func TestStreamControlRequestErrorCode(t *testing.T) {
+	cases := []struct {
+		name, sent, want string
+	}{
+		{"valid", "reload_plugins_busy", "reload_plugins_busy"},
+		{"absent", "", ""},
+		{"uppercase", "Reload_Busy", ""},
+		{"64 chars", strings.Repeat("a", 64), strings.Repeat("a", 64)},
+		{"too long", strings.Repeat("a", 65), ""},
+		{"leading digit", "1busy", ""},
+		{"leading underscore", "_busy", ""},
+		{"trailing newline", "busy\n", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stream, _, _ := newStreamControlTest(func(req SDKControlRequest) SDKControlResponse {
+				return SDKControlResponse{
+					Type: "control_response",
+					Response: SDKControlResponseBody{
+						Subtype:   "error",
+						RequestID: req.RequestID,
+						Error:     "session is busy",
+						ErrorCode: ControlErrorCode(tc.sent),
+					},
+				}
+			})
+
+			err := callWithTimeout(t, func(ctx context.Context) error {
+				_, err := stream.ReloadPlugins(ctx)
+				return err
+			})
+			var ctrlErr *ErrControlRequest
+			require.ErrorAs(t, err, &ctrlErr)
+			assert.Equal(t, "reload_plugins", ctrlErr.Subtype)
+			assert.Equal(t, "session is busy", ctrlErr.Message)
+			assert.Equal(t, tc.want, ctrlErr.Code)
+			assert.Equal(t, `control request "reload_plugins": session is busy`, err.Error(),
+				"the error text is unchanged from before the typed error")
+		})
+	}
+}
+
+// TestParseControlResponseErrorCode checks decoding, including that a
+// malformed or non-string code is dropped without failing the decode, which
+// would lose the response and hang its waiter.
+func TestParseControlResponseErrorCode(t *testing.T) {
+	for _, tc := range []struct {
+		name, code string
+		want       ControlErrorCode
+	}{
+		{"valid", `"reload_plugins_busy"`, "reload_plugins_busy"},
+		{"number", `42`, ""},
+		{"null", `null`, ""},
+		{"object", `{"x":1}`, ""},
+		{"bad shape", `"Busy"`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := `{"type":"control_response","response":{"subtype":"error",` +
+				`"request_id":"r1","error":"busy","error_code":` + tc.code + `}}`
+			msg, err := ParseMessage([]byte(raw))
+			require.NoError(t, err)
+			resp, ok := msg.(SDKControlResponse)
+			require.True(t, ok, "got %T", msg)
+			assert.Equal(t, "busy", resp.Response.Error)
+			assert.Equal(t, tc.want, resp.Response.ErrorCode)
+		})
+	}
+}
+
 func TestStreamControlRequestRespectsContextCancel(t *testing.T) {
 	stream, transport, protocol := newStreamControlTest(nil)
 	ctx, cancel := context.WithCancel(context.Background())

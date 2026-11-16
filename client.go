@@ -1261,7 +1261,33 @@ type ReloadPluginsOptions struct {
 	// none of them (sdk.d.ts v0.3.310 L5156). A CLI that predates the field
 	// ignores it and reloads without them.
 	AddPlugins []PluginConfig
+
+	// RefuseIfBusy makes a request that finds the session busy reload
+	// nothing and fail with an *ErrControlRequest whose Code is
+	// ControlErrorReloadPluginsBusy; ask again once the session is idle.
+	// Busy means a turn is running or still ending, a message is queued for
+	// one, a permission prompt taken over from an earlier process is
+	// unanswered, background work such as an agent or a workflow is live,
+	// or an in-process teammate is at work. A session that only waits on a
+	// background shell command is not busy.
+	//
+	// It is for a host whose request can arrive late, since a reload swaps
+	// the commands, agents, hooks and servers under a running turn. Only a
+	// CLI that lists CapabilityReloadPluginsRefuseIfBusy in its init
+	// capabilities is sure to honor it; any other may ignore it and reload
+	// in a turn too (sdk.d.ts v0.3.325 L3282, L5361).
+	RefuseIfBusy bool
 }
+
+const (
+	// CapabilityReloadPluginsRefuseIfBusy is the init capability a CLI
+	// lists when reload_plugins honors ReloadPluginsOptions.RefuseIfBusy.
+	CapabilityReloadPluginsRefuseIfBusy = "reload_plugins_refuse_if_busy_v1"
+
+	// ControlErrorReloadPluginsBusy is the ErrControlRequest.Code of a
+	// reload_plugins request that RefuseIfBusy turned away.
+	ControlErrorReloadPluginsBusy = "reload_plugins_busy"
+)
 
 // ReloadPlugins reloads plugins from disk and returns refreshed session
 // metadata.
@@ -1281,6 +1307,7 @@ func (s *Stream) ReloadPlugins(
 		Subtype:           "reload_plugins",
 		HoldOnCacheImpact: o.HoldOnCacheImpact,
 		AddPlugins:        o.AddPlugins,
+		RefuseIfBusy:      o.RefuseIfBusy,
 	})
 	if err != nil {
 		return nil, err
@@ -1626,7 +1653,7 @@ func (s *Stream) dispatchControlRequest(
 		return nil, ctx.Err()
 	case resp := <-ch:
 		if resp.Response.Subtype == "error" {
-			return nil, fmt.Errorf("control request %q: %s", subtype, resp.Response.Error)
+			return nil, newErrControlRequest(subtype, resp.Response)
 		}
 		return &resp, nil
 	}

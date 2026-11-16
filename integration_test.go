@@ -6830,6 +6830,191 @@ func TestIntegrationDenyInsteadOfPrompting(t *testing.T) {
 		"the Bash call must be denied outright; result: %s", result.Result)
 }
 
+// TestIntegrationReloadPluginsRefuseIfBusy holds a turn open with a
+// UserPromptSubmit command hook that waits on a file, asks for a reload with
+// RefuseIfBusy, and expects the busy refusal as a typed error; once the turn
+// ends the same request reloads. The hook keeps the session busy without a
+// model call, so a fake key covers it (sdk.d.ts v0.3.325 L3282, L5361).
+//
+// The hold is a CLI-side command hook rather than a Go HookConfig callback:
+// a callback runs on the message pump, and while it blocks no control
+// response is delivered (#311).
+func TestIntegrationReloadPluginsRefuseIfBusy(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, "2.1.325")
+
+	dir := t.TempDir()
+	entered := filepath.Join(dir, "entered")
+	release := filepath.Join(dir, "release")
+	hold := fmt.Sprintf(
+		`touch %q; i=0; while [ ! -e %q ] && [ $i -lt 600 ]; do sleep 0.1; i=$((i+1)); done; printf '{"continue":true}\n'`,
+		entered, release,
+	)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithSettings(Settings{
+			Hooks: map[string][]SettingsHookMatcher{
+				"UserPromptSubmit": {{
+					Hooks: []SettingsHook{{Type: "command", Command: hold}},
+				}},
+			},
+		}),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	var (
+		capabilities []string
+		resultSeen   = make(chan struct{})
+	)
+	go func() {
+		defer close(resultSeen)
+		for msg := range stream.Messages() {
+			switch m := msg.(type) {
+			case SystemMessage:
+				if m.Subtype == "init" {
+					capabilities = m.Capabilities
+				}
+			case ResultMessage:
+				return
+			}
+		}
+	}()
+
+	require.NoError(t, stream.Send(ctx, "Reply with the single word OK."))
+	require.Eventually(t, func() bool {
+		_, err := os.Stat(entered)
+		return err == nil
+	}, 30*time.Second, 50*time.Millisecond, "UserPromptSubmit hook never ran")
+
+	_, err = stream.ReloadPlugins(ctx, ReloadPluginsOptions{RefuseIfBusy: true})
+	require.NoError(t, os.WriteFile(release, nil, 0o600))
+	var ctrlErr *ErrControlRequest
+	require.ErrorAs(t, err, &ctrlErr, "a reload mid-turn must be refused")
+	assert.Equal(t, ControlErrorReloadPluginsBusy, ctrlErr.Code)
+	assert.Equal(t, "reload_plugins", ctrlErr.Subtype)
+
+	select {
+	case <-resultSeen:
+	case <-ctx.Done():
+		t.Fatal("turn never ended")
+	}
+	assert.Contains(t, capabilities, CapabilityReloadPluginsRefuseIfBusy)
+
+	// The turn's result can land a beat before the session reads as idle.
+	require.Eventually(t, func() bool {
+		_, err := stream.ReloadPlugins(ctx, ReloadPluginsOptions{RefuseIfBusy: true})
+		return err == nil
+	}, 15*time.Second, 250*time.Millisecond, "an idle session reloads")
+}
+
+// TestIntegrationArchiveSession archives a session the CLI wrote and resumes
+// it with a new prompt. CLI 2.1.325 then rewrites the mark itself
+// ({"archived":false,"by":"cli"}). It does that only on the prompt paths it
+// handles, and an older CLI never does, so the test then puts back a mark
+// from before the prompt and checks that the Go reader unarchives from the
+// transcript alone, as the TS SDK does (sdk.d.ts v0.3.325 L147, L6428). An
+// API error turn still writes the prompt, so a fake key covers the path.
+func TestIntegrationArchiveSession(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	configDir := filepath.Join(t.TempDir(), ".claude")
+	require.NoError(t, os.MkdirAll(configDir, 0700))
+	cwd := t.TempDir()
+
+	query := func(prompt string, extra ...Option) string {
+		t.Helper()
+		opts := append([]Option{
+			WithConfigDir(configDir),
+			WithCwd(cwd),
+			WithSkillsDisabled(),
+			WithSettingSources(nil),
+			WithMaxTurns(1),
+		}, extra...)
+		client, err := NewClient(opts...)
+		require.NoError(t, err)
+		defer client.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		for msg := range client.Query(ctx, prompt) {
+			if m, ok := msg.(ResultMessage); ok {
+				return m.SessionID
+			}
+		}
+		t.Fatal("no result message")
+		return ""
+	}
+	archived := func(sessionID string) *bool {
+		t.Helper()
+		sessions, err := ListSessions(&ListSessionsOptions{BaseDir: configDir, Dir: cwd})
+		require.NoError(t, err)
+		for _, s := range sessions {
+			if s.SessionID == sessionID {
+				return s.Archived
+			}
+		}
+		t.Fatalf("session %s not listed among %d", sessionID, len(sessions))
+		return nil
+	}
+
+	sessionID := query("Reply with the single word OK.")
+	require.NotEmpty(t, sessionID)
+	assert.Nil(t, archived(sessionID))
+
+	mut := &SessionMutationOptions{BaseDir: configDir, Dir: cwd}
+	require.NoError(t, ArchiveSession(sessionID, mut))
+	got := archived(sessionID)
+	require.NotNil(t, got)
+	assert.True(t, *got)
+
+	markPath := filepath.Join(configDir, "projects", projectKey(cwd), sessionID, "archived.json")
+	raw, err := os.ReadFile(markPath)
+	require.NoError(t, err)
+	staleMark := raw
+
+	// The mark's timestamp has millisecond precision; keep the next prompt
+	// strictly after it.
+	time.Sleep(10 * time.Millisecond)
+	query("Reply with the single word AGAIN.", WithResume(sessionID))
+	got = archived(sessionID)
+	require.NotNil(t, got)
+	assert.False(t, *got, "a prompt sent after the mark unarchives the session")
+
+	raw, err = os.ReadFile(markPath)
+	require.NoError(t, err)
+	var mark map[string]interface{}
+	require.NoError(t, json.Unmarshal(raw, &mark))
+	t.Logf("mark after resume: %s", raw)
+	if mark["by"] == "cli" {
+		assert.Equal(t, false, mark["archived"])
+	}
+
+	// Put back the mark from before the resume: only the prompt in the
+	// transcript can now say the session is unarchived.
+	require.NoError(t, os.WriteFile(markPath, staleMark, 0600))
+	got = archived(sessionID)
+	require.NotNil(t, got)
+	assert.False(t, *got, "the fold must see the CLI's own prompt entry")
+
+	require.NoError(t, ArchiveSession(sessionID, mut))
+	require.NoError(t, UnarchiveSession(sessionID, mut))
+	got = archived(sessionID)
+	require.NotNil(t, got)
+	assert.False(t, *got)
+}
+
 // startupFailureResult runs the CLI directly in stream-json mode and decodes
 // its stdout with ParseMessage, returning the result frame. It bypasses the
 // Client on purpose: Connect drops a startup-failure result that lands before
