@@ -6829,3 +6829,81 @@ func TestIntegrationDenyInsteadOfPrompting(t *testing.T) {
 	assert.NotEmpty(t, result.PermissionDenials,
 		"the Bash call must be denied outright; result: %s", result.Result)
 }
+
+// startupFailureResult runs the CLI directly in stream-json mode and decodes
+// its stdout with ParseMessage, returning the result frame. It bypasses the
+// Client on purpose: Connect drops a startup-failure result that lands before
+// the initialize reply (#289), but the wire shape is what these tests check.
+func startupFailureResult(t *testing.T, configDir, stdin string,
+	env []string, args ...string) *ResultMessage {
+
+	t.Helper()
+	cliPath, err := DiscoverCLIPath(&Options{})
+	if err != nil {
+		t.Skip("claude CLI not found in PATH")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, cliPath, append([]string{
+		"-p", "--input-format", "stream-json",
+		"--output-format", "stream-json", "--verbose",
+	}, args...)...)
+	cmd.Dir = t.TempDir()
+	cmd.Env = append(os.Environ(), append(env, "CLAUDE_CONFIG_DIR="+configDir)...)
+	cmd.Stdin = strings.NewReader(stdin)
+	out, _ := cmd.Output()
+
+	for _, line := range strings.Split(string(out), "\n") {
+		if !strings.Contains(line, `"type":"result"`) {
+			continue
+		}
+		msg, err := ParseMessage([]byte(line))
+		require.NoError(t, err)
+		if res, ok := msg.(ResultMessage); ok {
+			return &res
+		}
+	}
+	return nil
+}
+
+// TestIntegrationInvalidConfigFile checks the invalid_config_file fields the
+// CLI adds beside config_file_invalid (sdk.d.ts v0.3.325 L6197).
+func TestIntegrationInvalidConfigFile(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, "2.1.325")
+
+	configDir := filepath.Join(t.TempDir(), ".claude")
+	require.NoError(t, os.MkdirAll(configDir, 0o700))
+	configFile := filepath.Join(configDir, ".claude.json")
+	require.NoError(t, os.WriteFile(configFile, []byte("{not json"), 0o600))
+
+	res := startupFailureResult(t, configDir, "\n", nil)
+	require.NotNil(t, res, "no result frame")
+	assert.Equal(t, StartupFailureConfigFileInvalid, res.StartupFailureReason)
+	require.NotNil(t, res.InvalidConfigFile, "errors: %v", res.Errors)
+	assert.Equal(t, configFile, res.InvalidConfigFile.Path)
+	assert.True(t, res.InvalidConfigFile.IsGlobal)
+	assert.True(t, res.InvalidConfigFile.BackupSearched)
+	assert.Empty(t, res.InvalidConfigFile.BackupPath, "a fresh dir has no backup")
+}
+
+// TestIntegrationStartupFailureManagedSettingsNotDelivered sends an
+// initialize without managedSettings to a CLI launched to read them from it
+// (sdk.d.ts v0.3.325 L6488).
+func TestIntegrationStartupFailureManagedSettingsNotDelivered(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, "2.1.325")
+
+	configDir := filepath.Join(t.TempDir(), ".claude")
+	require.NoError(t, os.MkdirAll(configDir, 0o700))
+
+	res := startupFailureResult(t, configDir,
+		`{"type":"control_request","request_id":"1","request":{"subtype":"initialize"}}`+"\n",
+		[]string{"CLAUDE_CODE_STARTUP_FAILURE_RESULTS=1"},
+		"--await-initialize", "--managed-settings-in-initialize",
+	)
+	require.NotNil(t, res, "no result frame")
+	assert.Equal(t, StartupFailureManagedSettingsNotDelivered, res.StartupFailureReason)
+	assert.NotEmpty(t, res.Errors)
+}
