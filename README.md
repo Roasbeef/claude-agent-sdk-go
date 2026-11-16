@@ -1165,7 +1165,9 @@ The v0.3.325 catchup added:
 Fixes found along the way: `ListSessions` dropped every session `claude -p`
 wrote, because the prompt is stored as a bare string (#331), and
 `Stream.SetMcpServers` disconnected the session's in-process SDK servers on
-every call, because it never re-sent them (#337).
+every call, because it never re-sent them, and with them went any deny rule
+their tool policies had registered, so a tool the host denied became
+callable (#337).
 
 PRs in this cycle (squash-merged): #331 string prompts, #332 archive, #333
 error_code, #336 refuseIfBusy, #334 result/init fields, #335 settings,
