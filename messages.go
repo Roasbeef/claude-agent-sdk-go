@@ -569,6 +569,13 @@ type ResultMessage struct {
 	// v0.3.319 L6053).
 	StartupFailureReason StartupFailureReason `json:"startup_failure_reason,omitempty"`
 
+	// InvalidConfigFile is set when StartupFailureReason is
+	// StartupFailureConfigFileInvalid: the config file that did not parse
+	// and its backup, as fields. Read paths from here, never from the text
+	// of Errors. Nil on every other result and from older producers
+	// (sdk.d.ts v0.3.325 L6197).
+	InvalidConfigFile *InvalidConfigFile `json:"invalid_config_file,omitempty"`
+
 	// CredentialExpiresAt is when the claude.ai credential this process's
 	// requests send ends for good, as an ISO 8601 instant read as the result
 	// is written. For a stored claude.ai login it is the end of the refresh
@@ -854,7 +861,39 @@ const (
 	// start without a terminal is refused until it is repaired, so a retry
 	// alone does not help (sdk.d.ts v0.3.319 L6312).
 	StartupFailureConfigFileInvalid StartupFailureReason = "config_file_invalid"
+	// StartupFailureManagedSettingsNotDelivered means Claude Code was started
+	// with --managed-settings-in-initialize and could not use the managed
+	// settings in the initialize request: stdin ended or failed first, its
+	// first line was too long, the request had no usable managedSettings
+	// object or a malformed plugins field, or the launch does not read that
+	// request at start-up or also passes --managed-settings. Errors says
+	// which. No session starts without them; the fix is in the host or a
+	// wrapper script, not a retry (sdk.d.ts v0.3.325 L6488).
+	StartupFailureManagedSettingsNotDelivered StartupFailureReason = "managed_settings_not_delivered"
 )
+
+// InvalidConfigFile names the config file behind a config_file_invalid
+// startup failure. Each path is in the form the machine running Claude Code
+// uses, which can differ from the host's.
+type InvalidConfigFile struct {
+	// Path is the file that is not valid JSON.
+	Path string `json:"path"`
+	// IsGlobal reports whether this is Claude Code's global config file.
+	// Only that file has backups, and only its message says how to repair
+	// it.
+	IsGlobal bool `json:"is_global"`
+	// BackupSearched reports whether Claude Code knows the result of its
+	// search for a backup. True with an empty BackupPath means it found
+	// none; false means the result is not known, or the file is not the
+	// global one.
+	BackupSearched bool `json:"backup_searched"`
+	// BackupPath is the backup the message in Errors names. Usually it
+	// parses, but when no backup does it is the newest found with an
+	// account, then the newest holding anything, or at last one that does
+	// not parse or could not be read. Show it to a person, or check that it
+	// parses before copying it over Path.
+	BackupPath string `json:"backup_path,omitempty"`
+}
 
 // MessageType implements Message.
 func (m ResultMessage) MessageType() string { return "result" }
@@ -1889,6 +1928,29 @@ type SystemPluginError struct {
 	// which is how a host mounting several directories pairs the error with
 	// its own entry.
 	Path string `json:"path,omitempty"`
+	// ManagedLock is set only when a managed-settings enabledPlugins entry
+	// dropped this --plugin-dir, SDK plugins, skills-directory or synced
+	// copy (sdk.d.ts v0.3.325 L6563).
+	ManagedLock *PluginManagedLock `json:"managed_lock,omitempty"`
+}
+
+// PluginManagedLock is the managed-settings enabledPlugins entry that kept a
+// directory copy of a plugin from loading. Neither value stops an install of
+// the same name from another marketplace, which can load beside this row.
+type PluginManagedLock struct {
+	// PluginEnabled true means the entry turns that plugin on and Claude
+	// Code does not accept this copy as it; false means the entry turns it
+	// off and no directory copy of the name may load.
+	PluginEnabled bool `json:"plugin_enabled"`
+	// Name is the entry's plugin name as the entry spells it, which can
+	// differ from the copy's (case, Unicode form, an earlier name of a
+	// built-in). Like Plugin it is byte-exact: control and bidi characters
+	// are kept and the length is unbounded, so clean and bound it before
+	// display.
+	Name string `json:"name"`
+	// Marketplace is the entry's marketplace, byte-exact like Name. Empty
+	// where the entry names no marketplace an install could come from.
+	Marketplace string `json:"marketplace,omitempty"`
 }
 
 // PartialAssistantMessage represents a streaming partial message.
