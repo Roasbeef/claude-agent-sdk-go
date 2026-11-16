@@ -6830,10 +6830,12 @@ func TestIntegrationDenyInsteadOfPrompting(t *testing.T) {
 		"the Bash call must be denied outright; result: %s", result.Result)
 }
 
-// TestIntegrationArchiveSession archives a session the CLI wrote, then
-// resumes it with a new prompt, which unarchives it: the CLI never touches
-// the archived.json mark, so the Go reader has to see the later prompt in
-// the transcript, as the TS SDK does (sdk.d.ts v0.3.325 L147, L6428). An
+// TestIntegrationArchiveSession archives a session the CLI wrote and resumes
+// it with a new prompt. CLI 2.1.325 then rewrites the mark itself
+// ({"archived":false,"by":"cli"}). It does that only on the prompt paths it
+// handles, and an older CLI never does, so the test then puts back a mark
+// from before the prompt and checks that the Go reader unarchives from the
+// transcript alone, as the TS SDK does (sdk.d.ts v0.3.325 L147, L6428). An
 // API error turn still writes the prompt, so a fake key covers the path.
 func TestIntegrationArchiveSession(t *testing.T) {
 	skipIfNoToken(t)
@@ -6889,6 +6891,11 @@ func TestIntegrationArchiveSession(t *testing.T) {
 	require.NotNil(t, got)
 	assert.True(t, *got)
 
+	markPath := filepath.Join(configDir, "projects", projectKey(cwd), sessionID, "archived.json")
+	raw, err := os.ReadFile(markPath)
+	require.NoError(t, err)
+	staleMark := raw
+
 	// The mark's timestamp has millisecond precision; keep the next prompt
 	// strictly after it.
 	time.Sleep(10 * time.Millisecond)
@@ -6896,6 +6903,22 @@ func TestIntegrationArchiveSession(t *testing.T) {
 	got = archived(sessionID)
 	require.NotNil(t, got)
 	assert.False(t, *got, "a prompt sent after the mark unarchives the session")
+
+	raw, err = os.ReadFile(markPath)
+	require.NoError(t, err)
+	var mark map[string]interface{}
+	require.NoError(t, json.Unmarshal(raw, &mark))
+	t.Logf("mark after resume: %s", raw)
+	if mark["by"] == "cli" {
+		assert.Equal(t, false, mark["archived"])
+	}
+
+	// Put back the mark from before the resume: only the prompt in the
+	// transcript can now say the session is unarchived.
+	require.NoError(t, os.WriteFile(markPath, staleMark, 0600))
+	got = archived(sessionID)
+	require.NotNil(t, got)
+	assert.False(t, *got, "the fold must see the CLI's own prompt entry")
 
 	require.NoError(t, ArchiveSession(sessionID, mut))
 	require.NoError(t, UnarchiveSession(sessionID, mut))
