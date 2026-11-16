@@ -6829,3 +6829,77 @@ func TestIntegrationDenyInsteadOfPrompting(t *testing.T) {
 	assert.NotEmpty(t, result.PermissionDenials,
 		"the Bash call must be denied outright; result: %s", result.Result)
 }
+
+// TestIntegrationArchiveSession archives a session the CLI wrote, then
+// resumes it with a new prompt, which unarchives it: the CLI never touches
+// the archived.json mark, so the Go reader has to see the later prompt in
+// the transcript, as the TS SDK does (sdk.d.ts v0.3.325 L147, L6428). An
+// API error turn still writes the prompt, so a fake key covers the path.
+func TestIntegrationArchiveSession(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfNoCLI(t)
+
+	configDir := filepath.Join(t.TempDir(), ".claude")
+	require.NoError(t, os.MkdirAll(configDir, 0700))
+	cwd := t.TempDir()
+
+	query := func(prompt string, extra ...Option) string {
+		t.Helper()
+		opts := append([]Option{
+			WithConfigDir(configDir),
+			WithCwd(cwd),
+			WithSkillsDisabled(),
+			WithSettingSources(nil),
+			WithMaxTurns(1),
+		}, extra...)
+		client, err := NewClient(opts...)
+		require.NoError(t, err)
+		defer client.Close()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+		defer cancel()
+		for msg := range client.Query(ctx, prompt) {
+			if m, ok := msg.(ResultMessage); ok {
+				return m.SessionID
+			}
+		}
+		t.Fatal("no result message")
+		return ""
+	}
+	archived := func(sessionID string) *bool {
+		t.Helper()
+		sessions, err := ListSessions(&ListSessionsOptions{BaseDir: configDir, Dir: cwd})
+		require.NoError(t, err)
+		for _, s := range sessions {
+			if s.SessionID == sessionID {
+				return s.Archived
+			}
+		}
+		t.Fatalf("session %s not listed among %d", sessionID, len(sessions))
+		return nil
+	}
+
+	sessionID := query("Reply with the single word OK.")
+	require.NotEmpty(t, sessionID)
+	assert.Nil(t, archived(sessionID))
+
+	mut := &SessionMutationOptions{BaseDir: configDir, Dir: cwd}
+	require.NoError(t, ArchiveSession(sessionID, mut))
+	got := archived(sessionID)
+	require.NotNil(t, got)
+	assert.True(t, *got)
+
+	// The mark's timestamp has millisecond precision; keep the next prompt
+	// strictly after it.
+	time.Sleep(10 * time.Millisecond)
+	query("Reply with the single word AGAIN.", WithResume(sessionID))
+	got = archived(sessionID)
+	require.NotNil(t, got)
+	assert.False(t, *got, "a prompt sent after the mark unarchives the session")
+
+	require.NoError(t, ArchiveSession(sessionID, mut))
+	require.NoError(t, UnarchiveSession(sessionID, mut))
+	got = archived(sessionID)
+	require.NotNil(t, got)
+	assert.False(t, *got)
+}
