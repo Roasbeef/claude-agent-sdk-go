@@ -365,3 +365,150 @@ func TestArchiveSessionErrors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, info.Archived)
 }
+
+// TestHumanPromptTime pins which transcript entries unarchive a session,
+// row for row against the TS SDK's schema (JLe in sdk.mjs v0.3.325).
+func TestHumanPromptTime(t *testing.T) {
+	const ts = "2026-04-26T03:00:00Z"
+	user := func(content interface{}, extra map[string]interface{}) map[string]interface{} {
+		e := map[string]interface{}{
+			"type": "user", "timestamp": ts,
+			"message": map[string]interface{}{"role": "user", "content": content},
+		}
+		for k, v := range extra {
+			e[k] = v
+		}
+		return e
+	}
+	queued := func(att map[string]interface{}, extra map[string]interface{}) map[string]interface{} {
+		a := map[string]interface{}{"type": "queued_command", "prompt": "queued"}
+		for k, v := range att {
+			a[k] = v
+		}
+		e := map[string]interface{}{"type": "attachment", "timestamp": ts, "attachment": a}
+		for k, v := range extra {
+			e[k] = v
+		}
+		return e
+	}
+	human := map[string]interface{}{"kind": "human"}
+
+	for _, tc := range []struct {
+		name  string
+		entry map[string]interface{}
+		want  bool
+	}{
+		{"plain string", user("hi", nil), true},
+		{"text block", user([]interface{}{map[string]interface{}{"type": "text", "text": "hi"}}, nil), true},
+		{"image only", user([]interface{}{map[string]interface{}{"type": "image"}}, nil), true},
+		{"document only", user([]interface{}{map[string]interface{}{"type": "document"}}, nil), true},
+		{"tool result", user([]interface{}{map[string]interface{}{"type": "tool_result"}}, nil), false},
+		{"empty", user("   ", nil), false},
+		{"no timestamp", map[string]interface{}{"type": "user", "message": map[string]interface{}{"content": "hi"}}, false},
+
+		{"isMeta", user("hi", map[string]interface{}{"isMeta": true}), false},
+		{"isMeta false", user("hi", map[string]interface{}{"isMeta": false}), true},
+		{"isMeta non-bool", user("hi", map[string]interface{}{"isMeta": "yes"}), false},
+		{"isSidechain", user("hi", map[string]interface{}{"isSidechain": true}), false},
+		{"isCompactSummary", user("hi", map[string]interface{}{"isCompactSummary": true}), false},
+		{"isVirtual", user("hi", map[string]interface{}{"isVirtual": true}), false},
+		{"isVisibleInTranscriptOnly", user("hi", map[string]interface{}{"isVisibleInTranscriptOnly": true}), false},
+		{"textNotTyped", user("hi", map[string]interface{}{"textNotTyped": true}), false},
+		{"handedOff", user("hi", map[string]interface{}{"handedOff": true}), false},
+		{"queueSkipAttachments", user("hi", map[string]interface{}{"queueSkipAttachments": true}), false},
+		{"wakeupSource", user("hi", map[string]interface{}{"wakeupSource": "loop"}), false},
+		{"scheduledTaskId", user("hi", map[string]interface{}{"scheduledTaskId": "t1"}), false},
+		{"persist", user("hi", map[string]interface{}{"persist": false}), false},
+		{"toolUseResult", user("hi", map[string]interface{}{"toolUseResult": "x"}), false},
+		{"toolUseResult null", user("hi", map[string]interface{}{"toolUseResult": nil}), true},
+		{"turnOrigin sdk", user("hi", map[string]interface{}{"turnOrigin": "sdk"}), true},
+		{"turnOrigin other", user("hi", map[string]interface{}{"turnOrigin": "cron"}), false},
+		{"promptSource non-string", user("hi", map[string]interface{}{"promptSource": 1}), false},
+
+		{"human origin", user("hi", map[string]interface{}{"origin": human}), true},
+		{"other origin", user("hi", map[string]interface{}{"origin": map[string]interface{}{"kind": "peer"}}), false},
+		{"human origin slash command", user("<command-name>/x</command-name>", map[string]interface{}{"origin": human}), false},
+		{"human origin other tag", user("<task-notification>x</task-notification>", map[string]interface{}{"origin": human}), true},
+
+		{"slash command name", user("<command-name>/clear</command-name>", nil), false},
+		{"prompt slash command", user("<command-message>review</command-message>\n<command-name>/review</command-name>", nil), true},
+		{"bash input", user("<bash-input>ls</bash-input>", nil), true},
+		{"local command output", user("<local-command-stdout>x</local-command-stdout>", nil), false},
+		{"interrupt marker", user("[Request interrupted by user]", nil), false},
+
+		{"queued human", queued(map[string]interface{}{"origin": human}, nil), true},
+		{"queued no origin", queued(nil, nil), true},
+		{"queued meta", queued(map[string]interface{}{"isMeta": true}, nil), false},
+		{"queued sidechain", queued(nil, map[string]interface{}{"isSidechain": true}), false},
+		{"queued bash mode", queued(map[string]interface{}{"commandMode": "bash"}, nil), true},
+		{"queued notification mode", queued(map[string]interface{}{"commandMode": "task-notification"}, nil), false},
+		{"other attachment", map[string]interface{}{"type": "attachment", "timestamp": ts,
+			"attachment": map[string]interface{}{"type": "date"}}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, got := humanPromptTime(tc.entry)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestArchiveMarkEdgeCases(t *testing.T) {
+	baseDir, cwd := makeSessionFixture(t)
+	markDir := filepath.Join(baseDir, "projects", projectKey(cwd), testSessionID)
+	markPath := filepath.Join(markDir, "archived.json")
+	archived := func() *bool {
+		t.Helper()
+		info, err := GetSessionInfo(testSessionID, &GetSessionInfoOptions{BaseDir: baseDir, Dir: cwd})
+		require.NoError(t, err)
+		require.NotNil(t, info)
+		return info.Archived
+	}
+	const at = `"at":"2026-04-26T02:00:00.000Z"`
+
+	for name, body := range map[string]string{
+		"no archived key": `{` + at + `}`,
+		"archived null":   `{"archived":null,` + at + `}`,
+		"oversized":       `{"archived":true,` + at + `,"pad":"` + strings.Repeat("x", archiveMarkMaxBytes) + `"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.NoError(t, os.WriteFile(markPath, []byte(body), 0600))
+			assert.Nil(t, archived())
+		})
+	}
+
+	t.Run("symlink is not a mark", func(t *testing.T) {
+		target := filepath.Join(t.TempDir(), "elsewhere.json")
+		require.NoError(t, os.WriteFile(target, []byte(`{"archived":true,`+at+`}`), 0600))
+		require.NoError(t, os.Remove(markPath))
+		require.NoError(t, os.Symlink(target, markPath))
+		assert.Nil(t, archived())
+		require.NoError(t, os.Remove(markPath))
+	})
+
+	t.Run("no temp file left behind", func(t *testing.T) {
+		require.NoError(t, ArchiveSession(testSessionID, &SessionMutationOptions{BaseDir: baseDir, Dir: cwd}))
+		entries, err := os.ReadDir(markDir)
+		require.NoError(t, err)
+		for _, e := range entries {
+			assert.NotContains(t, e.Name(), ".tmp.")
+		}
+	})
+}
+
+// TestArchiveSessionMarksEveryProjectDir covers a transcript present under
+// two project directories: with no Dir, both get the mark.
+func TestArchiveSessionMarksEveryProjectDir(t *testing.T) {
+	baseDir, cwd := makeSessionFixture(t)
+	src := filepath.Join(baseDir, "projects", projectKey(cwd), testSessionID+".jsonl")
+	otherDir := filepath.Join(baseDir, "projects", "-other-project")
+	require.NoError(t, os.MkdirAll(otherDir, 0700))
+	data, err := os.ReadFile(src)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(otherDir, testSessionID+".jsonl"), data, 0600))
+
+	require.NoError(t, ArchiveSession(testSessionID, &SessionMutationOptions{BaseDir: baseDir}))
+	for _, dir := range []string{filepath.Dir(src), otherDir} {
+		_, err := os.Stat(filepath.Join(dir, testSessionID, "archived.json"))
+		assert.NoError(t, err, dir)
+	}
+}
