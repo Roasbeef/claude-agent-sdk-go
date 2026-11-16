@@ -1,7 +1,9 @@
 package claudeagent
 
 import (
+	"encoding/json"
 	"fmt"
+	"regexp"
 )
 
 // ErrUnknownMessageType indicates that a message with an unrecognized type
@@ -232,4 +234,55 @@ type ErrNoQuestionHandler struct {
 // Error implements the error interface.
 func (e *ErrNoQuestionHandler) Error() string {
 	return fmt.Sprintf("no handler for question: %s (set WithAskUserQuestionHandler or use Questions())", e.ToolUseID)
+}
+
+// ErrControlRequest is returned when the CLI answers a control request with
+// an error verdict. Its Error text is the one the SDK has always returned
+// for such a verdict; use errors.As to read Code.
+type ErrControlRequest struct {
+	// Subtype is the control request's subtype, e.g. "reload_plugins".
+	Subtype string
+	// Message is the CLI's error text, for display.
+	Message string
+	// Code is the CLI's machine-readable error_code, such as
+	// "reload_plugins_busy". It is empty when the CLI sent none, or
+	// sent one that is not a lowercase identifier of at most 64 characters
+	// (the TS SDK drops those too). Codes form an open set.
+	Code string
+}
+
+// Error implements the error interface.
+func (e *ErrControlRequest) Error() string {
+	return fmt.Sprintf("control request %q: %s", e.Subtype, e.Message)
+}
+
+// controlErrorCodePattern is the shape the TS SDK accepts for a control
+// response error_code; anything else is dropped rather than trusted.
+var controlErrorCodePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+
+// ControlErrorCode is a control response's error_code. Decoding keeps only a
+// string of the shape the TS SDK accepts and reads anything else, a number
+// included, as "". Failing the decode instead would drop the whole response,
+// and the request waiting on it would never return.
+type ControlErrorCode string
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (c *ControlErrorCode) UnmarshalJSON(data []byte) error {
+	var s string
+	if json.Unmarshal(data, &s) != nil || !controlErrorCodePattern.MatchString(s) {
+		*c = ""
+		return nil
+	}
+	*c = ControlErrorCode(s)
+	return nil
+}
+
+// newErrControlRequest checks the code's shape again because a transport can
+// hand over a response that never went through UnmarshalJSON.
+func newErrControlRequest(subtype string, body SDKControlResponseBody) error {
+	code := string(body.ErrorCode)
+	if !controlErrorCodePattern.MatchString(code) {
+		code = ""
+	}
+	return &ErrControlRequest{Subtype: subtype, Message: body.Error, Code: code}
 }
