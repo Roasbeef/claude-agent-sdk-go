@@ -1319,6 +1319,7 @@ type SDKControlResponseBody struct {
 	RequestID                  string                      `json:"request_id"`                             // Correlates to request
 	Response                   map[string]interface{}      `json:"response,omitempty"`                     // Success response data
 	Error                      string                      `json:"error,omitempty"`                        // Error message
+	ErrorCode                  ControlErrorCode            `json:"error_code,omitempty"`                   // Machine-readable error code (open set)
 	PendingPermissionRequests  []SDKControlRequest         `json:"pending_permission_requests,omitempty"`  // In-flight permission prompts (success+error)
 	PendingUserDialogRequests  []SDKControlRequest         `json:"pending_user_dialog_requests,omitempty"` // In-flight user dialogs (success+error)
 	PendingElicitationRequests []PendingElicitationRequest `json:"pending_elicitation_requests,omitempty"` // In-flight MCP elicitations (success+error)
