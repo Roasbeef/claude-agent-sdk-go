@@ -180,3 +180,28 @@ func TestForkSession(t *testing.T) {
 	assert.Equal(t, result.SessionID, messages[0].SessionID)
 	assert.NotEqual(t, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", messages[0].UUID)
 }
+
+// TestListSessionsCLIStringPrompt covers the shape `claude -p` writes: the
+// prompt as a bare string, preceded by queue-operation entries and followed
+// by a last-prompt entry. Such a session used to be dropped from listings
+// because no block-array text was found.
+func TestListSessionsCLIStringPrompt(t *testing.T) {
+	baseDir := t.TempDir()
+	cwd := filepath.Join(t.TempDir(), "repo")
+	projectDir := filepath.Join(baseDir, "projects", projectKey(cwd))
+	require.NoError(t, os.MkdirAll(projectDir, 0700))
+	transcript := `{"type":"queue-operation","operation":"enqueue","timestamp":"2026-11-16T17:13:12.450Z","sessionId":"` + testSessionID + `","content":"hello there"}
+{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":"<local-command-caveat>meta</local-command-caveat>"},"isMeta":true,"uuid":"u0","timestamp":"2026-11-16T17:13:12.500Z","cwd":"` + cwd + `"}
+{"parentUuid":null,"isSidechain":false,"type":"user","message":{"role":"user","content":"hello there"},"uuid":"u1","timestamp":"2026-11-16T17:13:12.583Z","cwd":"` + cwd + `"}
+{"parentUuid":"u1","isSidechain":false,"type":"assistant","uuid":"a1","timestamp":"2026-11-16T17:13:12.768Z","message":{"role":"assistant","content":[{"type":"text","text":"hi"}]}}
+{"type":"last-prompt","lastPrompt":"hello there","leafUuid":"a1","sessionId":"` + testSessionID + `"}
+`
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, testSessionID+".jsonl"), []byte(transcript), 0600))
+
+	sessions, err := ListSessions(&ListSessionsOptions{BaseDir: baseDir, Dir: cwd})
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	assert.Equal(t, "hello there", sessions[0].Summary)
+	assert.Equal(t, "hello there", sessions[0].FirstPrompt, "meta entries are not prompts")
+	assert.Equal(t, cwd, sessions[0].Cwd)
+}

@@ -490,7 +490,12 @@ func (d *sessionSummaryData) fold(entry map[string]interface{}) {
 	if entry["type"] == "tag" {
 		d.tag = sessionGetString(entry, "tag")
 	}
-	if entry["type"] == "user" {
+	if entry["type"] == "last-prompt" {
+		if v := strings.TrimSpace(sessionGetString(entry, "lastPrompt")); v != "" {
+			d.lastPrompt = v
+		}
+	}
+	if isMeta, _ := entry["isMeta"].(bool); entry["type"] == "user" && !isMeta {
 		if prompt := extractTextFromMessage(entry["message"]); prompt != "" {
 			if d.firstPrompt == "" {
 				d.firstPrompt = prompt
@@ -663,8 +668,13 @@ func extractTextFromMessage(message interface{}) string {
 	if !ok {
 		return ""
 	}
-	content, ok := m["content"].([]interface{})
-	if !ok {
+	// The CLI writes a typed prompt as a bare string; block arrays come
+	// from SDK sends and from content with attachments.
+	if text, ok := m["content"].(string); ok {
+		return truncatePrompt(strings.TrimSpace(text))
+	}
+	content, isList := m["content"].([]interface{})
+	if !isList {
 		return ""
 	}
 	for _, item := range content {
@@ -673,13 +683,17 @@ func extractTextFromMessage(message interface{}) string {
 			continue
 		}
 		if text := strings.TrimSpace(sessionGetString(block, "text")); text != "" {
-			if len(text) > 200 {
-				return strings.TrimSpace(text[:200])
-			}
-			return text
+			return truncatePrompt(text)
 		}
 	}
 	return ""
+}
+
+func truncatePrompt(text string) string {
+	if len(text) > 200 {
+		return strings.TrimSpace(text[:200])
+	}
+	return text
 }
 
 func parseTimestampMillis(value string) int64 {
