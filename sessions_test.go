@@ -205,3 +205,135 @@ func TestListSessionsCLIStringPrompt(t *testing.T) {
 	assert.Equal(t, "hello there", sessions[0].FirstPrompt, "meta entries are not prompts")
 	assert.Equal(t, cwd, sessions[0].Cwd)
 }
+
+func TestArchiveAndUnarchiveSession(t *testing.T) {
+	baseDir, cwd := makeSessionFixture(t)
+	opts := &SessionMutationOptions{BaseDir: baseDir, Dir: cwd}
+	infoOpts := &GetSessionInfoOptions{BaseDir: baseDir, Dir: cwd}
+
+	info, err := GetSessionInfo(testSessionID, infoOpts)
+	require.NoError(t, err)
+	require.NotNil(t, info)
+	assert.Nil(t, info.Archived, "never archived reads as absent")
+
+	require.NoError(t, ArchiveSession(testSessionID, opts))
+	info, err = GetSessionInfo(testSessionID, infoOpts)
+	require.NoError(t, err)
+	require.NotNil(t, info.Archived)
+	assert.True(t, *info.Archived)
+
+	// The mark is the sidecar the TS SDK writes, not a transcript entry.
+	markPath := filepath.Join(baseDir, "projects", projectKey(cwd), testSessionID, "archived.json")
+	raw, err := os.ReadFile(markPath)
+	require.NoError(t, err)
+	var mark map[string]interface{}
+	require.NoError(t, json.Unmarshal(raw, &mark))
+	assert.Equal(t, true, mark["archived"])
+	assert.Equal(t, "sdk", mark["by"])
+	assert.Regexp(t, `^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$`, mark["at"])
+	st, err := os.Stat(markPath)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0600), st.Mode().Perm())
+
+	sessions, err := ListSessions(&ListSessionsOptions{BaseDir: baseDir, Dir: cwd})
+	require.NoError(t, err)
+	require.Len(t, sessions, 1)
+	require.NotNil(t, sessions[0].Archived)
+	assert.True(t, *sessions[0].Archived)
+
+	require.NoError(t, UnarchiveSession(testSessionID, opts))
+	info, err = GetSessionInfo(testSessionID, infoOpts)
+	require.NoError(t, err)
+	require.NotNil(t, info.Archived)
+	assert.False(t, *info.Archived)
+}
+
+func TestArchivedSessionUnarchivedByLaterPrompt(t *testing.T) {
+	baseDir, cwd := makeSessionFixture(t)
+	projectDir := filepath.Join(baseDir, "projects", projectKey(cwd))
+	transcript := filepath.Join(projectDir, testSessionID+".jsonl")
+	writeMark := func(at string) {
+		t.Helper()
+		require.NoError(t, os.MkdirAll(filepath.Join(projectDir, testSessionID), 0700))
+		require.NoError(t, os.WriteFile(
+			filepath.Join(projectDir, testSessionID, "archived.json"),
+			[]byte(`{"archived":true,"at":"`+at+`","by":"sdk"}`), 0600,
+		))
+	}
+	archived := func() *bool {
+		t.Helper()
+		info, err := GetSessionInfo(testSessionID, &GetSessionInfoOptions{BaseDir: baseDir, Dir: cwd})
+		require.NoError(t, err)
+		require.NotNil(t, info)
+		return info.Archived
+	}
+	userEntry := func(ts string, content interface{}, extra map[string]interface{}) map[string]interface{} {
+		e := map[string]interface{}{
+			"type":      "user",
+			"sessionId": testSessionID,
+			"timestamp": ts,
+			"message":   map[string]interface{}{"role": "user", "content": content},
+		}
+		for k, v := range extra {
+			e[k] = v
+		}
+		return e
+	}
+
+	writeMark("2026-04-26T02:00:00.000Z")
+	require.True(t, *archived(), "fixture prompt predates the mark")
+
+	// Entries that are not a person's prompt keep the mark in force.
+	for _, e := range []map[string]interface{}{
+		userEntry("2026-04-26T03:00:00Z", []interface{}{
+			map[string]interface{}{"type": "tool_result", "tool_use_id": "t1", "content": "ok"},
+		}, nil),
+		userEntry("2026-04-26T03:00:00Z", "meta", map[string]interface{}{"isMeta": true}),
+		userEntry("2026-04-26T03:00:00Z", "cron", map[string]interface{}{
+			"origin": map[string]interface{}{"kind": "scheduled-trigger"},
+		}),
+		userEntry("2026-04-26T03:00:00Z", "<command-name>/clear</command-name>", nil),
+	} {
+		require.NoError(t, appendTranscriptEntry(transcript, e))
+	}
+	require.True(t, *archived())
+
+	require.NoError(t, appendTranscriptEntry(transcript,
+		userEntry("2026-04-26T03:00:00Z", "back to work", nil)))
+	assert.False(t, *archived(), "a later prompt unarchives")
+
+	writeMark("2026-04-26T04:00:00.000Z")
+	assert.True(t, *archived(), "re-archiving after the prompt holds")
+
+	// A queued command a person typed counts like a prompt.
+	require.NoError(t, appendTranscriptEntry(transcript, map[string]interface{}{
+		"type":      "attachment",
+		"timestamp": "2026-04-26T05:00:00Z",
+		"attachment": map[string]interface{}{
+			"type": "queued_command", "prompt": "queued",
+			"origin": map[string]interface{}{"kind": "human"},
+		},
+	}))
+	assert.False(t, *archived())
+}
+
+func TestArchiveSessionErrors(t *testing.T) {
+	baseDir, cwd := makeSessionFixture(t)
+
+	err := ArchiveSession("not a uuid", &SessionMutationOptions{BaseDir: baseDir})
+	assert.ErrorContains(t, err, "invalid sessionId")
+
+	missing := "22222222-2222-4222-8222-222222222222"
+	err = ArchiveSession(missing, &SessionMutationOptions{BaseDir: baseDir})
+	assert.ErrorContains(t, err, "not found in any project directory")
+	err = UnarchiveSession(missing, &SessionMutationOptions{BaseDir: baseDir, Dir: cwd})
+	assert.ErrorContains(t, err, "not found in project directory for "+cwd)
+
+	// An oversized or malformed sidecar reads as no mark rather than failing
+	// the listing.
+	markDir := filepath.Join(baseDir, "projects", projectKey(cwd), testSessionID)
+	require.NoError(t, os.WriteFile(filepath.Join(markDir, "archived.json"), []byte(`{"archived":true}`), 0600))
+	info, err := GetSessionInfo(testSessionID, &GetSessionInfoOptions{BaseDir: baseDir, Dir: cwd})
+	require.NoError(t, err)
+	assert.Nil(t, info.Archived)
+}

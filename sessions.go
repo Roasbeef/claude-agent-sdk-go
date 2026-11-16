@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,6 +28,11 @@ type SDKSessionInfo struct {
 	Cwd          string `json:"cwd,omitempty"`
 	Tag          string `json:"tag,omitempty"`
 	CreatedAt    int64  `json:"createdAt,omitempty"`
+	// Archived reports whether ArchiveSession marked the session. It is
+	// false once UnarchiveSession ran or a prompt was sent in the session
+	// after the mark, and nil when the session was never archived
+	// (sdk.d.ts v0.3.325 L6428).
+	Archived *bool `json:"archived,omitempty"`
 }
 
 // SessionMessage is a user, assistant, or optionally system transcript message.
@@ -261,6 +267,216 @@ func DeleteSession(sessionID string, opts *SessionMutationOptions) error {
 	return os.RemoveAll(strings.TrimSuffix(file.path, ".jsonl"))
 }
 
+// ArchiveSession marks a session archived. It stays on disk and ListSessions
+// still returns it, with Archived set to true. A prompt sent in the session
+// later unarchives it. The transcript is not changed and a process running
+// the session is not stopped. It returns an error when the session is not
+// found (sdk.d.ts v0.3.325 L147).
+func ArchiveSession(sessionID string, opts *SessionMutationOptions) error {
+	return setSessionArchived(sessionID, true, opts)
+}
+
+// UnarchiveSession clears the mark ArchiveSession set, so ListSessions
+// returns the session with Archived set to false. It returns an error when
+// the session is not found (sdk.d.ts v0.3.325 L10636).
+func UnarchiveSession(sessionID string, opts *SessionMutationOptions) error {
+	return setSessionArchived(sessionID, false, opts)
+}
+
+// archiveMarkMaxBytes bounds the read of an archived.json sidecar, as the TS
+// SDK does.
+const archiveMarkMaxBytes = 4096
+
+// archiveMark is the archived.json sidecar the TS SDK and the CLI share. It
+// lives in the session's own directory beside the transcript, not in it, so
+// the mark never alters the conversation.
+type archiveMark struct {
+	Archived bool   `json:"archived"`
+	At       string `json:"at"`
+	By       string `json:"by,omitempty"`
+}
+
+func archiveMarkPath(file sessionFile) string {
+	return filepath.Join(strings.TrimSuffix(file.path, ".jsonl"), "archived.json")
+}
+
+func setSessionArchived(sessionID string, archived bool, opts *SessionMutationOptions) error {
+	if !validSessionID(sessionID) {
+		return fmt.Errorf("invalid sessionId: %s", sessionID)
+	}
+	files, err := findSessionFiles(mutationOptionsDir(opts), mutationOptionsBaseDir(opts))
+	if err != nil {
+		return err
+	}
+
+	// A session resumed from another folder can have a transcript in more
+	// than one project directory; mark each so no listing disagrees.
+	var matched []sessionFile
+	for _, file := range files {
+		if file.sessionID == sessionID {
+			matched = append(matched, file)
+		}
+	}
+	if len(matched) == 0 {
+		if dir := mutationOptionsDir(opts); dir != "" {
+			return fmt.Errorf("session %s not found in project directory for %s", sessionID, dir)
+		}
+		return fmt.Errorf("session %s not found in any project directory", sessionID)
+	}
+
+	data, err := json.Marshal(archiveMark{
+		Archived: archived,
+		At:       time.Now().UTC().Format("2006-01-02T15:04:05.000Z07:00"),
+		By:       "sdk",
+	})
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, file := range matched {
+		errs = append(errs, writeArchiveMark(archiveMarkPath(file), data))
+	}
+	return errors.Join(errs...)
+}
+
+func writeArchiveMark(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".archived-*.json")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+// readArchiveMark returns the session's archive mark, or nil when there is
+// none or it cannot be read as one.
+func readArchiveMark(file sessionFile) *archiveMark {
+	f, err := os.Open(archiveMarkPath(file))
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, archiveMarkMaxBytes+1))
+	if err != nil || len(data) > archiveMarkMaxBytes {
+		return nil
+	}
+	var mark archiveMark
+	if err := json.Unmarshal(data, &mark); err != nil {
+		return nil
+	}
+	if _, err := time.Parse(time.RFC3339Nano, mark.At); err != nil {
+		return nil
+	}
+	return &mark
+}
+
+// effectiveArchived folds the mark with the transcript: a person's prompt
+// written after the mark unarchives the session, without anyone rewriting
+// the sidecar.
+func effectiveArchived(mark *archiveMark, entries []map[string]interface{}) *bool {
+	if mark == nil {
+		return nil
+	}
+	archived := mark.Archived
+	if archived {
+		at, _ := time.Parse(time.RFC3339Nano, mark.At)
+		for _, entry := range entries {
+			if ts, ok := humanPromptTime(entry); ok && ts.After(at) {
+				archived = false
+				break
+			}
+		}
+	}
+	return &archived
+}
+
+// humanPromptTime returns the timestamp of a transcript entry that records a
+// prompt a person sent, either as a user message or as a queued command.
+// Tool results, meta and sidechain entries, synthetic origins, and
+// slash-command or shell wrappers do not count. This approximates the CLI's
+// own test, which also folds in prompt-source rules the Go SDK does not see.
+func humanPromptTime(entry map[string]interface{}) (time.Time, bool) {
+	var content, origin interface{}
+	switch entry["type"] {
+	case "user":
+		for _, flag := range []string{
+			"isMeta", "isSidechain", "isCompactSummary", "isVirtual",
+			"isVisibleInTranscriptOnly", "textNotTyped", "handedOff",
+		} {
+			if v, _ := entry[flag].(bool); v {
+				return time.Time{}, false
+			}
+		}
+		msg, ok := entry["message"].(map[string]interface{})
+		if !ok {
+			return time.Time{}, false
+		}
+		content, origin = msg["content"], entry["origin"]
+	case "attachment":
+		if v, _ := entry["isSidechain"].(bool); v {
+			return time.Time{}, false
+		}
+		att, ok := entry["attachment"].(map[string]interface{})
+		if !ok || att["type"] != "queued_command" {
+			return time.Time{}, false
+		}
+		if v, _ := att["isMeta"].(bool); v {
+			return time.Time{}, false
+		}
+		content, origin = att["prompt"], att["origin"]
+	default:
+		return time.Time{}, false
+	}
+	if o, ok := origin.(map[string]interface{}); ok && o["kind"] != "human" {
+		return time.Time{}, false
+	}
+
+	var blocks []interface{}
+	switch c := content.(type) {
+	case string:
+		blocks = []interface{}{map[string]interface{}{"type": "text", "text": c}}
+	case []interface{}:
+		blocks = c
+	}
+	prompt := false
+	for _, item := range blocks {
+		block, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		switch block["type"] {
+		case "tool_result":
+			return time.Time{}, false
+		case "image", "document":
+			prompt = true
+		case "text":
+			text := strings.TrimSpace(sessionGetString(block, "text"))
+			if text != "" && !strings.HasPrefix(text, "<command-name>") &&
+				!strings.HasPrefix(text, "<local-command-") {
+				prompt = true
+			}
+		}
+	}
+	if !prompt {
+		return time.Time{}, false
+	}
+	ts, err := time.Parse(time.RFC3339Nano, sessionGetString(entry, "timestamp"))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return ts, true
+}
+
 // ForkSession copies a session transcript to a new session ID, remapping UUIDs.
 func ForkSession(sessionID string, opts *ForkSessionOptions) (*ForkSessionResult, error) {
 	if !validSessionID(sessionID) {
@@ -451,6 +667,7 @@ func readSessionInfo(file sessionFile) (*SDKSessionInfo, error) {
 		Cwd:          firstNonEmpty(data.cwd, file.cwd),
 		Tag:          data.tag,
 		CreatedAt:    data.createdAt,
+		Archived:     effectiveArchived(readArchiveMark(file), entries),
 	}, nil
 }
 
