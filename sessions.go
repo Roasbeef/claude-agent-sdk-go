@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,6 +28,11 @@ type SDKSessionInfo struct {
 	Cwd          string `json:"cwd,omitempty"`
 	Tag          string `json:"tag,omitempty"`
 	CreatedAt    int64  `json:"createdAt,omitempty"`
+	// Archived reports whether ArchiveSession marked the session. It is
+	// false once UnarchiveSession ran or a prompt was sent in the session
+	// after the mark, and nil when the session was never archived
+	// (sdk.d.ts v0.3.325 L6428).
+	Archived *bool `json:"archived,omitempty"`
 }
 
 // SessionMessage is a user, assistant, or optionally system transcript message.
@@ -261,6 +267,318 @@ func DeleteSession(sessionID string, opts *SessionMutationOptions) error {
 	return os.RemoveAll(strings.TrimSuffix(file.path, ".jsonl"))
 }
 
+// ArchiveSession marks a session archived. It stays on disk and ListSessions
+// still returns it, with Archived set to true. A prompt sent in the session
+// later unarchives it. The transcript is not changed and a process running
+// the session is not stopped. It returns an error when the session is not
+// found (sdk.d.ts v0.3.325 L147).
+func ArchiveSession(sessionID string, opts *SessionMutationOptions) error {
+	return setSessionArchived(sessionID, true, opts)
+}
+
+// UnarchiveSession clears the mark ArchiveSession set, so ListSessions
+// returns the session with Archived set to false. It returns an error when
+// the session is not found (sdk.d.ts v0.3.325 L10636).
+func UnarchiveSession(sessionID string, opts *SessionMutationOptions) error {
+	return setSessionArchived(sessionID, false, opts)
+}
+
+// archiveMarkMaxBytes bounds the read of an archived.json sidecar, as the TS
+// SDK does.
+const archiveMarkMaxBytes = 4096
+
+// archiveMark is the archived.json sidecar the TS SDK and the CLI share. It
+// lives in the session's own directory beside the transcript, not in it, so
+// the mark never alters the conversation.
+type archiveMark struct {
+	// Archived is a pointer so that a mark without the key, or with null,
+	// reads as no mark, as the TS SDK's schema has it.
+	Archived *bool  `json:"archived"`
+	At       string `json:"at"`
+	By       string `json:"by,omitempty"`
+}
+
+func archiveMarkPath(file sessionFile) string {
+	return filepath.Join(strings.TrimSuffix(file.path, ".jsonl"), "archived.json")
+}
+
+func setSessionArchived(sessionID string, archived bool, opts *SessionMutationOptions) error {
+	if !validSessionID(sessionID) {
+		return fmt.Errorf("invalid sessionId: %s", sessionID)
+	}
+	files, err := findSessionFiles(mutationOptionsDir(opts), mutationOptionsBaseDir(opts))
+	if err != nil {
+		return err
+	}
+
+	// A session resumed from another folder can have a transcript in more
+	// than one project directory; mark each so no listing disagrees.
+	var matched []sessionFile
+	for _, file := range files {
+		if file.sessionID == sessionID {
+			matched = append(matched, file)
+		}
+	}
+	if len(matched) == 0 {
+		if dir := mutationOptionsDir(opts); dir != "" {
+			return fmt.Errorf("session %s not found in project directory for %s", sessionID, dir)
+		}
+		return fmt.Errorf("session %s not found in any project directory", sessionID)
+	}
+
+	data, err := json.Marshal(archiveMark{
+		Archived: &archived,
+		At:       time.Now().UTC().Format("2006-01-02T15:04:05.000Z07:00"),
+		By:       "sdk",
+	})
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, file := range matched {
+		errs = append(errs, writeArchiveMark(archiveMarkPath(file), data))
+	}
+	return errors.Join(errs...)
+}
+
+func writeArchiveMark(path string, data []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	// The name is the TS SDK's, <name>.tmp.<8 hex>, which the CLI's
+	// retention sweep matches exactly and removes if a crash strands one
+	// before the rename.
+	var suffix [4]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return err
+	}
+	tmp, err := os.OpenFile(
+		path+".tmp."+hex.EncodeToString(suffix[:]),
+		os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600,
+	)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
+}
+
+// readArchiveMark returns the session's archive mark, or nil when there is
+// none or it cannot be read as one.
+func readArchiveMark(file sessionFile) *archiveMark {
+	path := archiveMarkPath(file)
+	// Only a regular file is a mark: a symlink or FIFO in its place would
+	// otherwise redirect or block the listing.
+	if st, err := os.Lstat(path); err != nil || !st.Mode().IsRegular() {
+		return nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+	data, err := io.ReadAll(io.LimitReader(f, archiveMarkMaxBytes+1))
+	if err != nil || len(data) > archiveMarkMaxBytes {
+		return nil
+	}
+	var mark archiveMark
+	if err := json.Unmarshal(data, &mark); err != nil || mark.Archived == nil {
+		return nil
+	}
+	if _, err := time.Parse(time.RFC3339Nano, mark.At); err != nil {
+		return nil
+	}
+	return &mark
+}
+
+// effectiveArchived folds the mark with the transcript. The CLI rewrites
+// the mark to false when a person prompts in an archived session, but only
+// on the prompt paths it handles itself, and an older CLI never does; so a
+// person's prompt written after the mark unarchives the session here too,
+// as in the TS SDK.
+func effectiveArchived(mark *archiveMark, entries []map[string]interface{}) *bool {
+	if mark == nil {
+		return nil
+	}
+	archived := *mark.Archived
+	if archived {
+		at, _ := time.Parse(time.RFC3339Nano, mark.At)
+		for _, entry := range entries {
+			if ts, ok := humanPromptTime(entry); ok && ts.After(at) {
+				archived = false
+				break
+			}
+		}
+	}
+	return &archived
+}
+
+// absentOrFalse reports whether key is missing from m or holds false, the
+// only two values the TS SDK's schema admits for its prompt flags.
+func absentOrFalse(m map[string]interface{}, key string) bool {
+	v, ok := m[key]
+	return !ok || v == false
+}
+
+// humanPromptTime returns the timestamp of a transcript entry that records a
+// prompt a person sent, either as a user message or as a queued command. It
+// ports the TS SDK's test for unarchiving (JLe): an entry with any flag that
+// marks it synthetic, scheduled, a wakeup, a tool result or a non-human
+// origin does not count, nor does text the CLI injected.
+func humanPromptTime(entry map[string]interface{}) (time.Time, bool) {
+	if !absentOrFalse(entry, "isSidechain") {
+		return time.Time{}, false
+	}
+	var content, origin interface{}
+	switch entry["type"] {
+	case "user":
+		for _, flag := range []string{
+			"isMeta", "isCompactSummary", "isVirtual",
+			"isVisibleInTranscriptOnly", "textNotTyped", "handedOff",
+			"queueSkipAttachments",
+		} {
+			if !absentOrFalse(entry, flag) {
+				return time.Time{}, false
+			}
+		}
+		// TS types these as undefined: present with any value, the entry
+		// is a wakeup, a scheduled task or a persisted injection.
+		for _, key := range []string{"persist", "wakeupSource", "scheduledTaskId"} {
+			if _, ok := entry[key]; ok {
+				return time.Time{}, false
+			}
+		}
+		if v, ok := entry["toolUseResult"]; ok && v != nil {
+			return time.Time{}, false
+		}
+		if v, ok := entry["promptSource"]; ok {
+			if _, isString := v.(string); !isString {
+				return time.Time{}, false
+			}
+		}
+		if v, ok := entry["turnOrigin"]; ok {
+			switch v {
+			case "human", "sdk", "unknown":
+			default:
+				return time.Time{}, false
+			}
+		}
+		msg, ok := entry["message"].(map[string]interface{})
+		if !ok {
+			return time.Time{}, false
+		}
+		if _, ok := msg["content"]; !ok {
+			return time.Time{}, false
+		}
+		content, origin = msg["content"], entry["origin"]
+	case "attachment":
+		att, ok := entry["attachment"].(map[string]interface{})
+		if !ok || att["type"] != "queued_command" || !absentOrFalse(att, "isMeta") {
+			return time.Time{}, false
+		}
+		if v, ok := att["commandMode"]; ok && v != "prompt" && v != "bash" {
+			return time.Time{}, false
+		}
+		if _, ok := att["prompt"]; !ok {
+			return time.Time{}, false
+		}
+		content, origin = att["prompt"], att["origin"]
+	default:
+		return time.Time{}, false
+	}
+	hasOrigin := false
+	if origin != nil {
+		o, ok := origin.(map[string]interface{})
+		if !ok {
+			return time.Time{}, false
+		}
+		if _, ok := o["kind"].(string); !ok {
+			return time.Time{}, false
+		}
+		if o["kind"] != "human" {
+			return time.Time{}, false
+		}
+		hasOrigin = true
+	}
+
+	var blocks []interface{}
+	switch c := content.(type) {
+	case string:
+		blocks = []interface{}{map[string]interface{}{"type": "text", "text": c}}
+	case []interface{}:
+		blocks = c
+	}
+	var texts []string
+	media := false
+	for _, item := range blocks {
+		block, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		switch block["type"] {
+		case "tool_result":
+			return time.Time{}, false
+		case "image", "document":
+			media = true
+		}
+		text, _ := block["text"].(string)
+		texts = append(texts, strings.TrimLeft(text, " \t\r\n"))
+	}
+	if !media && !archivePromptText(texts, hasOrigin) {
+		return time.Time{}, false
+	}
+	ts, err := time.Parse(time.RFC3339Nano, sessionGetString(entry, "timestamp"))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return ts, true
+}
+
+var (
+	commandNamePattern = regexp.MustCompile(`<command-name>(.*?)</command-name>`)
+	bashInputPattern   = regexp.MustCompile(`<bash-input>[\s\S]*?</bash-input>`)
+)
+
+// archivePromptText reports whether texts, each already trimmed at the
+// start, hold something a person typed, by the TS SDK's rules for
+// unarchiving. A turn with a human origin counts unless it is a slash
+// command. Without one, a prompt-type slash command (<command-message>) and
+// a shell command (<bash-input>) count, and so does any text that is not a
+// slash-command name or other injected tag. That is wider than promptText,
+// which picks what a session listing shows, so the two stay separate.
+func archivePromptText(texts []string, hasOrigin bool) bool {
+	if hasOrigin {
+		nonEmpty := false
+		for _, t := range texts {
+			if strings.HasPrefix(t, "<command-name>") {
+				return false
+			}
+			nonEmpty = nonEmpty || t != ""
+		}
+		return nonEmpty
+	}
+	for _, t := range texts {
+		if strings.HasPrefix(t, "<command-message>") {
+			return true
+		}
+		c := strings.TrimSpace(strings.ReplaceAll(t, "\n", " "))
+		if c == "" || commandNamePattern.MatchString(c) {
+			continue
+		}
+		if bashInputPattern.MatchString(c) || !notPromptPattern.MatchString(c) {
+			return true
+		}
+	}
+	return false
+}
+
 // ForkSession copies a session transcript to a new session ID, remapping UUIDs.
 func ForkSession(sessionID string, opts *ForkSessionOptions) (*ForkSessionResult, error) {
 	if !validSessionID(sessionID) {
@@ -451,6 +769,7 @@ func readSessionInfo(file sessionFile) (*SDKSessionInfo, error) {
 		Cwd:          firstNonEmpty(data.cwd, file.cwd),
 		Tag:          data.tag,
 		CreatedAt:    data.createdAt,
+		Archived:     effectiveArchived(readArchiveMark(file), entries),
 	}, nil
 }
 
