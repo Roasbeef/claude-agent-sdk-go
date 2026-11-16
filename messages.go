@@ -1265,6 +1265,7 @@ type SDKControlRequestBody struct {
 	SkipBehaviors     bool                        `json:"skip_behaviors,omitempty"`       // For get_usage
 	HoldOnCacheImpact bool                        `json:"hold_on_cache_impact,omitempty"` // For reload_plugins
 	AddPlugins        []PluginConfig              `json:"add_plugins,omitempty"`          // For reload_plugins
+	RefuseIfBusy      bool                        `json:"refuse_if_busy,omitempty"`       // For reload_plugins (reload_plugins_refuse_if_busy_v1)
 }
 
 // SDKHookCallbackMatcher defines hook callback matching configuration.
@@ -1770,7 +1771,9 @@ type SystemMessage struct {
 	// the ReadNotifications tool. "ask_user_question_unanswered_v1" means an
 	// AskUserQuestion answer may mark a question skipped, replied in chat or
 	// dismissed; this SDK answers AskUserQuestion with a tool result and
-	// does not send that marker. Absent on older CLIs.
+	// does not send that marker. "reload_plugins_refuse_if_busy_v1" means
+	// reload_plugins honors ReloadPluginsOptions.RefuseIfBusy. Absent on
+	// older CLIs.
 	Capabilities []string `json:"capabilities,omitempty"`
 	// ViewMode says whether the transcript is in focus view: "focus" means
 	// the model is told the user sees only its final message per turn, so a

@@ -895,3 +895,49 @@ func TestStreamReloadPluginsHoldOnCacheImpact(t *testing.T) {
 			"absent must stay distinguishable from a check that came back clean")
 	})
 }
+
+// TestStreamReloadPluginsRefuseIfBusy covers the v0.3.325 refuse_if_busy
+// option on the wire and the busy refusal coming back as a typed error.
+func TestStreamReloadPluginsRefuseIfBusy(t *testing.T) {
+	t.Run("option rides the request", func(t *testing.T) {
+		stream, transport, _ := newStreamControlTest(successSDKControlResponse)
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.ReloadPlugins(ctx, ReloadPluginsOptions{
+				RefuseIfBusy: true,
+			})
+			return err
+		})
+		require.NoError(t, err)
+
+		assert.JSONEq(t,
+			`{"type":"control_request","request_id":"req_1","request":`+
+				`{"subtype":"reload_plugins","refuse_if_busy":true}}`,
+			rawWrittenSDKControlRequest(t, transport),
+		)
+	})
+
+	t.Run("busy refusal is an ErrControlRequest", func(t *testing.T) {
+		stream, _, _ := newStreamControlTest(func(req SDKControlRequest) SDKControlResponse {
+			return SDKControlResponse{
+				Type: "control_response",
+				Response: SDKControlResponseBody{
+					Subtype:   "error",
+					RequestID: req.RequestID,
+					Error:     "session is busy",
+					ErrorCode: ControlErrorReloadPluginsBusy,
+				},
+			}
+		})
+
+		err := callWithTimeout(t, func(ctx context.Context) error {
+			_, err := stream.ReloadPlugins(ctx, ReloadPluginsOptions{
+				RefuseIfBusy: true,
+			})
+			return err
+		})
+		var ctrlErr *ErrControlRequest
+		require.ErrorAs(t, err, &ctrlErr)
+		assert.Equal(t, ControlErrorReloadPluginsBusy, ctrlErr.Code)
+	})
+}
