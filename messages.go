@@ -199,13 +199,14 @@ type AssistantMessage struct {
 	// producers. See the ResumeReason* constants (sdk.d.ts v0.3.270 L3362).
 	ResumeReason string `json:"resume_reason,omitempty"`
 
-	// Supersedes lists wire UUIDs of previously-delivered messages that this
-	// message replaces (refusal-fallback supersede). The list can include
-	// tombstoned tool_result frames from the refused leg, not only assistant
-	// frames. Evict the named messages on arrival and treat this frame as
-	// their canonical replacement; eviction is idempotent. The end-of-turn
-	// ModelRefusalFallbackMessage.RetractedMessageUUIDs remains the complete
-	// audit record for the turn. Absent when emitted by an older CLI.
+	// Supersedes lists wire UUIDs of earlier messages that this message
+	// replaces: after a refusal fallback, or, as of v0.3.325, after a
+	// response whose tool call could not be parsed. It can name user
+	// messages too, such as a refused attempt's tool results. Remove the
+	// named messages when this one arrives; eviction is idempotent. After a
+	// refusal fallback, ModelRefusalFallbackMessage.RetractedMessageUUIDs
+	// remains the complete audit record for the turn (sdk.d.ts v0.3.325
+	// L3882). Absent when emitted by an older CLI.
 	Supersedes []string `json:"supersedes,omitempty"`
 
 	// ResumedFromIncompleteThinking is true when this turn continued the

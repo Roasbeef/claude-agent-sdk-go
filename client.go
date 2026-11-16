@@ -1393,6 +1393,14 @@ func (s *Stream) ReloadOutputStyles(
 // settings file): it runs as "high" on a model without max support and no
 // higher than the organization's effort limit for the model.
 //
+// As of v0.3.325 a call fails if one of its values would make Claude Code
+// discard the flag settings layer. Then nothing in it applies, its valid
+// keys included, and settings from earlier calls stay in force, so check
+// the error. A value Claude Code ignores on its own does not fail the call,
+// and its key still replaces the earlier value: a "permissions" object
+// whose only deny rule is malformed leaves no deny rules (sdk.d.ts v0.3.325
+// L3117).
+//
 // Only available in streaming input mode.
 func (s *Stream) ApplyFlagSettings(
 	ctx context.Context,
