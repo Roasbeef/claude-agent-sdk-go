@@ -579,17 +579,19 @@ type Settings struct {
 	// RespondToBashCommands controls whether Claude responds after an
 	// input-box ! bash command runs. Set to false to add the command output to
 	// context without a response. Default true. Mirrors sdk.d.ts v0.3.195 L5032.
-	RespondToBashCommands           *bool                  `json:"respondToBashCommands,omitempty"`
-	AllowManagedHooksOnly           *bool                  `json:"allowManagedHooksOnly,omitempty"`
-	AllowedHTTPHookURLs             []string               `json:"allowedHttpHookUrls,omitempty"`
-	HTTPHookAllowedEnvVars          []string               `json:"httpHookAllowedEnvVars,omitempty"`
-	AllowManagedPermissionRulesOnly *bool                  `json:"allowManagedPermissionRulesOnly,omitempty"`
-	AllowManagedMCPServersOnly      *bool                  `json:"allowManagedMcpServersOnly,omitempty"`
-	StrictPluginOnlyCustomization   interface{}            `json:"strictPluginOnlyCustomization,omitempty"`
-	StatusLine                      *SettingsCommand       `json:"statusLine,omitempty"`
-	PRURLTemplate                   string                 `json:"prUrlTemplate,omitempty"`
-	SubagentStatusLine              *SettingsCommand       `json:"subagentStatusLine,omitempty"`
-	EnabledPlugins                  map[string]interface{} `json:"enabledPlugins,omitempty"`
+	RespondToBashCommands           *bool            `json:"respondToBashCommands,omitempty"`
+	AllowManagedHooksOnly           *bool            `json:"allowManagedHooksOnly,omitempty"`
+	AllowedHTTPHookURLs             []string         `json:"allowedHttpHookUrls,omitempty"`
+	HTTPHookAllowedEnvVars          []string         `json:"httpHookAllowedEnvVars,omitempty"`
+	AllowManagedPermissionRulesOnly *bool            `json:"allowManagedPermissionRulesOnly,omitempty"`
+	AllowManagedMCPServersOnly      *bool            `json:"allowManagedMcpServersOnly,omitempty"`
+	StrictPluginOnlyCustomization   interface{}      `json:"strictPluginOnlyCustomization,omitempty"`
+	StatusLine                      *SettingsCommand `json:"statusLine,omitempty"`
+	PRURLTemplate                   string           `json:"prUrlTemplate,omitempty"`
+	// Deprecated: SubagentStatusLine has no effect as of v0.3.325; subagent
+	// rows always use the default look (sdk.d.ts v0.3.325 L8043).
+	SubagentStatusLine *SettingsCommand       `json:"subagentStatusLine,omitempty"`
+	EnabledPlugins     map[string]interface{} `json:"enabledPlugins,omitempty"`
 	// PrependPlugins lists managed plugins — plugin@marketplace ids that
 	// managed EnabledPlugins sets true — whose hooks run first and outermost,
 	// in the order given: the first id sees every event before any other
@@ -1510,15 +1512,11 @@ type SettingsMarketplace struct {
 	InstallLocation string                    `json:"installLocation,omitempty"`
 	AutoUpdate      *bool                     `json:"autoUpdate,omitempty"`
 
-	// PluginDigests, honored only in managed settings, maps plugin names in
-	// this marketplace to the "sha256-<base64>" digests of their releases.
-	// A plugin also enabled and listed in PrependPlugins or AppendPlugins
-	// by managed settings loads its hooks module only from a folder whose
-	// digest matches one of them, and is then seated in that tier; any
-	// other copy does not load. An empty list, or a string of any other
-	// form, matches no folder; use []string{} rather than a nil slice, which
-	// marshals as null. See sdk.d.ts v0.3.316 L7998 for how the digest is
-	// computed.
+	// Deprecated: PluginDigests is ignored as of v0.3.325; settings that
+	// hold it still load. A plugin now takes the organization tier when
+	// managed settings enable it, declare its marketplace with a remote
+	// source and list it in PrependPlugins or AppendPlugins (sdk.d.ts
+	// v0.3.325 L8322).
 	PluginDigests map[string][]string `json:"pluginDigests,omitempty"`
 }
 
@@ -1547,14 +1545,21 @@ type SettingsAutoMode struct {
 // "path", "ref", "sparsePaths", "skipLfs").
 //
 // The npm source ("source": "npm") takes an optional "version" (a dist-tag or
-// range, defaulting to the latest dist-tag) and "registry". "registry" is
-// dual-purpose: on an add it is a one-off registry override (otherwise the npm
-// configuration decides); in a strictKnownMarketplaces / blockedMarketplaces
-// policy entry it is the origin and path prefix the package's resolved tarball
-// URL must fall under. The npm "package" key also governs plugins installed
-// straight from the npm marketplace (<package>@npm) — an exact name matches
-// that package, and "@scope/*" matches every package under the scope
-// (sdk.d.ts v0.3.278 L7546).
+// range, defaulting to the latest dist-tag) and "registry". On an add,
+// "registry" is a one-off registry override (otherwise the npm configuration
+// decides); under allowManagedPermissionRulesOnly an npm marketplace keeps
+// plugin allowed-tools only when the entry and the registration pin the same
+// registry. A scope wildcard "package" such as "@acme/*" still parses in a
+// managed list, so a list holding one stays valid, but as of v0.3.325 it
+// matches no marketplace package (sdk.d.ts v0.3.325 L8136).
+//
+// On the git and github sources, "ref" takes a branch, a tag, or a full
+// commit id (40 or 64 lowercase hex digits). A commit id holds the
+// marketplace at that commit, so refreshes and auto-updates do not move it;
+// a branch or tag of the repository must hold the commit, and reserved
+// Anthropic marketplace names refuse one. A blockedMarketplaces entry that
+// names a branch or tag in "ref" also blocks every full commit id in that
+// repository (sdk.d.ts v0.3.325 L8096, L9080).
 //
 // The optional "skipLfs": boolean key on the git and github sources is now a
 // documented no-op, accepted only so existing settings keep parsing: Claude
@@ -1569,6 +1574,11 @@ type SettingsAutoMode struct {
 // object of headers). The helper here runs only when a user explicitly
 // installs or updates that plugin — unlike the url source's helper, which is
 // re-run on every marketplace refresh. Use an absolute path.
+//
+// A plugin entry in a settings source's "plugins" list may carry "engines"
+// (map[string]interface{}): its "claude-code" key is a semver range such as
+// ">=2.1.320", outside of which the plugin is not installed, updated or
+// loaded; other keys are ignored (sdk.d.ts v0.3.325 L8282).
 //
 // Two asymmetries worth knowing before writing one. An entry declared in a
 // settings file does not need "strict": false the way a manifest catalog entry
@@ -1718,8 +1728,14 @@ type SettingsSpinnerTipsOverride struct {
 }
 
 type SettingsSandbox struct {
-	Enabled                   *bool                      `json:"enabled,omitempty"`
-	FailIfUnavailable         *bool                      `json:"failIfUnavailable,omitempty"`
+	Enabled           *bool `json:"enabled,omitempty"`
+	FailIfUnavailable *bool `json:"failIfUnavailable,omitempty"`
+	// AutoAllowBashIfSandboxed approves, without a permission prompt, a Bash
+	// command that will run inside the sandbox, unless a deny rule, a
+	// command-specific ask rule or a safety check stops it. macOS and
+	// Linux/WSL only. Defaults to false, so sandboxed commands go through
+	// the normal permission flow (sdk.d.ts v0.3.325 L9473; earlier docs
+	// said it defaulted to true).
 	AutoAllowBashIfSandboxed  *bool                      `json:"autoAllowBashIfSandboxed,omitempty"`
 	AllowUnsandboxedCommands  *bool                      `json:"allowUnsandboxedCommands,omitempty"`
 	Network                   *SettingsSandboxNetwork    `json:"network,omitempty"`
