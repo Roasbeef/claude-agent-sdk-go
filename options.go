@@ -2742,11 +2742,11 @@ type ToolPermissionRequest struct {
 // auto-deny a safetyCheck) or running host-side auto-approval should treat asks
 // carrying this as rule-forced: the user's stated intent is a human prompt.
 // Since v0.3.319 it may also be set, whatever the decision reason, when an ask
-// rule reaches an MCP tool only under another name of its server (a
-// connector's id or its claude.ai name): a host looking the rule up by the
-// request's tool name will not find it. The values are producer-authored and
-// render-unsafe like a decision reason — sanitize before display (sdk.d.ts
-// v0.3.319 L5112).
+// rule reaches an MCP tool only under another name (a connector's id, its
+// claude.ai name, or Artifact for the Artifacts server's tools): a host
+// looking the rule up by the request's tool name will not find it. The values
+// are producer-authored and render-unsafe like a decision reason — sanitize
+// before display (sdk.d.ts v0.3.330 L5323).
 type MatchedAskRule struct {
 	Source      string `json:"source"`
 	ToolName    string `json:"tool_name"`
@@ -2835,7 +2835,11 @@ type PermissionContext struct {
 	// file-reference-upload case is gone, replaced by an ask standing in for
 	// the classifier's verdict on a call to Claude Desktop's Cowork shell,
 	// which no stored grant may answer either (sdk.d.ts L5126). In every
-	// case the user must open the session to answer.
+	// case the user must open the session to answer. As of v0.3.330 it is
+	// also set on the prompt raised at auto mode's limit of blocks in a row
+	// when the launch environment sets
+	// CLAUDE_CODE_HOST_ALLOW_RESETS_DENIAL_STREAK: its Allow starts that count
+	// over, so no stored grant may answer it (sdk.d.ts v0.3.330 L5337).
 	RequiresUserInteraction bool
 	// SuppressAlwaysAllowRule is true when the dialog must not offer the
 	// persistent "don't ask again" affordance for this ask: accepting it would
