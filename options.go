@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // Options holds configuration for a Claude agent client.
@@ -238,6 +239,11 @@ type Options struct {
 
 	// MCPServers configure MCP servers for custom tool integration.
 	MCPServers map[string]MCPServerConfig
+
+	// MCPServersDelivery selects how MCPServers reach the Claude Code
+	// process. Empty means MCPServersDeliveryArgv. In-process servers
+	// (SDKMcpServers) are not affected (sdk.d.ts v0.3.330 L2103).
+	MCPServersDelivery MCPServersDelivery
 
 	// SkillsConfig controls Skills loading behavior.
 	SkillsConfig SkillsConfig
@@ -2159,10 +2165,60 @@ const (
 	// Requires Claude Code 2.1.261 or newer; an older binary does not
 	// recognize --await-initialize and exits at startup with an unknown-option
 	// error. That failure is why PluginDeliveryArgv remains the default.
-	// InitializeResult.PluginsApplied reports whether the listed plugins are
-	// in fact loaded.
+	// SDKControlInitializeResponse.PluginsApplied reports whether the listed
+	// plugins are in fact loaded.
 	PluginDeliveryInitialize PluginDelivery = "initialize"
 )
+
+// MCPServersDelivery selects how Options.MCPServers reach the Claude Code
+// process.
+type MCPServersDelivery string
+
+const (
+	// MCPServersDeliveryArgv passes the servers as --mcp-config flags. It is
+	// the default and works with any Claude Code version, but it puts each
+	// server's env and headers on the command line, where other users of the
+	// machine can read them. The TS SDK deprecates this default and plans to
+	// switch it to initialize in a later release.
+	MCPServersDeliveryArgv MCPServersDelivery = "argv"
+
+	// MCPServersDeliveryInitialize sends the servers over stdin in the
+	// initialize request and launches Claude Code with --await-initialize,
+	// so env and headers stay off the command line.
+	//
+	// Requires Claude Code 2.1.326 or newer. One older than 2.1.261 exits
+	// at startup on the unknown flag; one in between starts without the
+	// servers, and Connect fails with *ErrMCPServersNotDelivered rather than
+	// run a session missing them. A false MCPServersApplied on
+	// Stream.InitializationResult is not an error (the TS SDK only warns on
+	// it), so check it yourself; true means the process took the servers at
+	// launch, not that each one connected.
+	//
+	// A launch given --sdk-url through ExtraArgs still uses --mcp-config,
+	// because that session cannot read the request at launch. A custom
+	// Transport only gets MCPServers in the initialize request under this
+	// delivery, and must then launch the CLI with --await-initialize itself.
+	MCPServersDeliveryInitialize MCPServersDelivery = "initialize"
+)
+
+// usesInitializeMCPServersDelivery reports whether MCPServers travel in the
+// initialize request. As with plugins, the launch flags and the request field
+// both derive from this so they cannot disagree.
+func (o *Options) usesInitializeMCPServersDelivery() bool {
+	return o.MCPServersDelivery == MCPServersDeliveryInitialize &&
+		len(o.MCPServers) > 0 && !o.hasSDKURLArg()
+}
+
+// hasSDKURLArg reports whether ExtraArgs passes --sdk-url, in either the
+// bare-key or the key=value spelling the TS SDK also checks.
+func (o *Options) hasSDKURLArg() bool {
+	for key := range o.ExtraArgs {
+		if key == "sdk-url" || strings.HasPrefix(key, "sdk-url=") {
+			return true
+		}
+	}
+	return false
+}
 
 // usesInitializePluginDelivery reports whether the plugin list travels in the
 // initialize request rather than on the command line. Both the launch flag and
@@ -4662,6 +4718,14 @@ func WithDebugFile(path string) Option {
 func WithExcludeDynamicSystemPromptSections(enable bool) Option {
 	return func(o *Options) {
 		o.ExcludeDynamicSystemPromptSections = enable
+	}
+}
+
+// WithMCPServersDelivery selects how MCPServers reach the Claude Code
+// process. See Options.MCPServersDelivery.
+func WithMCPServersDelivery(delivery MCPServersDelivery) Option {
+	return func(o *Options) {
+		o.MCPServersDelivery = delivery
 	}
 }
 

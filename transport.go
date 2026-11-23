@@ -311,9 +311,24 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 		args = append(args, flagArgs("--managed-settings", string(settingsJSON))...)
 	}
 
+	switch t.options.MCPServersDelivery {
+	case "", MCPServersDeliveryArgv, MCPServersDeliveryInitialize:
+	default:
+		return fmt.Errorf(
+			"invalid MCP servers delivery %q: expected %q or %q",
+			t.options.MCPServersDelivery, MCPServersDeliveryArgv,
+			MCPServersDeliveryInitialize)
+	}
+
 	// Add MCP server configurations.
-	// The CLI uses --mcp-config which takes JSON configuration.
-	for name, config := range t.options.MCPServers {
+	// The CLI uses --mcp-config which takes JSON configuration. Under
+	// MCPServersDeliveryInitialize the initialize request carries them
+	// instead; adding the flags too would put the credentials back on argv.
+	argvMCPServers := t.options.MCPServers
+	if t.options.usesInitializeMCPServersDelivery() {
+		argvMCPServers = nil
+	}
+	for name, config := range argvMCPServers {
 		serverType := config.Type
 		if serverType == "" {
 			serverType = "stdio"
@@ -443,9 +458,7 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 	// PluginDeliveryInitialize: there is nothing to keep off the command line,
 	// and --await-initialize would otherwise impose a version floor for no
 	// benefit.
-	if t.options.usesInitializePluginDelivery() {
-		args = append(args, "--await-initialize")
-	} else {
+	if !t.options.usesInitializePluginDelivery() {
 		// A plugin that skips MCP discovery selects a different flag rather
 		// than passing an argument, so the two cannot be merged.
 		for _, plugin := range t.options.Plugins {
@@ -455,6 +468,10 @@ func (t *SubprocessTransport) Connect(ctx context.Context) error {
 			}
 			args = append(args, flagValue(flag, plugin.Path))
 		}
+	}
+	if t.options.usesInitializePluginDelivery() ||
+		t.options.usesInitializeMCPServersDelivery() {
+		args = append(args, "--await-initialize")
 	}
 
 	// Add include-partial-messages flag for streaming deltas.

@@ -129,6 +129,14 @@ func (p *Protocol) doInitialize(ctx context.Context, first bool) error {
 		plugins = p.options.Plugins
 	}
 
+	// Same rule for MCPServers: a CLI not told to wait never reads them, and
+	// sending them anyway would copy their env and headers into a request
+	// that loads nothing.
+	var mcpServers map[string]MCPServerConfig
+	if p.options.usesInitializeMCPServersDelivery() {
+		mcpServers = p.options.MCPServers
+	}
+
 	// The preset form asks for Claude Code's own prompt plus an addition, so it
 	// sends only the addition: leaving systemPrompt unset is what selects the
 	// built-in prompt. Setting it to the append text instead would replace the
@@ -163,7 +171,7 @@ func (p *Protocol) doInitialize(ctx context.Context, first bool) error {
 			Hooks:                  hooks,
 			SDKMCPServers:          sdkMcpServers,
 			SDKMCPServerConfigs:    sdkMcpServerConfigs,
-			MCPServers:             p.options.MCPServers,
+			MCPServers:             mcpServers,
 			SystemPrompt:           systemPrompt,
 			AppendSystemPrompt:     appendSystemPrompt,
 			SystemPromptSnapshot:   p.options.SystemPromptSnapshot,
@@ -210,6 +218,14 @@ func (p *Protocol) doInitialize(ctx context.Context, first bool) error {
 	}
 	if err := p.checkHookBlockHonored(&initResp, first); err != nil {
 		return err
+	}
+	// The TS SDK ends the session here too: absence means a CLI that never
+	// reads the field, so it is running without the servers. A false is
+	// left to the caller, as the TS SDK only warns on it.
+	if mcpServers != nil && initResp.MCPServersApplied == nil {
+		return &ErrMCPServersNotDelivered{
+			ClaudeCodeVersion: initResp.ClaudeCodeVersion,
+		}
 	}
 	p.initResponse.Store(&initResp)
 	p.initialized.Store(true)
