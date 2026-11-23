@@ -6851,6 +6851,14 @@ func TestAssortedParityV0_3_290(t *testing.T) {
 		assert.Equal(t, MessageOriginSubkindSessionInbox, origin.Subkind)
 	})
 
+	t.Run("external event", func(t *testing.T) {
+		var origin MessageOrigin
+		require.NoError(t, json.Unmarshal([]byte(`{
+			"kind": "task-notification", "subkind": "external-event"
+		}`), &origin))
+		assert.Equal(t, MessageOriginSubkindExternalEvent, origin.Subkind)
+	})
+
 	t.Run("result startup reason and text post queue", func(t *testing.T) {
 		var got ResultMessage
 		require.NoError(t, json.Unmarshal([]byte(`{
@@ -6903,6 +6911,18 @@ func TestResultStartupFailureManagedSettingsNotDelivered(t *testing.T) {
 	res, ok := msg.(ResultMessage)
 	require.True(t, ok)
 	assert.Equal(t, StartupFailureManagedSettingsNotDelivered, res.StartupFailureReason)
+}
+
+func TestResultStartupFailureInitializeFieldsNotDelivered(t *testing.T) {
+	raw := []byte(`{"type":"result","subtype":"error_during_execution",` +
+		`"session_id":"s","uuid":"u","is_error":true,"duration_ms":0,` +
+		`"num_turns":0,"total_cost_usd":0,` +
+		`"startup_failure_reason":"initialize_fields_not_delivered"}`)
+	msg, err := ParseMessage(raw)
+	require.NoError(t, err)
+	res, ok := msg.(ResultMessage)
+	require.True(t, ok)
+	assert.Equal(t, StartupFailureInitializeFieldsNotDelivered, res.StartupFailureReason)
 }
 
 // TestSystemInitPluginErrorManagedLock covers plugin_errors[].managed_lock

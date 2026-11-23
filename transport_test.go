@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"iter"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -2603,4 +2604,109 @@ func TestSubprocessTransportToolFlags(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSubprocessTransportMCPServersDelivery checks the launch side of
+// MCPServersDelivery: initialize replaces every --mcp-config flag with
+// --await-initialize, so the servers' env and headers leave argv, while argv
+// stays the default and --sdk-url forces it.
+func TestSubprocessTransportMCPServersDelivery(t *testing.T) {
+	servers := map[string]MCPServerConfig{
+		"local": {Command: "foo", Env: map[string]string{"TOKEN": "secret"}},
+		"remote": {
+			Type:    "http",
+			URL:     "https://mcp.example.invalid",
+			Headers: map[string]string{"Authorization": "Bearer secret"},
+		},
+	}
+	sdkURL := "wss://example.invalid/session"
+
+	tests := []struct {
+		name      string
+		delivery  MCPServersDelivery
+		servers   map[string]MCPServerConfig
+		extraArgs map[string]*string
+		wantArgv  bool
+		wantAwait bool
+	}{
+		{name: "default", servers: servers, wantArgv: true},
+		{name: "argv", delivery: MCPServersDeliveryArgv, servers: servers, wantArgv: true},
+		{name: "initialize", delivery: MCPServersDeliveryInitialize, servers: servers, wantAwait: true},
+		{name: "initialize without servers", delivery: MCPServersDeliveryInitialize},
+		{
+			name:      "initialize under sdk-url",
+			delivery:  MCPServersDeliveryInitialize,
+			servers:   servers,
+			extraArgs: map[string]*string{"sdk-url": &sdkURL},
+			wantArgv:  true,
+		},
+		{
+			name:      "initialize under sdk-url= key",
+			delivery:  MCPServersDeliveryInitialize,
+			servers:   servers,
+			extraArgs: map[string]*string{"sdk-url=" + sdkURL: nil},
+			wantArgv:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+			opts := &Options{
+				MCPServers:         tt.servers,
+				MCPServersDelivery: tt.delivery,
+				ExtraArgs:          tt.extraArgs,
+			}
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+			require.NoError(t, transport.Connect(context.Background()))
+			defer transport.Close()
+
+			joined := strings.Join(runner.StartArgs, " ")
+			assert.Equal(t, tt.wantArgv, strings.Contains(joined, "--mcp-config"),
+				"args: %v", runner.StartArgs)
+			assert.Equal(t, tt.wantArgv, strings.Contains(joined, "secret"),
+				"args: %v", runner.StartArgs)
+			assert.Equal(t, tt.wantAwait,
+				slices.Contains(runner.StartArgs, "--await-initialize"),
+				"args: %v", runner.StartArgs)
+		})
+	}
+}
+
+// Plugins and MCP servers can both ride the initialize request; the launch
+// must still carry --await-initialize exactly once.
+func TestSubprocessTransportMCPServersAndPluginsInitialize(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := &Options{
+		PluginDelivery:     PluginDeliveryInitialize,
+		Plugins:            []PluginConfig{{Type: PluginTypeLocal, Path: "/plugins/lint"}},
+		MCPServersDelivery: MCPServersDeliveryInitialize,
+		MCPServers:         map[string]MCPServerConfig{"local": {Command: "foo"}},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	require.NoError(t, transport.Connect(context.Background()))
+	defer transport.Close()
+
+	count := 0
+	for _, arg := range runner.StartArgs {
+		if arg == "--await-initialize" {
+			count++
+		}
+	}
+	assert.Equal(t, 1, count, "args: %v", runner.StartArgs)
+}
+
+func TestSubprocessTransportMCPServersDeliveryRejectsInvalid(t *testing.T) {
+	runner := NewMockSubprocessRunner()
+	opts := &Options{
+		MCPServersDelivery: MCPServersDelivery("stdin"),
+		MCPServers:         map[string]MCPServerConfig{"local": {Command: "foo"}},
+	}
+
+	transport := NewSubprocessTransportWithRunner(runner, opts)
+	err := transport.Connect(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid MCP servers delivery")
 }

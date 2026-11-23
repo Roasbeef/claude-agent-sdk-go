@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // Options holds configuration for a Claude agent client.
@@ -238,6 +239,11 @@ type Options struct {
 
 	// MCPServers configure MCP servers for custom tool integration.
 	MCPServers map[string]MCPServerConfig
+
+	// MCPServersDelivery selects how MCPServers reach the Claude Code
+	// process. Empty means MCPServersDeliveryArgv. In-process servers
+	// (SDKMcpServers) are not affected (sdk.d.ts v0.3.330 L2103).
+	MCPServersDelivery MCPServersDelivery
 
 	// SkillsConfig controls Skills loading behavior.
 	SkillsConfig SkillsConfig
@@ -494,10 +500,12 @@ type Settings struct {
 	// with "claude_proj_" or (as of v0.3.319) "chan_", or the UUID of a
 	// "claude_proj_" Project. Pointer so an explicit empty string, which names
 	// none and stops lower-precedence files from naming one, reaches the
-	// wire; the organization default still applies then. Sent only with a
-	// claude.ai login talking to the Anthropic API directly, outside cloud
-	// sessions; CLAUDE_CODE_ATTRIBUTION_PROJECT wins over it (sdk.d.ts
-	// v0.3.310 L7104).
+	// wire; the organization default still applies then. A Project is sent
+	// only with a claude.ai login talking to the Anthropic API directly,
+	// outside cloud sessions; CLAUDE_CODE_ATTRIBUTION_PROJECT wins over it.
+	// Behind a Claude apps gateway that reports usage by group, name one of
+	// the organization's groups instead, such as "payments" (sdk.d.ts
+	// v0.3.330 L7567).
 	AttributionProject *string `json:"attributionProject,omitempty"`
 	// AttributionProjectPolicy is the organization's default for
 	// AttributionProject. Honored only from managed settings.
@@ -588,8 +596,12 @@ type Settings struct {
 	StrictPluginOnlyCustomization   interface{}      `json:"strictPluginOnlyCustomization,omitempty"`
 	StatusLine                      *SettingsCommand `json:"statusLine,omitempty"`
 	PRURLTemplate                   string           `json:"prUrlTemplate,omitempty"`
-	// Deprecated: SubagentStatusLine has no effect as of v0.3.325; subagent
-	// rows always use the default look (sdk.d.ts v0.3.325 L8043).
+	// SubagentStatusLine is a custom per-subagent status line shown in the
+	// agent panel; the command receives the row context as JSON on stdin.
+	//
+	// Deprecated: still honored, but slated to stop working in a future
+	// release. v0.3.325 documented it as having no effect; v0.3.326 walked
+	// that back (sdk.d.ts v0.3.330 L8176).
 	SubagentStatusLine *SettingsCommand `json:"subagentStatusLine,omitempty"`
 	// EnabledPlugins maps plugin@marketplace ids to whether they are on.
 	// Only true turns on a marketplace plugin: a list of versions is
@@ -599,12 +611,11 @@ type Settings struct {
 	// PrependPlugins lists managed plugins — plugin@marketplace ids that
 	// managed EnabledPlugins sets true — whose hooks run first and outermost,
 	// in the order given: the first id sees every event before any other
-	// plugin and every result after it. Managed plugins read in place from a
-	// local folder that managed settings name, and listed in neither this nor
-	// AppendPlugins, follow the listed ones. Then come user, project and
-	// marketplace plugins, along with any managed plugin from a remote
-	// marketplace that neither key lists; then AppendPlugins; then the
-	// built-ins (sdk.d.ts v0.3.325 L8058).
+	// plugin and every result after it. Managed plugins from a local folder
+	// or a remote marketplace that managed settings name, and listed in
+	// neither this nor AppendPlugins, follow the listed ones. Then come user,
+	// project and marketplace plugins; then AppendPlugins; then the built-ins
+	// (sdk.d.ts v0.3.330 L8191).
 	//
 	// The bundled cc-plugin-sec-default@builtin seats itself outermost on a
 	// machine with managed settings and for Team and Enterprise
@@ -698,6 +709,20 @@ type Settings struct {
 	GatewayInternalNetworks []string    `json:"gatewayInternalNetworks,omitempty"`
 	ForceLoginGatewayURL    string      `json:"forceLoginGatewayUrl,omitempty"`
 	ForceLoginOrgUUID       interface{} `json:"forceLoginOrgUUID,omitempty"`
+	// AllowNestedModelAccessUnderForceLogin, on self-hosted runner hosts
+	// only, lets a Claude Code started by a runner session's command use the
+	// runner's model access (--nested-model-access) when ForceLoginOrgUUID or
+	// forceLoginMethod is set: it asks the runner which organization the
+	// session owner belongs to and stops if the pin does not permit it or
+	// the runner does not answer. Without it such a process stays signed
+	// out. Any program on the machine can pose as the runner, so with this
+	// set the pin is no longer a security boundary: set it on runner hosts
+	// only, never in a profile that reaches people's own computers. Honored
+	// only from the machine's own administrator sources (MDM, the managed
+	// settings file, a policy helper they name); ignored in server-managed,
+	// user, project, local and --settings sources (sdk.d.ts v0.3.327, L9492
+	// in v0.3.330).
+	AllowNestedModelAccessUnderForceLogin *bool `json:"allowNestedModelAccessUnderForceLogin,omitempty"`
 	// AllowedProviders lists the API providers Claude Code may use on this
 	// machine; a session on any other is refused at startup, at login, and
 	// on its next API contact. Nil allows every provider, while an empty
@@ -919,6 +944,19 @@ type Settings struct {
 	EnableWorkflows *bool `json:"enableWorkflows,omitempty"`
 	// WorkflowKeywordTriggerEnabled enables the "ultracode" keyword trigger for the Workflow tool. Mirrors sdk.d.ts v0.3.168 L4582.
 	WorkflowKeywordTriggerEnabled *bool `json:"workflowKeywordTriggerEnabled,omitempty"`
+	// DesktopMCPServersListScope, for the Claude desktop app only, says where
+	// AllowedMCPServers and DeniedMCPServers govern servers added in the
+	// app: "code" (default) applies the allow list in Code tab sessions and
+	// the Artifact pane, "all" applies both lists in every tab, "off" stops
+	// the allow list governing them. DeniedMCPServers applies in Code tab
+	// sessions and the Artifact pane under every value, and in every tab
+	// under "all"; servers sent to SSH hosts are not governed by either list.
+	// Any other value counts as "all", and where sources merge "off" counts
+	// as "all". Read only from managed settings. The CLI reads nothing from it, but set alone in a higher
+	// managed source it makes that source lead and the ones beneath it are
+	// skipped, so write it only beside the list it scopes (sdk.d.ts v0.3.330
+	// L8112).
+	DesktopMCPServersListScope string `json:"desktopMcpServersListScope,omitempty"`
 	// AllowAllClaudeAiMcps lets claude.ai cloud MCP connectors load alongside managed-mcp.json. Mirrors sdk.d.ts v0.3.150 L4411.
 	AllowAllClaudeAiMcps *bool `json:"allowAllClaudeAiMcps,omitempty"`
 	// AllowClaudeInChromeWithManagedMcp lets the built-in Claude in Chrome
@@ -933,7 +971,8 @@ type Settings struct {
 	// a program to run, and no ${VAR} references. Honored from managed
 	// settings only — users cannot remove them, and unlike servers users add
 	// they need no AllowedMCPServers entry, though DeniedMCPServers still
-	// applies. Not read in Claude Desktop's Code tab on a third-party
+	// applies, except an entry found only in a project's .claude/settings.json
+	// or settings.local.json (sdk.d.ts v0.3.330 L7775). Not read in Claude Desktop's Code tab on a third-party
 	// deployment or in Cowork sessions, where Claude Desktop supplies and
 	// locks the session's MCP servers itself.
 	//
@@ -1158,6 +1197,24 @@ type SettingsPermissions struct {
 	// while the session runs; ignored in user, project, local and managed
 	// settings (sdk.d.ts v0.3.319 L7322).
 	WorkingDirectoriesAsGiven []string `json:"workingDirectoriesAsGiven,omitempty"`
+	// WorkingDirectoriesExclude lists absolute paths, each a folder and all
+	// below it or a single file, that the block*OutsideWorkingDirectories
+	// settings treat as outside every working directory holding them. A
+	// path is refused if it or its link target lies in a listed path (any
+	// letter case), or above one that no Read deny rule covers, since a Grep
+	// or Glob rooted there would walk into it (a deny rule keeps those out
+	// unless a "!" rule is also in force); for a search only its root is
+	// judged, not each file below it. A working directory, or for
+	// reads a BlockReadsExemptPaths entry, that is or lies inside the listed
+	// path is still let through, as are Claude Code's own session files. It
+	// allows nothing and does nothing with all three settings off; links in
+	// a path are not followed, so list every spelling, and a listed path
+	// stays listed for the life of the process. Relative paths and ones
+	// starting with ~, with a ".." segment, or with surrounding white space
+	// are ignored. Sandboxed commands are unaffected. Only read from --settings
+	// (see WithSettings) and settings the host sends while the session runs
+	// (sdk.d.ts v0.3.330 L7629).
+	WorkingDirectoriesExclude []string `json:"workingDirectoriesExclude,omitempty"`
 	// DenyInsteadOfPrompting denies at once any tool call that would
 	// prompt a person, tells the model, and lets the turn carry on: what
 	// --permission-prompts none does for -p, in every kind of session.
@@ -1260,7 +1317,16 @@ type SettingsHook struct {
 	ContinueOnBlock *bool `json:"continueOnBlock,omitempty"`
 	// OnFailure decides what a failure of a command or http hook does: it
 	// could not start, timed out, exited with a code other than 0 or 2, or
-	// printed JSON that is invalid or fails validation. The default,
+	// printed JSON that is invalid or fails validation. An mcp_tool hook
+	// takes it too (sdk.d.ts v0.3.328, L7984 in v0.3.330): there a failure
+	// is a server not connected or signed in, a call that times out or
+	// errors, or JSON that fails validation, and under block the guarded
+	// action is blocked each time, for as long as the call fails. Under block
+	// the tool must answer with hook JSON, {} or nothing: plain text, an
+	// image, or JSON holding no hook output field or only "reason" also
+	// fails, except on PreCompact and WorktreeCreate (where plain text is the
+	// answer) and on events whose block stops nothing. Any other value reads
+	// as block. For mcp_tool it is also ignored on Setup and SessionStart. The default,
 	// SettingsHookOnFailureContinue, reports the failure and lets the action
 	// go ahead; SettingsHookOnFailureBlock treats it as exit code 2 and
 	// blocks the tool call, permission request or prompt the event guards.
@@ -1355,8 +1421,8 @@ type SettingsModel struct {
 }
 
 // AutoCompactWindow is the per-model auto-compact window union: a token count
-// (100000 to 1000000), or "auto" for the window tuned for the model. Auto
-// takes precedence when both are set.
+// (at least 100000; v0.3.327 dropped the 1000000 cap), or "auto" for the
+// window tuned for the model. Auto takes precedence when both are set.
 type AutoCompactWindow struct {
 	Auto   bool
 	Tokens int
@@ -1535,9 +1601,8 @@ type SettingsMarketplace struct {
 	//
 	// Deprecated: PluginDigests is ignored as of v0.3.325; settings that
 	// hold it still load. A plugin now takes the organization tier when
-	// managed settings enable it, declare its marketplace with a remote
-	// source and list it in PrependPlugins or AppendPlugins (sdk.d.ts
-	// v0.3.325 L8322).
+	// managed settings enable it and declare its marketplace with a remote
+	// source (sdk.d.ts v0.3.330 L8455).
 	PluginDigests map[string][]string `json:"pluginDigests,omitempty"`
 }
 
@@ -1706,7 +1771,9 @@ type SettingsChannelPlugin struct {
 type SettingsAttributionProjectPolicy struct {
 	// Default is the Project used when neither
 	// CLAUDE_CODE_ATTRIBUTION_PROJECT nor attributionProject names one: its
-	// UUID or "claude_proj_" ID.
+	// "claude_proj_" or "chan_" ID, or the UUID of a "claude_proj_" Project.
+	// Behind a Claude apps gateway that reports usage by group, a group name
+	// instead (sdk.d.ts v0.3.330 L7575).
 	Default string `json:"default,omitempty"`
 }
 
@@ -1960,8 +2027,10 @@ type SettingsSandboxCredentialEnvVar struct {
 	// InjectHosts optionally narrows where the proxy substitutes this
 	// credential. Only meaningful when Mode is "mask"; accepted but ignored
 	// for "deny". If unset, defaults to network.allowedDomains — the
-	// credential is injected at every reachable host. Each entry must be
-	// reachable via network.allowedDomains.
+	// credential is injected at every reachable host, except a masked AWS
+	// secret key that signs requests, which with no list is never injected.
+	// Each entry must be reachable via network.allowedDomains (sdk.d.ts
+	// v0.3.330 L9682).
 	InjectHosts []string `json:"injectHosts,omitempty"`
 }
 
@@ -2096,10 +2165,60 @@ const (
 	// Requires Claude Code 2.1.261 or newer; an older binary does not
 	// recognize --await-initialize and exits at startup with an unknown-option
 	// error. That failure is why PluginDeliveryArgv remains the default.
-	// InitializeResult.PluginsApplied reports whether the listed plugins are
-	// in fact loaded.
+	// SDKControlInitializeResponse.PluginsApplied reports whether the listed
+	// plugins are in fact loaded.
 	PluginDeliveryInitialize PluginDelivery = "initialize"
 )
+
+// MCPServersDelivery selects how Options.MCPServers reach the Claude Code
+// process.
+type MCPServersDelivery string
+
+const (
+	// MCPServersDeliveryArgv passes the servers as --mcp-config flags. It is
+	// the default and works with any Claude Code version, but it puts each
+	// server's env and headers on the command line, where other users of the
+	// machine can read them. The TS SDK deprecates this default and plans to
+	// switch it to initialize in a later release.
+	MCPServersDeliveryArgv MCPServersDelivery = "argv"
+
+	// MCPServersDeliveryInitialize sends the servers over stdin in the
+	// initialize request and launches Claude Code with --await-initialize,
+	// so env and headers stay off the command line.
+	//
+	// Requires Claude Code 2.1.326 or newer. One older than 2.1.261 exits
+	// at startup on the unknown flag; one in between starts without the
+	// servers, and Connect fails with *ErrMCPServersNotDelivered rather than
+	// run a session missing them. A false MCPServersApplied on
+	// Stream.InitializationResult is not an error (the TS SDK only warns on
+	// it), so check it yourself; true means the process took the servers at
+	// launch, not that each one connected.
+	//
+	// A launch given --sdk-url through ExtraArgs still uses --mcp-config,
+	// because that session cannot read the request at launch. A custom
+	// Transport only gets MCPServers in the initialize request under this
+	// delivery, and must then launch the CLI with --await-initialize itself.
+	MCPServersDeliveryInitialize MCPServersDelivery = "initialize"
+)
+
+// usesInitializeMCPServersDelivery reports whether MCPServers travel in the
+// initialize request. As with plugins, the launch flags and the request field
+// both derive from this so they cannot disagree.
+func (o *Options) usesInitializeMCPServersDelivery() bool {
+	return o.MCPServersDelivery == MCPServersDeliveryInitialize &&
+		len(o.MCPServers) > 0 && !o.hasSDKURLArg()
+}
+
+// hasSDKURLArg reports whether ExtraArgs passes --sdk-url, in either the
+// bare-key or the key=value spelling the TS SDK also checks.
+func (o *Options) hasSDKURLArg() bool {
+	for key := range o.ExtraArgs {
+		if key == "sdk-url" || strings.HasPrefix(key, "sdk-url=") {
+			return true
+		}
+	}
+	return false
+}
 
 // usesInitializePluginDelivery reports whether the plugin list travels in the
 // initialize request rather than on the command line. Both the launch flag and
@@ -4603,6 +4722,14 @@ func WithDebugFile(path string) Option {
 func WithExcludeDynamicSystemPromptSections(enable bool) Option {
 	return func(o *Options) {
 		o.ExcludeDynamicSystemPromptSections = enable
+	}
+}
+
+// WithMCPServersDelivery selects how MCPServers reach the Claude Code
+// process. See Options.MCPServersDelivery.
+func WithMCPServersDelivery(delivery MCPServersDelivery) Option {
+	return func(o *Options) {
+		o.MCPServersDelivery = delivery
 	}
 }
 

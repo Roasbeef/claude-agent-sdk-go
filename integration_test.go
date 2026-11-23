@@ -4568,6 +4568,17 @@ func TestIntegrationPluginDirRejectsUnsupportedType(t *testing.T) {
 func skipIfCLIOlderThan(t *testing.T, minVersion string) {
 	t.Helper()
 
+	got := installedCLIVersion(t)
+	if compareDottedVersions(got, minVersion) < 0 {
+		t.Skipf("CLI %s predates %s", got, minVersion)
+	}
+}
+
+// installedCLIVersion returns the version of the claude CLI on PATH, skipping
+// the test when there is none or it cannot be read.
+func installedCLIVersion(t *testing.T) string {
+	t.Helper()
+
 	path, err := DiscoverCLIPath(&Options{})
 	if err != nil {
 		t.Skip("claude CLI not found in PATH")
@@ -4583,11 +4594,7 @@ func skipIfCLIOlderThan(t *testing.T, minVersion string) {
 	if len(fields) == 0 {
 		t.Skipf("could not parse CLI version from %q", string(out))
 	}
-	got, want := fields[0], minVersion
-
-	if compareDottedVersions(got, want) < 0 {
-		t.Skipf("CLI %s predates %s", got, want)
-	}
+	return fields[0]
 }
 
 // compareDottedVersions compares two dotted numeric versions, returning -1, 0
@@ -7110,6 +7117,52 @@ func TestIntegrationStartupFailureManagedSettingsNotDelivered(t *testing.T) {
 	assert.NotEmpty(t, res.Errors)
 }
 
+// TestIntegrationStartupFailureInitializeFieldsNotDelivered launches a CLI
+// told by --initialize-fields to read settings from initialize, then sends an
+// initialize without them (sdk.d.ts v0.3.330 L6597).
+func TestIntegrationStartupFailureInitializeFieldsNotDelivered(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, "2.1.330")
+
+	tests := []struct {
+		name string
+		init string
+		args []string
+	}{
+		{
+			name: "field missing",
+			init: `{"subtype":"initialize"}`,
+			args: []string{"--initialize-fields=settings"},
+		},
+		{
+			// The field is there, but its own flag is passed too.
+			name: "own flag too",
+			init: `{"subtype":"initialize","settings":{}}`,
+			args: []string{"--initialize-fields=settings", "--settings", "{}"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configDir := filepath.Join(t.TempDir(), ".claude")
+			require.NoError(t, os.MkdirAll(configDir, 0o700))
+
+			args := append([]string{"--await-initialize"}, tt.args...)
+			res := startupFailureResult(t, configDir,
+				`{"type":"control_request","request_id":"1","request":`+
+					tt.init+`}`+"\n",
+				[]string{"CLAUDE_CODE_STARTUP_FAILURE_RESULTS=1"},
+				args...,
+			)
+			require.NotNil(t, res, "no result frame")
+			assert.Equal(t, StartupFailureInitializeFieldsNotDelivered,
+				res.StartupFailureReason)
+			require.NotEmpty(t, res.Errors)
+			assert.Contains(t, res.Errors[0], "--initialize-fields")
+		})
+	}
+}
+
 // TestIntegrationSetMcpServersKeepsSDKServers calls SetMcpServers on a
 // session with an in-process SDK server that denies one of its tools. The
 // CLI drops an SDK server, and the deny rule its policy registered, when a
@@ -7166,4 +7219,170 @@ func TestIntegrationSetMcpServersKeepsSDKServers(t *testing.T) {
 		assert.NotContains(t, res.Added, "calc")
 		assert.True(t, denied(), "the deny rule must survive call %d", i)
 	}
+}
+
+// mcpServersInitializeMinCLI is the first Claude Code release that reads
+// mcpServers from the initialize request: mcpServersDelivery first appears
+// in sdk.d.ts v0.3.326, and a probe shows 2.1.326 reports
+// mcp_servers_applied where 2.1.325 does not.
+const mcpServersInitializeMinCLI = "2.1.326"
+
+// TestIntegrationMCPServersDeliveryInitialize asserts that an MCP server sent
+// over the initialize request loads, and that the CLI says so through
+// mcp_servers_applied, the only signal that it read the servers rather than
+// starting without them.
+func TestIntegrationMCPServersDeliveryInitialize(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, mcpServersInitializeMinCLI)
+
+	mcpServerPath := filepath.Join(t.TempDir(), "example-mcp-server")
+	build := exec.Command("go", "build", "-o", mcpServerPath,
+		"./cmd/example-mcp-server")
+	out, err := build.CombinedOutput()
+	require.NoError(t, err, "build MCP server: %s", out)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMCPServers(map[string]MCPServerConfig{
+			// No Type: the request must read as stdio the way the
+			// --mcp-config path defaults it.
+			"example": {
+				Command: mcpServerPath,
+				Env:     map[string]string{"PROBE_TOKEN": "not-on-argv"},
+			},
+		}),
+		WithMCPServersDelivery(MCPServersDeliveryInitialize),
+		WithStrictMCPConfig(true),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	resp, err := stream.InitializationResult()
+	require.NoError(t, err)
+	require.NotNil(t, resp.MCPServersApplied,
+		"a request that sent MCP servers must get a verdict on them")
+	assert.True(t, *resp.MCPServersApplied,
+		"the CLI did not take the MCP servers sent over initialize")
+
+	var listed []string
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(SystemMessage); ok && m.Subtype == "init" {
+			for _, server := range m.MCPServers {
+				listed = append(listed, server.Name)
+			}
+		}
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+	assert.Contains(t, listed, "example",
+		"server never loaded; init listed %v", listed)
+}
+
+// TestIntegrationMCPServersDeliveryInitializeOldCLI asserts the other half of
+// the contract on a CLI that understands --await-initialize but predates the
+// field: Connect must refuse rather than run a session without the servers.
+// Only one of this and the test above runs against any given CLI.
+func TestIntegrationMCPServersDeliveryInitializeOldCLI(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, awaitInitializeMinCLI)
+	if got := installedCLIVersion(t); compareDottedVersions(
+		got, mcpServersInitializeMinCLI) >= 0 {
+
+		t.Skipf("CLI %s reads mcpServers from initialize", got)
+	}
+
+	opts := append(isolatedClientOptions(t),
+		WithMCPServers(map[string]MCPServerConfig{
+			"example": {Command: "/bin/false"},
+		}),
+		WithMCPServersDelivery(MCPServersDeliveryInitialize),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	_, err = client.Stream(ctx)
+	var notDelivered *ErrMCPServersNotDelivered
+	require.ErrorAs(t, err, &notDelivered)
+}
+
+// TestIntegrationSettingsParityV0_3_330 sends permissions.workingDirectoriesExclude
+// and an mcp_tool hook with onFailure through --settings and reads them back
+// off get_settings, which proves the shapes pass the CLI's schema. The two
+// managed-only keys ride --managed-settings, which must not stall the
+// handshake; inline managed settings keep only restrictive keys, so nothing
+// is asserted on them. Gated on 2.1.329, the first release whose types carry
+// both keys: 2.1.325 drops onFailure from an mcp_tool hook.
+func TestIntegrationSettingsParityV0_3_330(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, "2.1.329")
+
+	on := true
+	exclude := filepath.Join(t.TempDir(), "secrets")
+	opts := append(isolatedClientOptions(t),
+		WithManagedSettings(Settings{
+			DesktopMCPServersListScope:            "all",
+			AllowNestedModelAccessUnderForceLogin: &on,
+		}),
+		WithSettings(Settings{
+			Permissions: &SettingsPermissions{
+				WorkingDirectoriesExclude: []string{exclude},
+			},
+			Hooks: map[string][]SettingsHookMatcher{
+				"PreToolUse": {{
+					Matcher: "Bash",
+					Hooks: []SettingsHook{{
+						Type:      "mcp_tool",
+						Server:    "guard",
+						Tool:      "check",
+						OnFailure: SettingsHookOnFailureBlock,
+					}},
+				}},
+			},
+		}),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	resp, err := stream.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "get_settings",
+	})
+	require.NoError(t, err)
+
+	raw, err := json.Marshal(resp.Response.Response)
+	require.NoError(t, err)
+	var got struct {
+		Effective Settings `json:"effective"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &got))
+	require.NotNil(t, got.Effective.Permissions)
+	assert.Equal(t, []string{exclude},
+		got.Effective.Permissions.WorkingDirectoriesExclude)
+
+	matchers := got.Effective.Hooks["PreToolUse"]
+	require.Len(t, matchers, 1, "hooks: %v", got.Effective.Hooks)
+	require.Len(t, matchers[0].Hooks, 1)
+	assert.Equal(t, "mcp_tool", matchers[0].Hooks[0].Type)
+	assert.Equal(t, SettingsHookOnFailureBlock, matchers[0].Hooks[0].OnFailure)
 }

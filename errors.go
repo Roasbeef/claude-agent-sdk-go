@@ -144,6 +144,28 @@ func (e *ErrHookBlockNotHonored) Error() string {
 		"Claude Code if it is old, or drop OnFailure block from your hooks"
 }
 
+// ErrMCPServersNotDelivered is returned when MCPServersDelivery is
+// MCPServersDeliveryInitialize and the process answering initialize does not
+// report reading the servers: a Claude Code too old to know the field, which
+// started without them.
+type ErrMCPServersNotDelivered struct {
+	// ClaudeCodeVersion is the version the process reported, empty when it
+	// reported none.
+	ClaudeCodeVersion string
+}
+
+// Error implements the error interface.
+func (e *ErrMCPServersNotDelivered) Error() string {
+	version := ""
+	if e.ClaudeCodeVersion != "" {
+		version = " (version " + e.ClaudeCodeVersion + ")"
+	}
+	return "this Claude Code" + version + " is too old to read MCP " +
+		"servers from the initialize request, so it started without them; " +
+		"update it, or set MCPServersDelivery to MCPServersDeliveryArgv, " +
+		"which puts the servers' env and headers on its command line"
+}
+
 // ErrInvalidConfiguration indicates that client configuration is invalid.
 type ErrInvalidConfiguration struct {
 	Field  string
