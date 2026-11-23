@@ -7176,8 +7176,9 @@ func TestIntegrationSetMcpServersKeepsSDKServers(t *testing.T) {
 }
 
 // mcpServersInitializeMinCLI is the first Claude Code release that reads
-// mcpServers from the initialize request (sdk.d.ts v0.3.326, where
-// mcpServersDelivery first appears; 2.1.325 does not read it).
+// mcpServers from the initialize request: mcpServersDelivery first appears
+// in sdk.d.ts v0.3.326, and a probe shows 2.1.326 reports
+// mcp_servers_applied where 2.1.325 does not.
 const mcpServersInitializeMinCLI = "2.1.326"
 
 // TestIntegrationMCPServersDeliveryInitialize asserts that an MCP server sent

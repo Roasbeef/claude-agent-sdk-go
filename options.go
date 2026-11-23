@@ -2102,8 +2102,8 @@ const (
 	// Requires Claude Code 2.1.261 or newer; an older binary does not
 	// recognize --await-initialize and exits at startup with an unknown-option
 	// error. That failure is why PluginDeliveryArgv remains the default.
-	// InitializeResult.PluginsApplied reports whether the listed plugins are
-	// in fact loaded.
+	// SDKControlInitializeResponse.PluginsApplied reports whether the listed
+	// plugins are in fact loaded.
 	PluginDeliveryInitialize PluginDelivery = "initialize"
 )
 
@@ -2126,12 +2126,15 @@ const (
 	// Requires Claude Code 2.1.326 or newer. One older than 2.1.261 exits
 	// at startup on the unknown flag; one in between starts without the
 	// servers, and Connect fails with *ErrMCPServersNotDelivered rather than
-	// run a session missing them. InitializeResult.MCPServersApplied true
-	// means the process took the servers at launch, not that each one
-	// connected.
+	// run a session missing them. A false MCPServersApplied on
+	// Stream.InitializationResult is not an error (the TS SDK only warns on
+	// it), so check it yourself; true means the process took the servers at
+	// launch, not that each one connected.
 	//
 	// A launch given --sdk-url through ExtraArgs still uses --mcp-config,
-	// because that session cannot read the request at launch.
+	// because that session cannot read the request at launch. A custom
+	// Transport only gets MCPServers in the initialize request under this
+	// delivery, and must then launch the CLI with --await-initialize itself.
 	MCPServersDeliveryInitialize MCPServersDelivery = "initialize"
 )
 

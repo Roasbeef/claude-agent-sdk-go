@@ -701,6 +701,13 @@ func TestProtocolInitializeMCPServersApplied(t *testing.T) {
 			err := protocol.Initialize(ctx)
 			if !tt.wantErr {
 				require.NoError(t, err)
+				applied := protocol.initResult().MCPServersApplied
+				if tt.applied == nil {
+					assert.Nil(t, applied)
+				} else {
+					require.NotNil(t, applied)
+					assert.Equal(t, tt.applied, *applied)
+				}
 				return
 			}
 			var notDelivered *ErrMCPServersNotDelivered
