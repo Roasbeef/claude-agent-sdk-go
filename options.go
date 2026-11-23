@@ -504,8 +504,9 @@ type Settings struct {
 	// only with a claude.ai login talking to the Anthropic API directly,
 	// outside cloud sessions; CLAUDE_CODE_ATTRIBUTION_PROJECT wins over it.
 	// Behind a Claude apps gateway that reports usage by group, name one of
-	// the organization's groups instead, such as "payments" (sdk.d.ts
-	// v0.3.330 L7567).
+	// the organization's groups instead, such as "payments";
+	// CLAUDE_CODE_ATTRIBUTION_HEADER does not affect that (sdk.d.ts v0.3.330
+	// L7567).
 	AttributionProject *string `json:"attributionProject,omitempty"`
 	// AttributionProjectPolicy is the organization's default for
 	// AttributionProject. Honored only from managed settings.
@@ -945,17 +946,17 @@ type Settings struct {
 	// WorkflowKeywordTriggerEnabled enables the "ultracode" keyword trigger for the Workflow tool. Mirrors sdk.d.ts v0.3.168 L4582.
 	WorkflowKeywordTriggerEnabled *bool `json:"workflowKeywordTriggerEnabled,omitempty"`
 	// DesktopMCPServersListScope, for the Claude desktop app only, says where
-	// AllowedMCPServers and DeniedMCPServers govern servers added in the
-	// app: "code" (default) applies the allow list in Code tab sessions and
-	// the Artifact pane, "all" applies both lists in every tab, "off" stops
-	// the allow list governing them. DeniedMCPServers applies in Code tab
+	// AllowedMCPServers and DeniedMCPServers govern servers added in the app:
+	// "code" (default) applies the allow list in Code tab sessions and the
+	// Artifact pane, "all" applies both lists in every tab, "off" stops the
+	// allow list governing them. DeniedMCPServers applies in Code tab
 	// sessions and the Artifact pane under every value, and in every tab
 	// under "all"; servers sent to SSH hosts are not governed by either list.
 	// Any other value counts as "all", and where sources merge "off" counts
-	// as "all". Read only from managed settings. The CLI reads nothing from it, but set alone in a higher
-	// managed source it makes that source lead and the ones beneath it are
-	// skipped, so write it only beside the list it scopes (sdk.d.ts v0.3.330
-	// L8112).
+	// as "all". Read only from managed settings. The CLI reads nothing from
+	// it, but set alone in a higher managed source it makes that source lead
+	// and the ones beneath it are skipped, so write it only beside the list
+	// it scopes (sdk.d.ts v0.3.330 L8112).
 	DesktopMCPServersListScope string `json:"desktopMcpServersListScope,omitempty"`
 	// AllowAllClaudeAiMcps lets claude.ai cloud MCP connectors load alongside managed-mcp.json. Mirrors sdk.d.ts v0.3.150 L4411.
 	AllowAllClaudeAiMcps *bool `json:"allowAllClaudeAiMcps,omitempty"`
@@ -967,14 +968,15 @@ type Settings struct {
 	AllowClaudeInChromeWithManagedMcp *bool `json:"allowClaudeInChromeWithManagedMcp,omitempty"`
 	// ManagedMCPServers are MCP servers the organization provides to every
 	// user, keyed by server name, each value carrying the .mcp.json entry
-	// shape. Only "http" and "sse" servers are accepted: nothing that names
-	// a program to run, and no ${VAR} references. Honored from managed
-	// settings only — users cannot remove them, and unlike servers users add
-	// they need no AllowedMCPServers entry, though DeniedMCPServers still
-	// applies, except an entry found only in a project's .claude/settings.json
-	// or settings.local.json (sdk.d.ts v0.3.330 L7775). Not read in Claude Desktop's Code tab on a third-party
-	// deployment or in Cowork sessions, where Claude Desktop supplies and
-	// locks the session's MCP servers itself.
+	// shape. Only "http" and "sse" servers are accepted: nothing that names a
+	// program to run, and no ${VAR} references. Honored from managed settings
+	// only — users cannot remove them, and unlike servers users add they need
+	// no AllowedMCPServers entry, though DeniedMCPServers still applies,
+	// except an entry found only in a project's .claude/settings.json or
+	// settings.local.json (sdk.d.ts v0.3.330 L7775). Not read in Claude
+	// Desktop's Code tab on a third-party deployment or in Cowork sessions,
+	// where Claude Desktop supplies and locks the session's MCP servers
+	// itself.
 	//
 	// The value stays an untyped object because upstream types it that way;
 	// narrowing it here would reject entry shapes the CLI accepts
@@ -1318,15 +1320,15 @@ type SettingsHook struct {
 	// OnFailure decides what a failure of a command or http hook does: it
 	// could not start, timed out, exited with a code other than 0 or 2, or
 	// printed JSON that is invalid or fails validation. An mcp_tool hook
-	// takes it too (sdk.d.ts v0.3.328, L7984 in v0.3.330): there a failure
-	// is a server not connected or signed in, a call that times out or
-	// errors, or JSON that fails validation, and under block the guarded
-	// action is blocked each time, for as long as the call fails. Under block
-	// the tool must answer with hook JSON, {} or nothing: plain text, an
-	// image, or JSON holding no hook output field or only "reason" also
-	// fails, except on PreCompact and WorktreeCreate (where plain text is the
-	// answer) and on events whose block stops nothing. Any other value reads
-	// as block. For mcp_tool it is also ignored on Setup and SessionStart. The default,
+	// takes it too (sdk.d.ts v0.3.328, L7984 in v0.3.330): there a failure is
+	// a server not connected or signed in, a call that times out or errors,
+	// or JSON that fails validation, and under block the guarded action is
+	// blocked each time, for as long as the call fails. Under block the tool
+	// must answer with hook JSON, {} or nothing: plain text, an image, or
+	// JSON holding no hook output field or only "reason" also fails, except
+	// on PreCompact and WorktreeCreate (where plain text is the answer) and
+	// on events whose block stops nothing. Any other value reads as block.
+	// For mcp_tool it is also ignored on Setup and SessionStart. The default,
 	// SettingsHookOnFailureContinue, reports the failure and lets the action
 	// go ahead; SettingsHookOnFailureBlock treats it as exit code 2 and
 	// blocks the tool call, permission request or prompt the event guards.
@@ -2861,11 +2863,11 @@ type ToolPermissionRequest struct {
 // auto-deny a safetyCheck) or running host-side auto-approval should treat asks
 // carrying this as rule-forced: the user's stated intent is a human prompt.
 // Since v0.3.319 it may also be set, whatever the decision reason, when an ask
-// rule reaches an MCP tool only under another name of its server (a
-// connector's id or its claude.ai name): a host looking the rule up by the
-// request's tool name will not find it. The values are producer-authored and
-// render-unsafe like a decision reason — sanitize before display (sdk.d.ts
-// v0.3.319 L5112).
+// rule reaches an MCP tool only under another name (a connector's id, its
+// claude.ai name, or Artifact for the Artifacts server's tools): a host
+// looking the rule up by the request's tool name will not find it. The values
+// are producer-authored and render-unsafe like a decision reason — sanitize
+// before display (sdk.d.ts v0.3.330 L5323).
 type MatchedAskRule struct {
 	Source      string `json:"source"`
 	ToolName    string `json:"tool_name"`
@@ -2954,7 +2956,11 @@ type PermissionContext struct {
 	// file-reference-upload case is gone, replaced by an ask standing in for
 	// the classifier's verdict on a call to Claude Desktop's Cowork shell,
 	// which no stored grant may answer either (sdk.d.ts L5126). In every
-	// case the user must open the session to answer.
+	// case the user must open the session to answer. As of v0.3.330 it is
+	// also set on the prompt raised at auto mode's limit of blocks in a row
+	// when the launch environment sets
+	// CLAUDE_CODE_HOST_ALLOW_RESETS_DENIAL_STREAK: its Allow starts that count
+	// over, so no stored grant may answer it (sdk.d.ts v0.3.330 L5337).
 	RequiresUserInteraction bool
 	// SuppressAlwaysAllowRule is true when the dialog must not offer the
 	// persistent "don't ask again" affordance for this ask: accepting it would

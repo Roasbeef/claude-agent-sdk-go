@@ -250,9 +250,10 @@ type RewindFilesResult struct {
 	// SkippedLinks counts tracked files NOT restored or deleted because a
 	// symlink, hard link, or other non-regular file was detected at the tracked
 	// path (or its parent no longer resolves where it pointed at checkpoint
-	// time, or its backup could not be safely read). Populated only by a real
+	// time, it sits behind a link in a folder sandboxed commands can write,
+	// or its backup could not be safely read). Populated only by a real
 	// (non-dryRun) rewind; absent or 0 means no link-safety refusals occurred.
-	// sdk.d.ts v0.3.220 L2699.
+	// sdk.d.ts v0.3.330 L3757.
 	SkippedLinks int `json:"skippedLinks,omitempty"`
 }
 
@@ -911,8 +912,9 @@ type SDKControlGetHooksListingResponse struct {
 	// SafeMode is present only when the session runs under --safe-mode.
 	SafeMode *HooksListingSafeMode `json:"safeMode,omitempty"`
 	// BareMode is present only under --bare / CLAUDE_CODE_SIMPLE with the hooks
-	// surface gated off: settings-file, flag, policy and plugin hooks never
-	// fire there; session hooks still run.
+	// surface gated off: settings-file, flag, policy and a person's plugin
+	// hooks never fire there; session hooks and the hooks of plugins managed
+	// settings enable still run (sdk.d.ts v0.3.330 L4539).
 	BareMode *HooksListingBareMode `json:"bareMode,omitempty"`
 	// Errors lists settings files skipped by the merge — their hooks are
 	// neither listed above nor running.

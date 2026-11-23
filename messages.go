@@ -48,9 +48,10 @@ type UserMessage struct {
 	// InlinePastes is text the user pasted that still sits in
 	// Message.Content where they put it, one entry per paste. The host leaves
 	// the prompt as is; the CLI may wrap each entry in <pasted_content> tags
-	// where it still stands in the last text block, looking at the first 100
-	// non-blank entries only. A paste the host took out of the message
-	// belongs in PastedContent instead (sdk.d.ts v0.3.296 L6388).
+	// where it still stands in the last text block, or where a text block
+	// holds nothing else, looking at the first 100 non-blank entries only. A
+	// paste the host took out of the message belongs in PastedContent
+	// instead (sdk.d.ts v0.3.330 L7068).
 	InlinePastes []string `json:"inline_pastes,omitempty"`
 	// ClientComposed marks a turn the client assembled from content the user
 	// did not type: the CLI delivers its text as written, with no @path
@@ -890,8 +891,10 @@ const (
 	// the settings or disallowedTools it names, and also fires when a named
 	// field's own flag (--settings, --disallowedTools) is passed too. This
 	// SDK never sends --initialize-fields and its initialize carries neither
-	// field, so passing the flag through ExtraArgs always ends here, and so
-	// does pairing it with Options.Settings or Options.DisallowedTools
+	// field, so passing the flag with settings or disallowedTools through
+	// ExtraArgs always ends here, and so does pairing it with
+	// Options.Settings or Options.DisallowedTools. An unknown or empty value
+	// is refused while flags are parsed instead, with no result frame
 	// (sdk.d.ts v0.3.330 L6597).
 	StartupFailureInitializeFieldsNotDelivered StartupFailureReason = "initialize_fields_not_delivered"
 )

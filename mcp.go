@@ -90,7 +90,8 @@ type McpServerOptions struct {
 	// in-process server: ask routes every call through OnPermissionRequest
 	// (or the permission prompt tool) even where an allow rule or
 	// WithAllowedTools covers it, including under bypassPermissions; under
-	// dontAsk the call is denied. Deny refuses every call. AllowAlways and
+	// dontAsk the call is denied. Deny refuses every call except a mod's own
+	// ($.tool.call, $.mcp.call; sdk.d.ts v0.3.330 L4921). AllowAlways and
 	// OrgMaxPermission are ignored here; grant with WithAllowedTools or the
 	// permission callback instead. Unlike Timeout, the CLI adds these rules
 	// on every initialize that names the server (sdk.d.ts v0.3.310 L1234).
