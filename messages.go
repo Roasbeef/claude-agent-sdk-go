@@ -672,7 +672,9 @@ type ResultMessage struct {
 	NumTurns                  int                   `json:"num_turns,omitempty"`                     // Number of conversation turns
 
 	// TotalCostUSD is the cumulative estimated cost in USD for this query()
-	// call, covering the same calls as ModelUsage and sharing its lifecycle:
+	// call, covering the same calls as ModelUsage (billed permission
+	// classifier calls and stopped or cut calls included, so MaxBudgetUSD
+	// counts them too) and sharing its lifecycle:
 	// cumulative across turns in streaming-input sessions, so read the latest
 	// result rather than summing across results. Crash and startup-error
 	// results may carry zeroed values; a resumed or forked session continues
@@ -680,7 +682,7 @@ type ResultMessage struct {
 	// result already carries the earlier turns (MaxBudgetUSD counts only the
 	// spend since this query() call started or last /clear); and a mid-session
 	// /clear resets the running total. An estimate, not a billing statement
-	// (wording corrected in sdk.d.ts v0.3.278 L5366).
+	// (sdk.d.ts v0.3.330 L6275).
 	TotalCostUSD float64 `json:"total_cost_usd,omitempty"`
 
 	// Usage covers the MAIN AGENT LOOP ONLY — it excludes Task subagent,
@@ -691,9 +693,15 @@ type ResultMessage struct {
 	// query pipeline: main loop, Task subagents, sidechains, and internal calls
 	// such as compaction and Workflow agents. Cumulative across turns in
 	// streaming-input sessions, so read the latest result rather than summing.
-	// Internal helper calls outside the pipeline (the permission classifier,
-	// token-count probes) are excluded. This is the field to account on; treat
-	// it as an estimate, not a billing statement.
+	// Auto mode's permission classifier calls are included where they are
+	// billed (not on Pro, Max or Team plans, nor on a claude.ai sign-in whose
+	// plan cannot be read), and so is a call stopped or cut mid-response,
+	// with output tokens estimated from what had streamed (low when a long
+	// tool call was being written, since the API holds a call's input until
+	// it is whole).
+	// Other helper calls outside the pipeline (token-count probes) are
+	// excluded. This is the field to account on; treat it as an estimate, not
+	// a billing statement (sdk.d.ts v0.3.330 L6283).
 	ModelUsage map[string]ModelUsage `json:"modelUsage,omitempty"`
 
 	PermissionDenials []PermissionDenial `json:"permission_denials,omitempty"` // Denied permissions
@@ -810,7 +818,11 @@ const (
 	// unsafe or could not be created.
 	StartupFailureTempDirUnusable StartupFailureReason = "temp_dir_unusable"
 	// StartupFailureCwdUnavailable means the working directory was deleted,
-	// moved, or cannot be read.
+	// moved, or cannot be read, or (not on Windows) a folder name in its path
+	// is not valid UTF-8 and a different file, folder or link stands at the
+	// name Claude Code reads it as, for that folder or one above it. Start
+	// from another directory, rename that folder, or remove the other entry
+	// (sdk.d.ts v0.3.330 L6595).
 	StartupFailureCwdUnavailable StartupFailureReason = "cwd_unavailable"
 	// StartupFailureShellToolMissing means Windows has no shell tool: Git
 	// Bash is missing, and PowerShell is missing or turned off by
@@ -867,11 +879,21 @@ const (
 	// with --managed-settings-in-initialize and could not use the managed
 	// settings in the initialize request: stdin ended or failed first, its
 	// first line was too long, the request had no usable managedSettings
-	// object or a malformed plugins field, or the launch does not read that
-	// request at start-up or also passes --managed-settings. Errors says
-	// which. No session starts without them; the fix is in the host or a
-	// wrapper script, not a retry (sdk.d.ts v0.3.325 L6488).
+	// object or a malformed plugins or mcpServers field, or the launch does
+	// not read that request at start-up or also passes --managed-settings.
+	// Errors says which. No session starts without them; the fix is in the
+	// host or a wrapper script, not a retry (sdk.d.ts v0.3.330 L6597).
 	StartupFailureManagedSettingsNotDelivered StartupFailureReason = "managed_settings_not_delivered"
+
+	// StartupFailureInitializeFieldsNotDelivered is
+	// StartupFailureManagedSettingsNotDelivered for --initialize-fields and
+	// the settings or disallowedTools it names, and also fires when a named
+	// field's own flag (--settings, --disallowedTools) is passed too. This
+	// SDK never sends --initialize-fields and its initialize carries neither
+	// field, so passing the flag through ExtraArgs always ends here, and so
+	// does pairing it with Options.Settings or Options.DisallowedTools
+	// (sdk.d.ts v0.3.330 L6597).
+	StartupFailureInitializeFieldsNotDelivered StartupFailureReason = "initialize_fields_not_delivered"
 )
 
 // InvalidConfigFile names the config file behind a config_file_invalid
@@ -960,10 +982,11 @@ type MessageOrigin struct {
 	// only when the turn is exactly one harness-formed envelope; render it
 	// instead of re-parsing the message text (sdk.d.ts v0.3.207).
 	Body string `json:"body,omitempty"`
-	// Subkind refines the "task-notification" kind: a scheduled trigger, a
-	// coordinator co-member SendMessage delivery, a Claude Code Projects
-	// relay, or a session-inbox delivery. Absent on webhook, PR-steward,
-	// plugin, and background-event deliveries (sdk.d.ts v0.3.290 L5379).
+	// Subkind refines the "task-notification" kind: a scheduled trigger,
+	// the server's notice of an external event, a coordinator co-member
+	// SendMessage delivery, a Claude Code Projects relay, or a session-inbox
+	// delivery. Absent on plugin and background-event deliveries, and can be
+	// absent on webhook and PR-steward ones (sdk.d.ts v0.3.330 L5953).
 	Subkind MessageOriginSubkind `json:"subkind,omitempty"`
 	// FireReason says why a "scheduled-trigger" delivery fired: a short
 	// lowercase token such as "scheduled", "manual", "retry", "catch_up" or
@@ -1010,6 +1033,12 @@ const (
 	// delivered through the session's inbox. sdk.d.ts v0.3.290 L5379 adds
 	// the value without describing it.
 	MessageOriginSubkindSessionInbox MessageOriginSubkind = "session-inbox"
+	// MessageOriginSubkindExternalEvent marks the server's own notice of an
+	// event outside the session, such as a webhook's. Stamped only from
+	// server-asserted provenance; it has the framing and authority of a
+	// delivery with no subkind, and the text can quote a third party
+	// (sdk.d.ts v0.3.330 L5953).
+	MessageOriginSubkindExternalEvent MessageOriginSubkind = "external-event"
 )
 
 // PeerFromMode is the sending session's permission class on a "peer" origin.
@@ -2145,7 +2174,12 @@ type TaskStartedMessage struct {
 	SubagentType string `json:"subagent_type,omitempty"` // Subagent type for Task tool subagents
 	TaskType     string `json:"task_type,omitempty"`     // Task type
 	WorkflowName string `json:"workflow_name,omitempty"` // Workflow script metadata name
-	Prompt       string `json:"prompt,omitempty"`        // Task prompt
+	// Prompt is the text describing what this run was asked. Empty on a
+	// subagent run Claude Code resumed with text of its own (such as a
+	// background task's notice): keep the prompt an earlier task_started
+	// gave. On a run continuing an interrupted turn it is the task's
+	// description (sdk.d.ts v0.3.330 L6824).
+	Prompt string `json:"prompt,omitempty"`
 	// SkipTranscript asks consumers to hide this task from the inline
 	// transcript; it may still appear in a tasks panel. See Ambient, which
 	// covers every SkipTranscript task and more.

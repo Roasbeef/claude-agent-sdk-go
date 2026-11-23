@@ -7110,6 +7110,52 @@ func TestIntegrationStartupFailureManagedSettingsNotDelivered(t *testing.T) {
 	assert.NotEmpty(t, res.Errors)
 }
 
+// TestIntegrationStartupFailureInitializeFieldsNotDelivered launches a CLI
+// told by --initialize-fields to read settings from initialize, then sends an
+// initialize without them (sdk.d.ts v0.3.330 L6597).
+func TestIntegrationStartupFailureInitializeFieldsNotDelivered(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, "2.1.330")
+
+	tests := []struct {
+		name string
+		init string
+		args []string
+	}{
+		{
+			name: "field missing",
+			init: `{"subtype":"initialize"}`,
+			args: []string{"--initialize-fields=settings"},
+		},
+		{
+			// The field is there, but its own flag is passed too.
+			name: "own flag too",
+			init: `{"subtype":"initialize","settings":{}}`,
+			args: []string{"--initialize-fields=settings", "--settings", "{}"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configDir := filepath.Join(t.TempDir(), ".claude")
+			require.NoError(t, os.MkdirAll(configDir, 0o700))
+
+			args := append([]string{"--await-initialize"}, tt.args...)
+			res := startupFailureResult(t, configDir,
+				`{"type":"control_request","request_id":"1","request":`+
+					tt.init+`}`+"\n",
+				[]string{"CLAUDE_CODE_STARTUP_FAILURE_RESULTS=1"},
+				args...,
+			)
+			require.NotNil(t, res, "no result frame")
+			assert.Equal(t, StartupFailureInitializeFieldsNotDelivered,
+				res.StartupFailureReason)
+			require.NotEmpty(t, res.Errors)
+			assert.Contains(t, res.Errors[0], "--initialize-fields")
+		})
+	}
+}
+
 // TestIntegrationSetMcpServersKeepsSDKServers calls SetMcpServers on a
 // session with an in-process SDK server that denies one of its tools. The
 // CLI drops an SDK server, and the deny rule its policy registered, when a
