@@ -242,6 +242,7 @@ func TestProtocolInitializeOptions(t *testing.T) {
 		{
 			name: "mcp server timeout wired through",
 			configure: func(opts *Options) {
+				WithMCPServersDelivery(MCPServersDeliveryInitialize)(opts)
 				timeout := 5000
 				WithMCPServers(map[string]MCPServerConfig{
 					"local": {
@@ -264,6 +265,7 @@ func TestProtocolInitializeOptions(t *testing.T) {
 		{
 			name: "mcp server alwaysLoad wired through",
 			configure: func(opts *Options) {
+				WithMCPServersDelivery(MCPServersDeliveryInitialize)(opts)
 				alwaysLoad := true
 				WithMCPServers(map[string]MCPServerConfig{
 					"local": {
@@ -282,6 +284,33 @@ func TestProtocolInitializeOptions(t *testing.T) {
 					},
 				},
 			},
+		},
+		{
+			// A CLI not launched with --await-initialize never reads the
+			// field, so the default delivery must not copy the servers'
+			// env into the request.
+			name: "mcp servers omitted under argv delivery",
+			configure: func(opts *Options) {
+				WithMCPServers(map[string]MCPServerConfig{
+					"local": {
+						Command: "foo",
+						Env:     map[string]string{"TOKEN": "secret"},
+					},
+				})(opts)
+			},
+			unexpected: []string{"mcpServers"},
+		},
+		{
+			name: "mcp servers omitted under --sdk-url",
+			configure: func(opts *Options) {
+				WithMCPServersDelivery(MCPServersDeliveryInitialize)(opts)
+				WithMCPServers(map[string]MCPServerConfig{
+					"local": {Command: "foo"},
+				})(opts)
+				url := "wss://example.invalid/session"
+				WithExtraArgs(map[string]*string{"sdk-url": &url})(opts)
+			},
+			unexpected: []string{"mcpServers"},
 		},
 		{
 			name: "exclude dynamic false omitted",
@@ -551,7 +580,10 @@ func TestProtocolInitializeOptions(t *testing.T) {
 					Response: SDKControlResponseBody{
 						Subtype:   "success",
 						RequestID: initReq.RequestID,
-						Response:  map[string]interface{}{"status": "ok"},
+						Response: map[string]interface{}{
+							"status":              "ok",
+							"mcp_servers_applied": true,
+						},
 					},
 				}
 				data, _ := json.Marshal(resp)
@@ -591,6 +623,90 @@ func TestProtocolInitializeOptions(t *testing.T) {
 			for _, key := range tt.unexpected {
 				assert.NotContains(t, requestBody, key)
 			}
+		})
+	}
+}
+
+// TestProtocolInitializeMCPServersApplied covers the TS SDK's reading of
+// mcp_servers_applied: absence under initialize delivery is a CLI that never
+// read the servers, so Connect must fail rather than run without them, while
+// a false is reported to the caller and not treated as fatal.
+func TestProtocolInitializeMCPServersApplied(t *testing.T) {
+	tests := []struct {
+		name     string
+		delivery MCPServersDelivery
+		applied  interface{}
+		wantErr  bool
+	}{
+		{name: "absent under initialize", delivery: MCPServersDeliveryInitialize, wantErr: true},
+		{name: "true under initialize", delivery: MCPServersDeliveryInitialize, applied: true},
+		{name: "false under initialize", delivery: MCPServersDeliveryInitialize, applied: false},
+		{name: "absent under argv", delivery: MCPServersDeliveryArgv},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			runner := NewMockSubprocessRunner()
+			opts := NewOptions()
+			WithMCPServersDelivery(tt.delivery)(opts)
+			WithMCPServers(map[string]MCPServerConfig{
+				"local": {Command: "foo"},
+			})(opts)
+
+			transport := NewSubprocessTransportWithRunner(runner, opts)
+			protocol := NewProtocol(transport, opts)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+
+			require.NoError(t, transport.Connect(ctx))
+			defer transport.Close()
+
+			go func() {
+				decoder := json.NewDecoder(runner.StdinPipe)
+				var initReq SDKControlRequest
+				if err := decoder.Decode(&initReq); err != nil {
+					return
+				}
+				body := map[string]interface{}{
+					"claude_code_version": "2.1.325",
+				}
+				if tt.applied != nil {
+					body["mcp_servers_applied"] = tt.applied
+				}
+				resp := SDKControlResponse{
+					Type: "control_response",
+					Response: SDKControlResponseBody{
+						Subtype:   "success",
+						RequestID: initReq.RequestID,
+						Response:  body,
+					},
+				}
+				data, _ := json.Marshal(resp)
+				data = append(data, '\n')
+				runner.StdoutPipe.Write(data)
+			}()
+
+			go func() {
+				for msg, err := range transport.ReadMessages(ctx) {
+					if err != nil {
+						continue
+					}
+					if ctrlResp, ok := msg.(SDKControlResponse); ok {
+						protocol.handleSDKControlResponse(ctrlResp)
+					}
+				}
+			}()
+
+			err := protocol.Initialize(ctx)
+			if !tt.wantErr {
+				require.NoError(t, err)
+				return
+			}
+			var notDelivered *ErrMCPServersNotDelivered
+			require.ErrorAs(t, err, &notDelivered)
+			assert.Equal(t, "2.1.325", notDelivered.ClaudeCodeVersion)
+			assert.Contains(t, err.Error(), "(version 2.1.325)")
 		})
 	}
 }

@@ -4568,6 +4568,17 @@ func TestIntegrationPluginDirRejectsUnsupportedType(t *testing.T) {
 func skipIfCLIOlderThan(t *testing.T, minVersion string) {
 	t.Helper()
 
+	got := installedCLIVersion(t)
+	if compareDottedVersions(got, minVersion) < 0 {
+		t.Skipf("CLI %s predates %s", got, minVersion)
+	}
+}
+
+// installedCLIVersion returns the version of the claude CLI on PATH, skipping
+// the test when there is none or it cannot be read.
+func installedCLIVersion(t *testing.T) string {
+	t.Helper()
+
 	path, err := DiscoverCLIPath(&Options{})
 	if err != nil {
 		t.Skip("claude CLI not found in PATH")
@@ -4583,11 +4594,7 @@ func skipIfCLIOlderThan(t *testing.T, minVersion string) {
 	if len(fields) == 0 {
 		t.Skipf("could not parse CLI version from %q", string(out))
 	}
-	got, want := fields[0], minVersion
-
-	if compareDottedVersions(got, want) < 0 {
-		t.Skipf("CLI %s predates %s", got, want)
-	}
+	return fields[0]
 }
 
 // compareDottedVersions compares two dotted numeric versions, returning -1, 0
@@ -7166,4 +7173,101 @@ func TestIntegrationSetMcpServersKeepsSDKServers(t *testing.T) {
 		assert.NotContains(t, res.Added, "calc")
 		assert.True(t, denied(), "the deny rule must survive call %d", i)
 	}
+}
+
+// mcpServersInitializeMinCLI is the first Claude Code release that reads
+// mcpServers from the initialize request (sdk.d.ts v0.3.326, where
+// mcpServersDelivery first appears; 2.1.325 does not read it).
+const mcpServersInitializeMinCLI = "2.1.326"
+
+// TestIntegrationMCPServersDeliveryInitialize asserts that an MCP server sent
+// over the initialize request loads, and that the CLI says so through
+// mcp_servers_applied, the only signal that it read the servers rather than
+// starting without them.
+func TestIntegrationMCPServersDeliveryInitialize(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, mcpServersInitializeMinCLI)
+
+	mcpServerPath := filepath.Join(t.TempDir(), "example-mcp-server")
+	build := exec.Command("go", "build", "-o", mcpServerPath,
+		"./cmd/example-mcp-server")
+	out, err := build.CombinedOutput()
+	require.NoError(t, err, "build MCP server: %s", out)
+
+	opts := append(isolatedClientOptions(t),
+		WithSystemPrompt("You are a helpful assistant. Be very brief."),
+		WithMCPServers(map[string]MCPServerConfig{
+			// No Type: the request must read as stdio the way the
+			// --mcp-config path defaults it.
+			"example": {
+				Command: mcpServerPath,
+				Env:     map[string]string{"PROBE_TOKEN": "not-on-argv"},
+			},
+		}),
+		WithMCPServersDelivery(MCPServersDeliveryInitialize),
+		WithStrictMCPConfig(true),
+		WithMaxTurns(1),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	resp, err := stream.InitializationResult()
+	require.NoError(t, err)
+	require.NotNil(t, resp.MCPServersApplied,
+		"a request that sent MCP servers must get a verdict on them")
+	assert.True(t, *resp.MCPServersApplied,
+		"the CLI did not take the MCP servers sent over initialize")
+
+	var listed []string
+	for msg := range client.Query(ctx, "Say OK.") {
+		if m, ok := msg.(SystemMessage); ok && m.Subtype == "init" {
+			for _, server := range m.MCPServers {
+				listed = append(listed, server.Name)
+			}
+		}
+		if _, ok := msg.(ResultMessage); ok {
+			break
+		}
+	}
+	assert.Contains(t, listed, "example",
+		"server never loaded; init listed %v", listed)
+}
+
+// TestIntegrationMCPServersDeliveryInitializeOldCLI asserts the other half of
+// the contract on a CLI that understands --await-initialize but predates the
+// field: Connect must refuse rather than run a session without the servers.
+// Only one of this and the test above runs against any given CLI.
+func TestIntegrationMCPServersDeliveryInitializeOldCLI(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, awaitInitializeMinCLI)
+	if got := installedCLIVersion(t); compareDottedVersions(
+		got, mcpServersInitializeMinCLI) >= 0 {
+
+		t.Skipf("CLI %s reads mcpServers from initialize", got)
+	}
+
+	opts := append(isolatedClientOptions(t),
+		WithMCPServers(map[string]MCPServerConfig{
+			"example": {Command: "/bin/false"},
+		}),
+		WithMCPServersDelivery(MCPServersDeliveryInitialize),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	_, err = client.Stream(ctx)
+	var notDelivered *ErrMCPServersNotDelivered
+	require.ErrorAs(t, err, &notDelivered)
 }
