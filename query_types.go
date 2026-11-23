@@ -99,6 +99,17 @@ type SDKControlInitializeResponse struct {
 	// Nil when the request listed no plugins, and on CLIs that predate the
 	// field (sdk.d.ts v0.3.263 L4033).
 	PluginsApplied *bool `json:"plugins_applied,omitempty"`
+	// MCPServersApplied reports whether the MCPServers this initialize sent
+	// under MCPServersDeliveryInitialize are the set the process read at
+	// launch; a re-sent initialize naming the same set also reads true. True
+	// does not mean each one connected: a server missing from system/init's
+	// mcp_servers was not loaded. False means the process does not have them
+	// and will not get them from a later initialize.
+	//
+	// Nil when the request sent none, and on CLIs that predate the field,
+	// which never read them; Connect then fails with
+	// *ErrMCPServersNotDelivered (sdk.d.ts v0.3.330 L5046).
+	MCPServersApplied *bool `json:"mcp_servers_applied,omitempty"`
 }
 
 // McpServerStatus reports the connection status of an MCP server.
