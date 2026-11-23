@@ -2848,3 +2848,53 @@ func TestSettingsAttributionBoolean(t *testing.T) {
 		assert.Equal(t, tc.want, *s.Attribution, tc.in)
 	}
 }
+
+func TestSettingsParityV0_3_330(t *testing.T) {
+	on := true
+	s := Settings{
+		Permissions: &SettingsPermissions{
+			WorkingDirectoriesExclude: []string{"/work/repo/secrets"},
+		},
+		DesktopMCPServersListScope:            "all",
+		AllowNestedModelAccessUnderForceLogin: &on,
+		Hooks: map[string][]SettingsHookMatcher{
+			"PreToolUse": {{
+				Matcher: "Bash",
+				Hooks: []SettingsHook{{
+					Type:      "mcp_tool",
+					Server:    "guard",
+					Tool:      "check",
+					OnFailure: SettingsHookOnFailureBlock,
+				}},
+			}},
+		},
+	}
+
+	data, err := json.Marshal(s)
+	require.NoError(t, err)
+
+	var got map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(data, &got))
+
+	assert.JSONEq(t, `{"workingDirectoriesExclude": ["/work/repo/secrets"]}`,
+		string(got["permissions"]))
+	assert.Equal(t, `"all"`, string(got["desktopMcpServersListScope"]))
+	assert.Equal(t, "true", string(got["allowNestedModelAccessUnderForceLogin"]))
+	assert.JSONEq(t, `{"PreToolUse": [{"matcher": "Bash", "hooks": [{
+		"type": "mcp_tool", "server": "guard", "tool": "check",
+		"onFailure": "block"
+	}]}]}`, string(got["hooks"]))
+
+	var back Settings
+	require.NoError(t, json.Unmarshal(data, &back))
+	assert.Equal(t, s, back)
+
+	empty, err := json.Marshal(Settings{Permissions: &SettingsPermissions{}})
+	require.NoError(t, err)
+	for _, key := range []string{
+		"workingDirectoriesExclude", "desktopMcpServersListScope",
+		"allowNestedModelAccessUnderForceLogin",
+	} {
+		assert.NotContains(t, string(empty), key)
+	}
+}

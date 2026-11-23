@@ -7167,3 +7167,71 @@ func TestIntegrationSetMcpServersKeepsSDKServers(t *testing.T) {
 		assert.True(t, denied(), "the deny rule must survive call %d", i)
 	}
 }
+
+// TestIntegrationSettingsParityV0_3_330 sends permissions.workingDirectoriesExclude
+// and an mcp_tool hook with onFailure through --settings and reads them back
+// off get_settings, which proves the shapes pass the CLI's schema. The two
+// managed-only keys ride --managed-settings, which must not stall the
+// handshake; inline managed settings keep only restrictive keys, so nothing
+// is asserted on them. Gated on 2.1.329, the first release whose types carry
+// both keys: 2.1.325 drops onFailure from an mcp_tool hook.
+func TestIntegrationSettingsParityV0_3_330(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, "2.1.329")
+
+	on := true
+	exclude := filepath.Join(t.TempDir(), "secrets")
+	opts := append(isolatedClientOptions(t),
+		WithManagedSettings(Settings{
+			DesktopMCPServersListScope:            "all",
+			AllowNestedModelAccessUnderForceLogin: &on,
+		}),
+		WithSettings(Settings{
+			Permissions: &SettingsPermissions{
+				WorkingDirectoriesExclude: []string{exclude},
+			},
+			Hooks: map[string][]SettingsHookMatcher{
+				"PreToolUse": {{
+					Matcher: "Bash",
+					Hooks: []SettingsHook{{
+						Type:      "mcp_tool",
+						Server:    "guard",
+						Tool:      "check",
+						OnFailure: SettingsHookOnFailureBlock,
+					}},
+				}},
+			},
+		}),
+	)
+	client, err := NewClient(opts...)
+	require.NoError(t, err)
+	defer client.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	stream, err := client.Stream(ctx)
+	require.NoError(t, err)
+	defer stream.Close()
+
+	resp, err := stream.sendSDKControlRequest(ctx, SDKControlRequestBody{
+		Subtype: "get_settings",
+	})
+	require.NoError(t, err)
+
+	raw, err := json.Marshal(resp.Response.Response)
+	require.NoError(t, err)
+	var got struct {
+		Effective Settings `json:"effective"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &got))
+	require.NotNil(t, got.Effective.Permissions)
+	assert.Equal(t, []string{exclude},
+		got.Effective.Permissions.WorkingDirectoriesExclude)
+
+	matchers := got.Effective.Hooks["PreToolUse"]
+	require.Len(t, matchers, 1, "hooks: %v", got.Effective.Hooks)
+	require.Len(t, matchers[0].Hooks, 1)
+	assert.Equal(t, "mcp_tool", matchers[0].Hooks[0].Type)
+	assert.Equal(t, SettingsHookOnFailureBlock, matchers[0].Hooks[0].OnFailure)
+}

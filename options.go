@@ -588,8 +588,12 @@ type Settings struct {
 	StrictPluginOnlyCustomization   interface{}      `json:"strictPluginOnlyCustomization,omitempty"`
 	StatusLine                      *SettingsCommand `json:"statusLine,omitempty"`
 	PRURLTemplate                   string           `json:"prUrlTemplate,omitempty"`
-	// Deprecated: SubagentStatusLine has no effect as of v0.3.325; subagent
-	// rows always use the default look (sdk.d.ts v0.3.325 L8043).
+	// SubagentStatusLine is a custom per-subagent status line shown in the
+	// agent panel; the command receives the row context as JSON on stdin.
+	//
+	// Deprecated: still honored, but slated to stop working in a future
+	// release. v0.3.325 documented it as having no effect; v0.3.330 walks
+	// that back (sdk.d.ts v0.3.330 L8176).
 	SubagentStatusLine *SettingsCommand `json:"subagentStatusLine,omitempty"`
 	// EnabledPlugins maps plugin@marketplace ids to whether they are on.
 	// Only true turns on a marketplace plugin: a list of versions is
@@ -698,6 +702,17 @@ type Settings struct {
 	GatewayInternalNetworks []string    `json:"gatewayInternalNetworks,omitempty"`
 	ForceLoginGatewayURL    string      `json:"forceLoginGatewayUrl,omitempty"`
 	ForceLoginOrgUUID       interface{} `json:"forceLoginOrgUUID,omitempty"`
+	// AllowNestedModelAccessUnderForceLogin, on self-hosted runner hosts
+	// only, lets a Claude Code started by a runner session's command use the
+	// runner's model access (--nested-model-access) when ForceLoginOrgUUID or
+	// forceLoginMethod is set: it asks the runner which organization the
+	// session owner belongs to and stops if the pin does not permit it.
+	// Without it such a process stays signed out. Any program on the machine
+	// can pose as the runner, so with this set the pin is no longer a
+	// security boundary. Honored only from the machine's own administrator
+	// sources (MDM, the managed settings file, a policy helper they name)
+	// (sdk.d.ts v0.3.330 L9492).
+	AllowNestedModelAccessUnderForceLogin *bool `json:"allowNestedModelAccessUnderForceLogin,omitempty"`
 	// AllowedProviders lists the API providers Claude Code may use on this
 	// machine; a session on any other is refused at startup, at login, and
 	// on its next API contact. Nil allows every provider, while an empty
@@ -919,6 +934,17 @@ type Settings struct {
 	EnableWorkflows *bool `json:"enableWorkflows,omitempty"`
 	// WorkflowKeywordTriggerEnabled enables the "ultracode" keyword trigger for the Workflow tool. Mirrors sdk.d.ts v0.3.168 L4582.
 	WorkflowKeywordTriggerEnabled *bool `json:"workflowKeywordTriggerEnabled,omitempty"`
+	// DesktopMCPServersListScope, for the Claude desktop app only, says where
+	// AllowedMCPServers and DeniedMCPServers govern servers added in the
+	// app: "code" (default) applies the allow list in Code tab sessions and
+	// the Artifact pane, "all" applies both lists in every tab, "off" stops
+	// the allow list governing them. Any other value counts as "all", and
+	// where sources merge "off" counts as "all". Read only from managed
+	// settings. The CLI reads nothing from it, but set alone in a higher
+	// managed source it makes that source lead and the ones beneath it are
+	// skipped, so write it only beside the list it scopes (sdk.d.ts v0.3.330
+	// L8112).
+	DesktopMCPServersListScope string `json:"desktopMcpServersListScope,omitempty"`
 	// AllowAllClaudeAiMcps lets claude.ai cloud MCP connectors load alongside managed-mcp.json. Mirrors sdk.d.ts v0.3.150 L4411.
 	AllowAllClaudeAiMcps *bool `json:"allowAllClaudeAiMcps,omitempty"`
 	// AllowClaudeInChromeWithManagedMcp lets the built-in Claude in Chrome
@@ -1158,6 +1184,22 @@ type SettingsPermissions struct {
 	// while the session runs; ignored in user, project, local and managed
 	// settings (sdk.d.ts v0.3.319 L7322).
 	WorkingDirectoriesAsGiven []string `json:"workingDirectoriesAsGiven,omitempty"`
+	// WorkingDirectoriesExclude lists absolute paths, each a folder and all
+	// below it or a single file, that the block*OutsideWorkingDirectories
+	// settings treat as outside every working directory holding them. A
+	// path is refused if it or its link target lies in a listed path (any
+	// letter case), or above one that no Read deny rule covers, since a Grep
+	// or Glob rooted there would walk into it. A working directory, or for
+	// reads a BlockReadsExemptPaths entry, that is or lies inside the listed
+	// path is still let through, as are Claude Code's own session files. It
+	// allows nothing and does nothing with all three settings off; links in
+	// a path are not followed, so list every spelling, and a listed path
+	// stays listed for the life of the process. Relative paths and ones
+	// starting with ~, holding "..", or with surrounding white space are
+	// ignored. Sandboxed commands are unaffected. Only read from --settings
+	// (see WithSettings) and settings the host sends while the session runs
+	// (sdk.d.ts v0.3.330 L7629).
+	WorkingDirectoriesExclude []string `json:"workingDirectoriesExclude,omitempty"`
 	// DenyInsteadOfPrompting denies at once any tool call that would
 	// prompt a person, tells the model, and lets the turn carry on: what
 	// --permission-prompts none does for -p, in every kind of session.
@@ -1260,7 +1302,13 @@ type SettingsHook struct {
 	ContinueOnBlock *bool `json:"continueOnBlock,omitempty"`
 	// OnFailure decides what a failure of a command or http hook does: it
 	// could not start, timed out, exited with a code other than 0 or 2, or
-	// printed JSON that is invalid or fails validation. The default,
+	// printed JSON that is invalid or fails validation. An mcp_tool hook
+	// takes it too (sdk.d.ts v0.3.330 L7984): there a failure is a server
+	// not connected or signed in, a call that times out or errors, or JSON
+	// that fails validation, and under block the tool must answer with hook
+	// JSON, {} or nothing, so plain text or JSON holding no hook output field
+	// also fails, except on PreCompact and WorktreeCreate. For mcp_tool it is
+	// also ignored on Setup and SessionStart. The default,
 	// SettingsHookOnFailureContinue, reports the failure and lets the action
 	// go ahead; SettingsHookOnFailureBlock treats it as exit code 2 and
 	// blocks the tool call, permission request or prompt the event guards.
@@ -1355,7 +1403,8 @@ type SettingsModel struct {
 }
 
 // AutoCompactWindow is the per-model auto-compact window union: a token count
-// (100000 to 1000000), or "auto" for the window tuned for the model. Auto
+// (at least 100000; v0.3.330 dropped the 1000000 cap), or "auto" for the
+// window tuned for the model. Auto
 // takes precedence when both are set.
 type AutoCompactWindow struct {
 	Auto   bool
