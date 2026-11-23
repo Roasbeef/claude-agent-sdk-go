@@ -12,7 +12,7 @@ stdin/stdout, giving you access to Claude's tool use, extended thinking,
 session management, and hook system.
 
 This repository tracks the official TypeScript Agent SDK surface through the
-v0.3.325 catchup work, using Go idioms where the API shape differs.
+v0.3.330 catchup work, using Go idioms where the API shape differs.
 
 ```mermaid
 flowchart TB
@@ -1182,6 +1182,40 @@ Deferred in v0.3.325:
   sends it isn't in the public sdk.d.ts.
 - `forkSession` `upToMessageId` compaction semantics: Go still cuts at the
   uuid as given.
+- `sdk-tools.d.ts` churn, the standing deferral.
+
+The v0.3.330 catchup added:
+
+- `Options.MCPServersDelivery` / `WithMCPServersDelivery`. Set it to
+  `MCPServersDeliveryInitialize` and the servers in `MCPServers` travel in
+  the initialize request under `--await-initialize` instead of as
+  `--mcp-config` flags, so stdio `env` and http/sse `headers` stay off the
+  command line. It needs Claude Code 2.1.326 or newer. An older CLI that
+  takes `--await-initialize` but not the field makes Connect fail with
+  `*ErrMCPServersNotDelivered`; `MCPServersApplied` on the initialize
+  result carries the CLI's own verdict. Argv stays the default, though TS
+  has deprecated it and plans to flip it.
+- `MessageOriginSubkindExternalEvent` and
+  `StartupFailureInitializeFieldsNotDelivered`.
+- Settings: `permissions.workingDirectoriesExclude`,
+  `desktopMcpServersListScope`, `allowNestedModelAccessUnderForceLogin`,
+  `onFailure` on mcp_tool hooks, and `SubagentStatusLine` back to "still
+  works, slated to stop".
+
+Fixed along the way: every initialize request carried `MCPServers`,
+including their env and headers, whether or not the CLI read them (it
+reads them only under `--await-initialize`). We now send them only under
+the new delivery.
+
+Deferred in v0.3.330:
+
+- `settingsDelivery` / `disallowedToolsDelivery` / `--initialize-fields`:
+  runtime-only options the public sdk.d.ts doesn't declare. The startup
+  failure is mirrored.
+- The AgentDefinition `mcpServers` SDK-server deprecation: Go agent specs
+  can't hold an in-process server.
+- `BUILTIN_TOOL_NAMES` (ProposeGoal became SetGoal): Go doesn't mirror the
+  list.
 - `sdk-tools.d.ts` churn, the standing deferral.
 
 ### Porting from the TypeScript SDK - Go-side differences
