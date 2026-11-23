@@ -494,10 +494,12 @@ type Settings struct {
 	// with "claude_proj_" or (as of v0.3.319) "chan_", or the UUID of a
 	// "claude_proj_" Project. Pointer so an explicit empty string, which names
 	// none and stops lower-precedence files from naming one, reaches the
-	// wire; the organization default still applies then. Sent only with a
-	// claude.ai login talking to the Anthropic API directly, outside cloud
-	// sessions; CLAUDE_CODE_ATTRIBUTION_PROJECT wins over it (sdk.d.ts
-	// v0.3.310 L7104).
+	// wire; the organization default still applies then. A Project is sent
+	// only with a claude.ai login talking to the Anthropic API directly,
+	// outside cloud sessions; CLAUDE_CODE_ATTRIBUTION_PROJECT wins over it.
+	// Behind a Claude apps gateway that reports usage by group, name one of
+	// the organization's groups instead, such as "payments" (sdk.d.ts
+	// v0.3.330 L7567).
 	AttributionProject *string `json:"attributionProject,omitempty"`
 	// AttributionProjectPolicy is the organization's default for
 	// AttributionProject. Honored only from managed settings.
@@ -592,7 +594,7 @@ type Settings struct {
 	// agent panel; the command receives the row context as JSON on stdin.
 	//
 	// Deprecated: still honored, but slated to stop working in a future
-	// release. v0.3.325 documented it as having no effect; v0.3.330 walks
+	// release. v0.3.325 documented it as having no effect; v0.3.326 walked
 	// that back (sdk.d.ts v0.3.330 L8176).
 	SubagentStatusLine *SettingsCommand `json:"subagentStatusLine,omitempty"`
 	// EnabledPlugins maps plugin@marketplace ids to whether they are on.
@@ -603,12 +605,11 @@ type Settings struct {
 	// PrependPlugins lists managed plugins — plugin@marketplace ids that
 	// managed EnabledPlugins sets true — whose hooks run first and outermost,
 	// in the order given: the first id sees every event before any other
-	// plugin and every result after it. Managed plugins read in place from a
-	// local folder that managed settings name, and listed in neither this nor
-	// AppendPlugins, follow the listed ones. Then come user, project and
-	// marketplace plugins, along with any managed plugin from a remote
-	// marketplace that neither key lists; then AppendPlugins; then the
-	// built-ins (sdk.d.ts v0.3.325 L8058).
+	// plugin and every result after it. Managed plugins from a local folder
+	// or a remote marketplace that managed settings name, and listed in
+	// neither this nor AppendPlugins, follow the listed ones. Then come user,
+	// project and marketplace plugins; then AppendPlugins; then the built-ins
+	// (sdk.d.ts v0.3.330 L8191).
 	//
 	// The bundled cc-plugin-sec-default@builtin seats itself outermost on a
 	// machine with managed settings and for Team and Enterprise
@@ -706,12 +707,15 @@ type Settings struct {
 	// only, lets a Claude Code started by a runner session's command use the
 	// runner's model access (--nested-model-access) when ForceLoginOrgUUID or
 	// forceLoginMethod is set: it asks the runner which organization the
-	// session owner belongs to and stops if the pin does not permit it.
-	// Without it such a process stays signed out. Any program on the machine
-	// can pose as the runner, so with this set the pin is no longer a
-	// security boundary. Honored only from the machine's own administrator
-	// sources (MDM, the managed settings file, a policy helper they name)
-	// (sdk.d.ts v0.3.330 L9492).
+	// session owner belongs to and stops if the pin does not permit it or
+	// the runner does not answer. Without it such a process stays signed
+	// out. Any program on the machine can pose as the runner, so with this
+	// set the pin is no longer a security boundary: set it on runner hosts
+	// only, never in a profile that reaches people's own computers. Honored
+	// only from the machine's own administrator sources (MDM, the managed
+	// settings file, a policy helper they name); ignored in server-managed,
+	// user, project, local and --settings sources (sdk.d.ts v0.3.327, L9492
+	// in v0.3.330).
 	AllowNestedModelAccessUnderForceLogin *bool `json:"allowNestedModelAccessUnderForceLogin,omitempty"`
 	// AllowedProviders lists the API providers Claude Code may use on this
 	// machine; a session on any other is refused at startup, at login, and
@@ -938,9 +942,11 @@ type Settings struct {
 	// AllowedMCPServers and DeniedMCPServers govern servers added in the
 	// app: "code" (default) applies the allow list in Code tab sessions and
 	// the Artifact pane, "all" applies both lists in every tab, "off" stops
-	// the allow list governing them. Any other value counts as "all", and
-	// where sources merge "off" counts as "all". Read only from managed
-	// settings. The CLI reads nothing from it, but set alone in a higher
+	// the allow list governing them. DeniedMCPServers applies in Code tab
+	// sessions and the Artifact pane under every value, and in every tab
+	// under "all"; servers sent to SSH hosts are not governed by either list.
+	// Any other value counts as "all", and where sources merge "off" counts
+	// as "all". Read only from managed settings. The CLI reads nothing from it, but set alone in a higher
 	// managed source it makes that source lead and the ones beneath it are
 	// skipped, so write it only beside the list it scopes (sdk.d.ts v0.3.330
 	// L8112).
@@ -959,7 +965,8 @@ type Settings struct {
 	// a program to run, and no ${VAR} references. Honored from managed
 	// settings only — users cannot remove them, and unlike servers users add
 	// they need no AllowedMCPServers entry, though DeniedMCPServers still
-	// applies. Not read in Claude Desktop's Code tab on a third-party
+	// applies, except an entry found only in a project's .claude/settings.json
+	// or settings.local.json (sdk.d.ts v0.3.330 L7775). Not read in Claude Desktop's Code tab on a third-party
 	// deployment or in Cowork sessions, where Claude Desktop supplies and
 	// locks the session's MCP servers itself.
 	//
@@ -1189,14 +1196,16 @@ type SettingsPermissions struct {
 	// settings treat as outside every working directory holding them. A
 	// path is refused if it or its link target lies in a listed path (any
 	// letter case), or above one that no Read deny rule covers, since a Grep
-	// or Glob rooted there would walk into it. A working directory, or for
+	// or Glob rooted there would walk into it (a deny rule keeps those out
+	// unless a "!" rule is also in force); for a search only its root is
+	// judged, not each file below it. A working directory, or for
 	// reads a BlockReadsExemptPaths entry, that is or lies inside the listed
 	// path is still let through, as are Claude Code's own session files. It
 	// allows nothing and does nothing with all three settings off; links in
 	// a path are not followed, so list every spelling, and a listed path
 	// stays listed for the life of the process. Relative paths and ones
-	// starting with ~, holding "..", or with surrounding white space are
-	// ignored. Sandboxed commands are unaffected. Only read from --settings
+	// starting with ~, with a ".." segment, or with surrounding white space
+	// are ignored. Sandboxed commands are unaffected. Only read from --settings
 	// (see WithSettings) and settings the host sends while the session runs
 	// (sdk.d.ts v0.3.330 L7629).
 	WorkingDirectoriesExclude []string `json:"workingDirectoriesExclude,omitempty"`
@@ -1303,12 +1312,15 @@ type SettingsHook struct {
 	// OnFailure decides what a failure of a command or http hook does: it
 	// could not start, timed out, exited with a code other than 0 or 2, or
 	// printed JSON that is invalid or fails validation. An mcp_tool hook
-	// takes it too (sdk.d.ts v0.3.330 L7984): there a failure is a server
-	// not connected or signed in, a call that times out or errors, or JSON
-	// that fails validation, and under block the tool must answer with hook
-	// JSON, {} or nothing, so plain text or JSON holding no hook output field
-	// also fails, except on PreCompact and WorktreeCreate. For mcp_tool it is
-	// also ignored on Setup and SessionStart. The default,
+	// takes it too (sdk.d.ts v0.3.328, L7984 in v0.3.330): there a failure
+	// is a server not connected or signed in, a call that times out or
+	// errors, or JSON that fails validation, and under block the guarded
+	// action is blocked each time, for as long as the call fails. Under block
+	// the tool must answer with hook JSON, {} or nothing: plain text, an
+	// image, or JSON holding no hook output field or only "reason" also
+	// fails, except on PreCompact and WorktreeCreate (where plain text is the
+	// answer) and on events whose block stops nothing. Any other value reads
+	// as block. For mcp_tool it is also ignored on Setup and SessionStart. The default,
 	// SettingsHookOnFailureContinue, reports the failure and lets the action
 	// go ahead; SettingsHookOnFailureBlock treats it as exit code 2 and
 	// blocks the tool call, permission request or prompt the event guards.
@@ -1403,9 +1415,8 @@ type SettingsModel struct {
 }
 
 // AutoCompactWindow is the per-model auto-compact window union: a token count
-// (at least 100000; v0.3.330 dropped the 1000000 cap), or "auto" for the
-// window tuned for the model. Auto
-// takes precedence when both are set.
+// (at least 100000; v0.3.327 dropped the 1000000 cap), or "auto" for the
+// window tuned for the model. Auto takes precedence when both are set.
 type AutoCompactWindow struct {
 	Auto   bool
 	Tokens int
@@ -1584,9 +1595,8 @@ type SettingsMarketplace struct {
 	//
 	// Deprecated: PluginDigests is ignored as of v0.3.325; settings that
 	// hold it still load. A plugin now takes the organization tier when
-	// managed settings enable it, declare its marketplace with a remote
-	// source and list it in PrependPlugins or AppendPlugins (sdk.d.ts
-	// v0.3.325 L8322).
+	// managed settings enable it and declare its marketplace with a remote
+	// source (sdk.d.ts v0.3.330 L8455).
 	PluginDigests map[string][]string `json:"pluginDigests,omitempty"`
 }
 
@@ -1755,7 +1765,9 @@ type SettingsChannelPlugin struct {
 type SettingsAttributionProjectPolicy struct {
 	// Default is the Project used when neither
 	// CLAUDE_CODE_ATTRIBUTION_PROJECT nor attributionProject names one: its
-	// UUID or "claude_proj_" ID.
+	// "claude_proj_" or "chan_" ID, or the UUID of a "claude_proj_" Project.
+	// Behind a Claude apps gateway that reports usage by group, a group name
+	// instead (sdk.d.ts v0.3.330 L7575).
 	Default string `json:"default,omitempty"`
 }
 
@@ -2009,8 +2021,10 @@ type SettingsSandboxCredentialEnvVar struct {
 	// InjectHosts optionally narrows where the proxy substitutes this
 	// credential. Only meaningful when Mode is "mask"; accepted but ignored
 	// for "deny". If unset, defaults to network.allowedDomains — the
-	// credential is injected at every reachable host. Each entry must be
-	// reachable via network.allowedDomains.
+	// credential is injected at every reachable host, except a masked AWS
+	// secret key that signs requests, which with no list is never injected.
+	// Each entry must be reachable via network.allowedDomains (sdk.d.ts
+	// v0.3.330 L9682).
 	InjectHosts []string `json:"injectHosts,omitempty"`
 }
 
