@@ -694,8 +694,11 @@ type ResultMessage struct {
 	// such as compaction and Workflow agents. Cumulative across turns in
 	// streaming-input sessions, so read the latest result rather than summing.
 	// Auto mode's permission classifier calls are included where they are
-	// billed (not on Pro, Max or Team plans), and so is a call stopped or cut
-	// mid-response, with output tokens estimated from what had streamed.
+	// billed (not on Pro, Max or Team plans, nor on a claude.ai sign-in whose
+	// plan cannot be read), and so is a call stopped or cut mid-response,
+	// with output tokens estimated from what had streamed (low when a long
+	// tool call was being written, since the API holds a call's input until
+	// it is whole).
 	// Other helper calls outside the pipeline (token-count probes) are
 	// excluded. This is the field to account on; treat it as an estimate, not
 	// a billing statement (sdk.d.ts v0.3.330 L6283).
@@ -815,7 +818,11 @@ const (
 	// unsafe or could not be created.
 	StartupFailureTempDirUnusable StartupFailureReason = "temp_dir_unusable"
 	// StartupFailureCwdUnavailable means the working directory was deleted,
-	// moved, or cannot be read.
+	// moved, or cannot be read, or (not on Windows) a folder name in its path
+	// is not valid UTF-8 and a different file, folder or link stands at the
+	// name Claude Code reads it as, for that folder or one above it. Start
+	// from another directory, rename that folder, or remove the other entry
+	// (sdk.d.ts v0.3.330 L6595).
 	StartupFailureCwdUnavailable StartupFailureReason = "cwd_unavailable"
 	// StartupFailureShellToolMissing means Windows has no shell tool: Git
 	// Bash is missing, and PowerShell is missing or turned off by
@@ -873,18 +880,19 @@ const (
 	// settings in the initialize request: stdin ended or failed first, its
 	// first line was too long, the request had no usable managedSettings
 	// object or a malformed plugins or mcpServers field, or the launch does
-	// not read that
-	// request at start-up or also passes --managed-settings. Errors says
-	// which. No session starts without them; the fix is in the host or a
-	// wrapper script, not a retry (sdk.d.ts v0.3.325 L6488).
+	// not read that request at start-up or also passes --managed-settings.
+	// Errors says which. No session starts without them; the fix is in the
+	// host or a wrapper script, not a retry (sdk.d.ts v0.3.330 L6597).
 	StartupFailureManagedSettingsNotDelivered StartupFailureReason = "managed_settings_not_delivered"
 
 	// StartupFailureInitializeFieldsNotDelivered is
 	// StartupFailureManagedSettingsNotDelivered for --initialize-fields and
 	// the settings or disallowedTools it names, and also fires when a named
 	// field's own flag (--settings, --disallowedTools) is passed too. This
-	// SDK never sends --initialize-fields itself; a caller can only reach it
-	// through ExtraArgs (sdk.d.ts v0.3.330 L6597).
+	// SDK never sends --initialize-fields and its initialize carries neither
+	// field, so passing the flag through ExtraArgs always ends here, and so
+	// does pairing it with Options.Settings or Options.DisallowedTools
+	// (sdk.d.ts v0.3.330 L6597).
 	StartupFailureInitializeFieldsNotDelivered StartupFailureReason = "initialize_fields_not_delivered"
 )
 
@@ -1028,8 +1036,8 @@ const (
 	// MessageOriginSubkindExternalEvent marks the server's own notice of an
 	// event outside the session, such as a webhook's. Stamped only from
 	// server-asserted provenance; it has the framing and authority of a
-	// delivery with no subkind, and the text can quote a third party, so
-	// treat it as untrusted input (sdk.d.ts v0.3.330 L5953).
+	// delivery with no subkind, and the text can quote a third party
+	// (sdk.d.ts v0.3.330 L5953).
 	MessageOriginSubkindExternalEvent MessageOriginSubkind = "external-event"
 )
 
