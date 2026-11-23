@@ -891,8 +891,10 @@ const (
 	// the settings or disallowedTools it names, and also fires when a named
 	// field's own flag (--settings, --disallowedTools) is passed too. This
 	// SDK never sends --initialize-fields and its initialize carries neither
-	// field, so passing the flag through ExtraArgs always ends here, and so
-	// does pairing it with Options.Settings or Options.DisallowedTools
+	// field, so passing the flag with settings or disallowedTools through
+	// ExtraArgs always ends here, and so does pairing it with
+	// Options.Settings or Options.DisallowedTools. An unknown or empty value
+	// is refused while flags are parsed instead, with no result frame
 	// (sdk.d.ts v0.3.330 L6597).
 	StartupFailureInitializeFieldsNotDelivered StartupFailureReason = "initialize_fields_not_delivered"
 )

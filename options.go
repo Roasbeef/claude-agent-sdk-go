@@ -504,8 +504,9 @@ type Settings struct {
 	// only with a claude.ai login talking to the Anthropic API directly,
 	// outside cloud sessions; CLAUDE_CODE_ATTRIBUTION_PROJECT wins over it.
 	// Behind a Claude apps gateway that reports usage by group, name one of
-	// the organization's groups instead, such as "payments" (sdk.d.ts
-	// v0.3.330 L7567).
+	// the organization's groups instead, such as "payments";
+	// CLAUDE_CODE_ATTRIBUTION_HEADER does not affect that (sdk.d.ts v0.3.330
+	// L7567).
 	AttributionProject *string `json:"attributionProject,omitempty"`
 	// AttributionProjectPolicy is the organization's default for
 	// AttributionProject. Honored only from managed settings.
@@ -945,17 +946,17 @@ type Settings struct {
 	// WorkflowKeywordTriggerEnabled enables the "ultracode" keyword trigger for the Workflow tool. Mirrors sdk.d.ts v0.3.168 L4582.
 	WorkflowKeywordTriggerEnabled *bool `json:"workflowKeywordTriggerEnabled,omitempty"`
 	// DesktopMCPServersListScope, for the Claude desktop app only, says where
-	// AllowedMCPServers and DeniedMCPServers govern servers added in the
-	// app: "code" (default) applies the allow list in Code tab sessions and
-	// the Artifact pane, "all" applies both lists in every tab, "off" stops
-	// the allow list governing them. DeniedMCPServers applies in Code tab
+	// AllowedMCPServers and DeniedMCPServers govern servers added in the app:
+	// "code" (default) applies the allow list in Code tab sessions and the
+	// Artifact pane, "all" applies both lists in every tab, "off" stops the
+	// allow list governing them. DeniedMCPServers applies in Code tab
 	// sessions and the Artifact pane under every value, and in every tab
 	// under "all"; servers sent to SSH hosts are not governed by either list.
 	// Any other value counts as "all", and where sources merge "off" counts
-	// as "all". Read only from managed settings. The CLI reads nothing from it, but set alone in a higher
-	// managed source it makes that source lead and the ones beneath it are
-	// skipped, so write it only beside the list it scopes (sdk.d.ts v0.3.330
-	// L8112).
+	// as "all". Read only from managed settings. The CLI reads nothing from
+	// it, but set alone in a higher managed source it makes that source lead
+	// and the ones beneath it are skipped, so write it only beside the list
+	// it scopes (sdk.d.ts v0.3.330 L8112).
 	DesktopMCPServersListScope string `json:"desktopMcpServersListScope,omitempty"`
 	// AllowAllClaudeAiMcps lets claude.ai cloud MCP connectors load alongside managed-mcp.json. Mirrors sdk.d.ts v0.3.150 L4411.
 	AllowAllClaudeAiMcps *bool `json:"allowAllClaudeAiMcps,omitempty"`
@@ -967,14 +968,15 @@ type Settings struct {
 	AllowClaudeInChromeWithManagedMcp *bool `json:"allowClaudeInChromeWithManagedMcp,omitempty"`
 	// ManagedMCPServers are MCP servers the organization provides to every
 	// user, keyed by server name, each value carrying the .mcp.json entry
-	// shape. Only "http" and "sse" servers are accepted: nothing that names
-	// a program to run, and no ${VAR} references. Honored from managed
-	// settings only — users cannot remove them, and unlike servers users add
-	// they need no AllowedMCPServers entry, though DeniedMCPServers still
-	// applies, except an entry found only in a project's .claude/settings.json
-	// or settings.local.json (sdk.d.ts v0.3.330 L7775). Not read in Claude Desktop's Code tab on a third-party
-	// deployment or in Cowork sessions, where Claude Desktop supplies and
-	// locks the session's MCP servers itself.
+	// shape. Only "http" and "sse" servers are accepted: nothing that names a
+	// program to run, and no ${VAR} references. Honored from managed settings
+	// only — users cannot remove them, and unlike servers users add they need
+	// no AllowedMCPServers entry, though DeniedMCPServers still applies,
+	// except an entry found only in a project's .claude/settings.json or
+	// settings.local.json (sdk.d.ts v0.3.330 L7775). Not read in Claude
+	// Desktop's Code tab on a third-party deployment or in Cowork sessions,
+	// where Claude Desktop supplies and locks the session's MCP servers
+	// itself.
 	//
 	// The value stays an untyped object because upstream types it that way;
 	// narrowing it here would reject entry shapes the CLI accepts
@@ -1318,15 +1320,15 @@ type SettingsHook struct {
 	// OnFailure decides what a failure of a command or http hook does: it
 	// could not start, timed out, exited with a code other than 0 or 2, or
 	// printed JSON that is invalid or fails validation. An mcp_tool hook
-	// takes it too (sdk.d.ts v0.3.328, L7984 in v0.3.330): there a failure
-	// is a server not connected or signed in, a call that times out or
-	// errors, or JSON that fails validation, and under block the guarded
-	// action is blocked each time, for as long as the call fails. Under block
-	// the tool must answer with hook JSON, {} or nothing: plain text, an
-	// image, or JSON holding no hook output field or only "reason" also
-	// fails, except on PreCompact and WorktreeCreate (where plain text is the
-	// answer) and on events whose block stops nothing. Any other value reads
-	// as block. For mcp_tool it is also ignored on Setup and SessionStart. The default,
+	// takes it too (sdk.d.ts v0.3.328, L7984 in v0.3.330): there a failure is
+	// a server not connected or signed in, a call that times out or errors,
+	// or JSON that fails validation, and under block the guarded action is
+	// blocked each time, for as long as the call fails. Under block the tool
+	// must answer with hook JSON, {} or nothing: plain text, an image, or
+	// JSON holding no hook output field or only "reason" also fails, except
+	// on PreCompact and WorktreeCreate (where plain text is the answer) and
+	// on events whose block stops nothing. Any other value reads as block.
+	// For mcp_tool it is also ignored on Setup and SessionStart. The default,
 	// SettingsHookOnFailureContinue, reports the failure and lets the action
 	// go ahead; SettingsHookOnFailureBlock treats it as exit code 2 and
 	// blocks the tool call, permission request or prompt the event guards.

@@ -1207,6 +1207,11 @@ including their env and headers, whether or not the CLI read them (it
 reads them only under `--await-initialize`). We now send them only under
 the new delivery.
 
+PRs in this cycle (squash-merged): #343 MCPServersDelivery, #344 origin
+subkind and startup reason, #345 settings, plus this docs refresh.
+Follow-up: #346, decoding system/init `mcp_server_errors` so a server the
+CLI skipped from an initialize-delivered set is visible.
+
 Deferred in v0.3.330:
 
 - `settingsDelivery` / `disallowedToolsDelivery` / `--initialize-fields`:
