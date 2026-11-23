@@ -7110,6 +7110,26 @@ func TestIntegrationStartupFailureManagedSettingsNotDelivered(t *testing.T) {
 	assert.NotEmpty(t, res.Errors)
 }
 
+// TestIntegrationStartupFailureInitializeFieldsNotDelivered launches a CLI
+// told by --initialize-fields to read settings from initialize, then sends an
+// initialize without them (sdk.d.ts v0.3.330 L6597).
+func TestIntegrationStartupFailureInitializeFieldsNotDelivered(t *testing.T) {
+	skipIfNoToken(t)
+	skipIfCLIOlderThan(t, "2.1.330")
+
+	configDir := filepath.Join(t.TempDir(), ".claude")
+	require.NoError(t, os.MkdirAll(configDir, 0o700))
+
+	res := startupFailureResult(t, configDir,
+		`{"type":"control_request","request_id":"1","request":{"subtype":"initialize"}}`+"\n",
+		[]string{"CLAUDE_CODE_STARTUP_FAILURE_RESULTS=1"},
+		"--await-initialize", "--initialize-fields=settings",
+	)
+	require.NotNil(t, res, "no result frame")
+	assert.Equal(t, StartupFailureInitializeFieldsNotDelivered, res.StartupFailureReason)
+	assert.NotEmpty(t, res.Errors)
+}
+
 // TestIntegrationSetMcpServersKeepsSDKServers calls SetMcpServers on a
 // session with an in-process SDK server that denies one of its tools. The
 // CLI drops an SDK server, and the deny rule its policy registered, when a
